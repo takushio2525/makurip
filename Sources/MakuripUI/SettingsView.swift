@@ -62,7 +62,11 @@ struct SettingsView: View {
                         ForEach(model.sections) { section in
                             SettingsGroupHeader(section: section)
                             ForEach(section.itemIDs, id: \.self) { id in
-                                SettingsRow(model: model, id: id).id(id)
+                                if id == SettingsModel.aiAccessRowID {
+                                    SettingsAIAccessRow(model: model).id(id)
+                                } else {
+                                    SettingsRow(model: model, id: id).id(id)
+                                }
                             }
                         }
                     }
@@ -249,6 +253,113 @@ struct SettingsRow: View {
         case .keys(let action):
             SettingsKeys(model: model, action: action, recording: recording)
         }
+    }
+}
+
+/// AI の口の行（#6。試作に無い）。ほかの行と同じ形（左に名前と説明、右に切り替え）に、登録のコマンドと AI の操作の記録を足した。
+/// オンにできるのはこの切り替えだけ（AI・CLI・MCP からは変えられない）
+struct SettingsAIAccessRow: View {
+    @Bindable var model: SettingsModel
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
+    static let label = "AI エージェントから使う（MCP）"
+    static let summary =
+        "オンにすると、登録した AI エージェント（Claude Code など）が、履歴への追加・形式の一覧・秘密っぽいものの削除・定型文の登録をできます。履歴の中身は AI に見せません。履歴には秘密も入りうるので、使うときだけオンにしてください。AI からはオンにできません。設定の読み書きは、オフでも AI に頼めます。"
+
+    var body: some View {
+        let id = SettingsModel.aiAccessRowID
+        let selected = model.selectedID == id
+        let colors = SettingsPalette.of(scheme)
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(Self.label).css(SettingsCSS.label).foregroundStyle(palette.text)
+                Text(Self.summary)
+                    .css(SettingsCSS.detail)
+                    .foregroundStyle(palette.text2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.aiAccessEnabled {
+                    Text("いま：オン。使い終わったらオフにしてください。")
+                        .css(SettingsCSS.detail)
+                        .foregroundStyle(colors.warning)
+                }
+                command
+                activity
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            SettingsSegments(
+                options: [("false", "オフ"), ("true", "オン")], selected: model.aiAccessEnabled ? "true" : "false"
+            ) { model.setAIAccess($0 == "true") }
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 46)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? palette.accentSoft : .clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { model.select(id) }
+    }
+
+    /// Claude Code に登録するコマンド（実行は利用者がターミナルで行う）
+    @ViewBuilder
+    private var command: some View {
+        if let text = model.environment.aiAccess?.registerCommand(), !text.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Claude Code に登録するコマンド（ターミナルで 1 回だけ実行）")
+                    .css(SettingsCSS.detail)
+                    .foregroundStyle(palette.text3)
+                HStack(alignment: .center, spacing: 8) {
+                    Text(text)
+                        .font(CSSText.mono(11))
+                        .foregroundStyle(palette.text)
+                        .textSelection(.enabled)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(palette.fill1, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    SettingsSmallButton(title: "コピー") { model.copyMCPRegisterCommand() }
+                }
+            }
+            .padding(.top, 6)
+        }
+    }
+
+    /// AI が行った操作の記録（新しい順。メタデータだけ）
+    @ViewBuilder
+    private var activity: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("AI の操作の記録（新しい順）")
+                .css(SettingsCSS.detail)
+                .foregroundStyle(palette.text3)
+            if model.aiActivity.isEmpty {
+                Text("まだありません").css(SettingsCSS.detail).foregroundStyle(palette.text3)
+            } else {
+                ForEach(Array(model.aiActivity.enumerated()), id: \.offset) { _, entry in
+                    Text(Self.line(entry))
+                        .css(SettingsCSS.detail)
+                        .foregroundStyle(entry.outcome == .ok ? palette.text2 : SettingsPalette.of(scheme).warning)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    static func line(_ entry: AIActivityEntry) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d HH:mm"
+        let outcome =
+            switch entry.outcome {
+            case .ok: ""
+            case .refused: "（断った）"
+            case .rejected: "（受け付けなかった）"
+            case .failed: "（失敗）"
+            }
+        let who = entry.client.map { "\($0)・" } ?? ""
+        return "\(formatter.string(from: entry.at))　\(who)\(entry.tool)\(outcome)　\(entry.summary)"
     }
 }
 

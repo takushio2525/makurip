@@ -12,9 +12,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`）・AI の口（オン・オフ・道具・MCP の JSON-RPC・`--ai` の CLI・操作の記録。`AI/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
 | `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・定型文の窓（ふつうの窓）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)`・`SnippetEditorUIFactory.make(controller:environment:)` | MakuripCore |
-| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・起動引数・`--settings` の入口・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
+| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・起動引数・`--settings`・`--mcp`・`--ai` の入口・AI の口の知らせの受け取り・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
 
 依存の向き: `Makurip` → `MakuripUI` → `MakuripCore`。逆向き（Core が UI・アプリを知る、UI がアプリを知る）は禁止。
@@ -113,6 +113,30 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 部品: `Snippet`・`SnippetCollection`・`SnippetTemplate`・`SnippetDateFormat`・`SnippetClipboard`・`SnippetPaste`・`SnippetFile`・`SnippetController`（Core）、
 `SnippetViews`（カード・⌘Y・本文の TextKit の組み）・`SnippetEditorModel`・`SnippetEditorView`・`SnippetEditorWindowController`（UI）。
 
+### AI の口（フェーズ6・#6）
+
+```
+Claude Code ──stdio（1 行 1 件の JSON-RPC）──> Makurip --mcp ─┐
+シェル・スクリプト ──────────────────────> Makurip --ai ──┤ AITools（検証・実行・記録）
+                                                              ├─ AIGateway ──> history.sqlite（WAL。アプリと同じ DB）
+                                                              ├─ AISnippetTools ──> snippets.json
+                                                              └─ SettingsCLI（#4）──> settings.json
+                    分散通知 historyDidChange / aiActivity ──> 動いている Makurip（一覧の読み直し・秘密の自動消去・設定画面の記録）
+```
+
+1. 入口: 同じ実行ファイルの `--mcp`（`MCPServer.run`。標準入力が閉じるまで）と `--ai`（`AICLI.run`）。どちらも UI・ロック（`instance.lock`）を使わず、
+   `AITools` を同じように作る（`main.swift` の `makeAITools`）。CLI のフラグは道具の引数（JSON）に組み直して同じ検証を通す
+2. 門: 履歴と定型文の道具は、呼ぶたびに DB の `meta` の `aiAccess` を読む（`AIAccess`）。オフ・DB がない → `aiAccessDisabled`（DB を作らない）。
+   オンにするのは設定画面（`AppController.setAIAccess` ← `SettingsAIAccessRow`）だけ。CLI の `disable` はオフにだけできる
+3. 追加: 道具の引数 → スナップショット（文字は UTF-8 の平文・画像はその形式のまま・ファイルは file-url と名前の平文）→ `CapturePipeline.process`（種類・秘密・伏せ字。
+   コピー元は「AI（相手の名前）」・方法は「それ以外」）→ `addedByAI` を足して `ClipStore.save`（上限は設定ファイルの値）。
+   クリップボードにも置くときは `PastePipeline.prepare` の中身に取り込み済みの印（と秘密なら ConcealedType）を足して書く
+4. 一覧: `ClipStore.items` → `AIHistoryFilter` → `AIGateway.describe`（形式の情報だけ。言語と秘密の形式はこのプロセスの中で中身を読んで名前だけを返す）
+5. 削除: 条件に合う ID を `ClipStore.delete(ids:)` → `scrubDeletedData`（WAL を空に）。件数だけを返す
+6. 知らせ: 書いたら `HistoryChangeSignal.post`（object = データフォルダ）。動いている `AppController.externalHistoryDidChange` が一覧を読み直し（`historyDidChange`）、
+   `scheduleSecretSweep` で自動消去の時計を掛け直す。記録を足したら `postActivity`（設定画面の記録を描き直す）。定型文はファイルの監視で届く
+7. 記録: `AITools.record` が `ai-activity.jsonl` に 1 行（道具・結果・件数と種類の文）。読むだけの設定の道具と `status` は残さない。オフで断ったものは残す
+
 ### 一覧（フェーズ2・`Sources/MakuripUI/`）
 
 | 部品 | 役割 |
@@ -163,8 +187,11 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - ~~フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない~~
 - フェーズ5（秘密・済）: 判定は取り込みの中（`CapturePipeline`）で行い、`CapturedClip.flags` に `secretLikely`・`secretKnownFormat` を入れて保存する。
   `preview_text` は伏せ字で持つ。既存の履歴は `SecretRescan` が `ClipStore.addFlags(_:maskedPreview:id:)` で 1 回だけ当て直す。DB は版 2（`meta` 表）
-- フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す。
-  定型文の追加・編集を扱うなら `SnippetController`（動いているアプリ）か `SnippetFile` + `SnippetCollection`（別のプロセス）を使う（検証は同じ `normalize`）
+- ~~フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す。
+  定型文の追加・編集を扱うなら `SnippetController`（動いているアプリ）か `SnippetFile` + `SnippetCollection`（別のプロセス）を使う（検証は同じ `normalize`）~~
+- フェーズ6（AI の口・済）: DB の表は変えていない（版 2 のまま。`meta` に `aiAccess`・`aiAccessChangedAt` の鍵を足しただけ）。追加は `CapturePipeline` → `addedByAI` → `ClipStore.save`。
+  AI へ返すのは `MetadataDump` より絞った形式の情報（内容のハッシュの先頭・URL・秘密の項目の大きさも返さない）。定型文は別のプロセスから `SnippetFile` + `SnippetCollection`。
+  操作の記録は DB でなくデータフォルダの `ai-activity.jsonl`
 - フェーズ7（定型文・済）: DB は変えていない（#5 の版 2 のまま）。履歴とは別のファイル `snippets.json` に持つ
 
 ## 技術選定（フェーズ1・比べた代替）
@@ -226,6 +253,18 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | 当て直しの印 | DB の `meta` 表（版 2）に判定の版 | 毎回起動時に全件を判定（2 万件では起動が遅くなる）、設定ファイルに書く（設定は人と AI が書き換える場所で、内部の状態を置かない） |
 | 候補窓の ⌥ | 横取りのタップに `flagsChanged` を足し、食べずに素通し | 窓の側で `NSEvent` のグローバル監視（タップと別の経路で修飾キーを見ることになり、閉じたときの後始末が 2 か所になる） |
 
+## 技術選定（フェーズ6・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| MCP の実装 | 自前の JSON-RPC 2.0（stdio・1 行 1 件。`MCPServer` 約 250 行）。扱うのは initialize・ping・tools/list・tools/call だけ | 公式の Swift SDK（modelcontextprotocol/swift-sdk。外部ライブラリが 0 → 1 になり、swift-log などの依存も入る。版の追従が要る。使うのは道具だけで、resources・prompts・HTTP の搬送・相手への要求は要らない）、TypeScript・Python の SDK で別のサーバーを作る（Node か Python が要り、DB・判定・伏せ字のコードを二重に持つことになる）。道具だけの stdio なら仕様は小さく、単体テストで往復を固定できる |
+| 入口 | 同じ実行ファイルの `--mcp` と `--ai`（.app の中の Makurip） | .app に別の実行ファイルを入れる（署名・組み立てが増え、判定と DB のコードを 2 つのターゲットに持つ）、動いているアプリに XPC・ソケットでつなぐ（アプリが動いていないと使えない・口が 1 つ増える・権限の扱いが増える）。#4 の `--settings` と同じ形で、アプリが動いていなくても使え、隔離（`--data-dir`）もそのまま効く |
+| オン・オフの置き場所 | 履歴の DB の `meta` 表（`aiAccess`）。設定のスキーマ・設定ファイルには載せない | 設定の項目にする（AI が `--settings set`・MCP の `settings_set`・`settings.json` の書き換えで自分で口を開けられる。#4 の所見 6 と同じ理由で不可）、UserDefaults（`defaults write` で簡単に書ける・`--data-dir` で隔離できない）、キーチェーン（オフの状態から AI が `security` で項目を作れば同じこと。重い）。DB の値は「ふつうの口」からは書けない。直接 `sqlite3` で書くことは防げない（限界として書いた） |
+| 動いているアプリへの知らせ | 分散通知（object = データフォルダ）+ 一覧は開くたびに読み直す | DB のファイルを見張る（WAL の書き込みは頻繁で、アプリ自身の書き込みと見分けにくい）、定期的に `PRAGMA data_version` を読む（遅い・無駄に起きる）、XPC（上と同じ理由）。知らせは「読み直す」だけなので、誰が送っても害がない。届かなくても、一覧は開くたびに読み、秘密は次の見回りで消える |
+| 同じ DB を 2 つのプロセスで使う | SQLite の WAL・`busy_timeout` 2 秒・複数の文をまとめて書く操作は `BEGIN IMMEDIATE`（#1 からのまま） | DB をアプリだけが触り、MCP はアプリに頼む（アプリが動いていないと足せない）。WAL なら読みは書きを待たず、書きどうしは SQLite のロックで順に並ぶ |
+| AI へ返す形式の情報 | 種類・時刻・アプリ・型名・大きさ・言語・秘密の印と形式名。ハッシュ・URL（ホスト名を除く）・ファイル名・秘密の項目の大きさは返さない | `MetadataDump` をそのまま返す（ハッシュの先頭で短い秘密を当てられる。秘密の長さが分かる）、何も返さず件数だけ（「さっきの API キー」を選んで消すのに、どれが秘密かが分からない） |
+| 操作の記録 | データフォルダの `ai-activity.jsonl`（`flock` で足す・500 件） | DB に表を足す（スキーマの版が上がる。#7 と版が重なりうる）、os.Logger だけ（設定画面で見せられない） |
+
 ## 技術選定（フェーズ7・比べた代替）
 
 | 何を | 採用 | 比べた代替と、採らなかった理由 |
@@ -257,4 +296,8 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - 見た目を変える: `make ui-compare` で試作と並べて確かめ、`design/ui-compare/README.md` の「意図して変えたところ」を直す
 - 定型文の差し込みを足す: `SnippetPlaceholder`（名前・説明）と `SnippetTemplate.expand`・`AppController.snippetContext`。`SnippetTemplateTests` に壊れた記法の例を足し、`.agent/api.md` の「定型文」と定型文の窓の説明を直す
 - 定型文の検証を変える: `SnippetCollection.normalize` の 1 か所（窓・ファイルの読み込み・AI の口が同じ関数を通す）。`SnippetCollectionTests`・`SnippetFileTests`
+- AI の口に道具を足す: `AITools.Name`・道具の一覧（説明は AI が読んで使い分けられるように）・`perform`・引数の検証（`Arguments.only` で知らない引数を誤りに）。
+  履歴を触るなら `needsAccess: true`。CLI の命令は `AICLI.commands`。返す JSON に中身・URL・ファイル名・ハッシュを入れない（`AIListTests`・`MCPServerTests` の漏れの検査に通す）。
+  **AI の口をオンにする道具・命令は足さない**（`AIAccessTests`）。`docs/ai-mcp.md` の一覧と対応表、`.agent/api.md` の「AI の口」を直す。隔離 E2E は `make e2e-ai`
+- 一覧で返す形式の情報を変える: `AIGateway.describe`。足す情報が中身を推せないか（長さ・ハッシュ・名前）を考え、`docs/ai-mcp.md` の「守っていること」を直す
 - 表示名・バンドル ID・版を変える: `Sources/Makurip/Info.plist` の 1 か所だけ

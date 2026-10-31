@@ -181,6 +181,10 @@ public final class PasteboardMonitor {
         if let bundleID = app?.bundleID?.lowercased(), excludedApps.contains(bundleID) {
             return .skipped(.excludedApp)
         }
+        // AI の口が保存してから置いたもの（もう一度取り込むと、コピー元が前面のアプリに書き換わる）
+        if (pasteboard.types ?? []).contains(NSPasteboard.PasteboardType(PasteboardMarkers.savedByMakuripAI)) {
+            return .skipped(.savedByAI)
+        }
         switch PasteboardReader.read(pasteboard, maxRepresentationBytes: limits.maxRepresentationBytes) {
         case .excluded:
             return .skipped(.excludedMarker)

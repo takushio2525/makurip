@@ -446,6 +446,10 @@ public struct SettingsCLI {
     }
 
     private func unknownItem(_ id: String) -> Output {
+        // AI の口（#6）は設定の項目にしていない（AI・CLI からオンにできないように）。探しに来たら設定画面からだけと答える
+        if AIAccess.looksLikeGateID(id) {
+            return Output(stderr: "\(id): \(AIAccess.enableRefusedMessage)\n", exitCode: ExitCode.rejected)
+        }
         let near = SettingsSchema.items.map(\.id).filter {
             $0.lowercased().contains(id.lowercased()) || id.lowercased().contains($0.lowercased())
         }

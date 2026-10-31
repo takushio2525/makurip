@@ -13,6 +13,8 @@ public enum SkipReason: String, Sendable, Hashable {
     case paused
     /// 記録しないアプリ（設定の excludedApps）が前面にあった。データは読まない
     case excludedApp
+    /// AI の口が保存してからクリップボードにも置いたもの（`PasteboardMarkers.savedByMakuripAI`）。データは読まない
+    case savedByAI
 }
 
 public enum CaptureDecision: Sendable, Hashable {

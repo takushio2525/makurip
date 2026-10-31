@@ -136,16 +136,55 @@ public struct SettingsEnvironment {
     public var launchAtLoginNote: @MainActor () -> String?
     /// キーを記録している間は true（その間、本体はどこからでも効くキーを外す。押したキーを横取りしないように）
     public var recordingDidChange: @MainActor (Bool) -> Void
+    /// AI の口（#6）。nil なら設定画面に出さない
+    public var aiAccess: AIAccessEnvironment?
 
     public init(
         appName: @escaping @MainActor (String) -> String? = { _ in nil },
         hotKeyRegistered: @escaping @MainActor (KeyAction) -> Bool? = { _ in nil },
         launchAtLoginNote: @escaping @MainActor () -> String? = { nil },
-        recordingDidChange: @escaping @MainActor (Bool) -> Void = { _ in }
+        recordingDidChange: @escaping @MainActor (Bool) -> Void = { _ in },
+        aiAccess: AIAccessEnvironment? = nil
     ) {
         self.appName = appName
         self.hotKeyRegistered = hotKeyRegistered
         self.launchAtLoginNote = launchAtLoginNote
         self.recordingDidChange = recordingDidChange
+        self.aiAccess = aiAccess
+    }
+}
+
+/// 設定画面の「AI の口」が本体に聞くこと・頼むこと。**AI の口をオンにできるのはここ（`setEnabled`）だけ**
+public struct AIAccessEnvironment {
+    /// いまオンか（DB の `meta` から読む）
+    public var isEnabled: @MainActor () -> Bool
+    /// 切り替える（設定画面だけが呼ぶ）。書けなければ false
+    public var setEnabled: @MainActor (Bool) -> Bool
+    /// AI が行った操作の記録（新しい順。メタデータだけ）
+    public var recentActivity: @MainActor (Int) -> [AIActivityEntry]
+    /// Claude Code に登録するコマンド（画面に出してコピーできるようにする）
+    public var registerCommand: @MainActor () -> String
+    /// 登録コマンドをクリップボードに置く
+    public var copyRegisterCommand: @MainActor () -> Void
+
+    public init(
+        isEnabled: @escaping @MainActor () -> Bool, setEnabled: @escaping @MainActor (Bool) -> Bool,
+        recentActivity: @escaping @MainActor (Int) -> [AIActivityEntry] = { _ in [] },
+        registerCommand: @escaping @MainActor () -> String = { "" },
+        copyRegisterCommand: @escaping @MainActor () -> Void = {}
+    ) {
+        self.isEnabled = isEnabled
+        self.setEnabled = setEnabled
+        self.recentActivity = recentActivity
+        self.registerCommand = registerCommand
+        self.copyRegisterCommand = copyRegisterCommand
+    }
+
+    /// Claude Code に MCP として登録するコマンド（実行ファイルのパスを入れる）
+    public static func claudeRegisterCommand(executablePath: String) -> String {
+        let quoted =
+            executablePath.contains(where: { $0 == " " || $0 == "'" })
+            ? "'\(executablePath.replacingOccurrences(of: "'", with: "'\\''"))'" : executablePath
+        return "claude mcp add --scope user makurip -- \(quoted) --mcp"
     }
 }

@@ -13,6 +13,8 @@
 | `--debug-control` | E2E 用の遠隔操作を受け付ける。**`--data-dir` を指定したときだけ有効**（既定のデータフォルダでは無視してログに残す） |
 | `-MakuripPanelScreen NAME` | 一覧と候補窓を出す画面を名前で固定する（UserDefaults の引数ドメイン。E2E が仮想ディスプレイに出すため）。指定すると文字カーソルの位置は使わず、その画面の下寄りの中央に出す |
 | `--settings <命令> ...` | 設定の CLI（下の「設定」）。後ろの引数は `--data-dir` を除いてすべて CLI に渡す。UI もロックも使わないので、動いているインスタンスがあっても使える |
+| `--mcp` | AI の口の MCP サーバー（標準入出力の JSON-RPC。下の「AI の口」）。UI もロックも使わない。標準入力が閉じたら終わる。`--pasteboard-name` を付けるとクリップボードに置く先もそれになる |
+| `--ai <命令> ...` | AI の口の CLI（MCP と同じ道具。下の「AI の口」）。後ろの引数は `--data-dir`・`--pasteboard-name` を除いてすべて CLI に渡す |
 
 ~~`-hotkeyMode paste|candidate|list` ほか（候補窓の設定を UserDefaults の引数ドメインで起動のときだけ上書き）~~ は #4 でなくした。
 隔離したインスタンスの設定は、起動する前に `Makurip --data-dir DIR --settings set ...` で書く。
@@ -34,6 +36,7 @@
 | `pause` / `resume` | 記録の一時停止 / 再開 |
 | `pasteSnippet` | 定型文を貼る（一覧の ↩ と同じ処理）。`userInfo["index"]` は 1 からの番号、`["mode"]` は `normal` / `plainText` / `copyOnly`（既定 `normal`）。番号の外は何もしない |
 | `clearHistory` | 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る） |
+| `enableAIAccess` / `disableAIAccess` | AI の口をオン / オフにする（設定画面の切り替えと同じ。`--debug-control` は隔離したときだけ効くので、本物の履歴の口は開けられない） |
 | `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く（設定ファイルから読み直したときも自動で書く） |
 | `quit` | 終了する |
 
@@ -42,7 +45,8 @@
 `storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
 `secrets`（`count` 秘密の件数・`knownFormat` 自動消去の対象の件数・`autoDeleted` 起動してから自動で消した件数・`retentionSeconds`・`nextSweepAt` 次に消す時刻。中身は出さない）・
 `settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・
-`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない）・`writtenAt`。
+`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない）・
+`ai`（`enabled` AI の口がオンか・`externalHistoryChanges` MCP・CLI が履歴を変えたと知らされた回数・`activityCount` AI の操作の記録の件数・`lastTool`・`lastOutcome`。#6）・`writtenAt`。
 `historyUI` には `showsSnippets`・`snippetCount` もある。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
@@ -341,6 +345,42 @@ UI 側（`Sources/MakuripUI/`）: `SnippetCardView`・`SnippetPeekContent`（パ
 `KeyTapEvent.flagsChanged`（候補窓の間の修飾キー。食べずに素通し）。ストアは `items(flagged:)`・`addFlags(_:maskedPreview:id:)`・
 `snapshot(id:types:)`・`delete(ids:)`・`scrubDeletedData()`（WAL の切り詰め）・`metaValue` / `setMetaValue` を足した。
 
+## AI の口（`Sources/MakuripCore/AI/`・#6）
+
+利用者・AI 向けの案内（登録・頼みと道具の対応・限界）は `docs/ai-mcp.md`。
+
+| 型 | 役割 |
+|---|---|
+| `AIAccess` | オン・オフ（DB の `meta` の `aiAccess` = `on` / `off`、`aiAccessChangedAt`）。DB がなければオフ。`setEnabled(true, …)` を呼ぶのは設定画面の配線（と隔離時の遠隔操作）だけ。`looksLikeGateID` は設定の CLI・道具で「設定画面からだけ」と答える ID |
+| `AIGateway` | 履歴の操作（`add`・`list`・`deleteSecrets`・`delete`・`status`・`disable`）。毎回 DB のオン・オフを読む。上限は設定ファイルの値。書いたら `historyDidChange` |
+| `AIHistoryFilter` / `AISecretFilter` | 一覧と削除の条件（ids・種類・秘密・AI が足したか・ピン留め・最後に使ってからの分数・コピー元アプリ） |
+| `AITools` | 道具の一覧（`tools`。MCP の tools/list）・引数の検証（`Arguments`。知らない引数は誤り）・実行・記録。設定の道具は `SettingsCLI` を `--json` で通す。定型文の道具は `AISnippetTools.swift` |
+| `MCPServer` / `MCPLineReader` | JSON-RPC 2.0（1 行 1 件）。`handle(_:)` は 1 行 → 1 行（通知は nil）。読み取りは `read(2)` で届いた分だけ（入力を開いたまま待つ相手と互いに待たないため）。1 件 128 MB まで |
+| `AICLI` | `--ai` の CLI。フラグを道具の引数（JSON）に組み直して `AITools` を呼ぶ |
+| `AIActivityLog` / `AIActivityEntry` | 操作の記録（データフォルダの `ai-activity.jsonl`。1 行 1 件・`flock`・500 件を超えたら古いものから捨てる・0600）。メタデータだけ |
+| `HistoryChangeSignal` | 分散通知 `com.takushio2525.makurip.historyDidChange`（履歴が変わった）と `…aiActivity`（記録が増えた）。object はデータフォルダの標準化したパス |
+| `AppPresence` | 同じデータフォルダで Makurip が動いているか（`instance.lock` を共有のロックで試す） |
+| `AIClientName` | MCP の相手の名前（短く切って制御文字を除く）。一覧のコピー元アプリは「AI（名前）」 |
+
+道具（MCP の名前。CLI の命令）: `status`（`status`）・`add_to_history`（`add`）・`list_history`（`list`）・`delete_secrets`（`delete-secrets`）・
+`delete_history`（`delete`）・`add_snippet`（`snippet-add`）・`list_snippets`（`snippets`）・`delete_snippets`（`snippet-delete`）・
+`settings_schema`・`settings_list`・`settings_get`・`settings_set`・`settings_reset`（CLI は `--settings`）。CLI だけ: `log`・`disable`（`enable` は拒否）。
+履歴と定型文の道具は AI の口がオンのときだけ（オフは `aiAccessDisabled`）。設定の道具と `status` はいつでも。
+
+MCP の応答: 成功は `result.content[0].text`（`structuredContent` の 1 行の JSON）・`structuredContent`・`isError: false`。
+道具の失敗は `isError: true`・`structuredContent`（`error`: `aiAccessDisabled` / `invalidArguments` / `settingsRejected` / `unavailable`・`message`）。
+JSON-RPC の誤り: -32700（JSON でない）・-32600（形の誤り・大きすぎる）・-32601（知らない method）・-32602（知らない道具・params の形の誤り）。
+`initialize` は相手の版が `MCPServer.supportedProtocolVersions`（2025-11-25・2025-06-18・2025-03-26・2024-11-05）にあればそれで、なければいちばん新しい版で答える。
+
+`list_history` の 1 件の鍵: `id`・`kind`・`kindLabel`・`createdAt`・`lastUsedAt`・`copyCount`・`copyMethod`・`pinned`・`addedByAI`・`truncated`・`pasteboardItems`・
+`types`・`sourceApp`（`bundleID`・`name`）・`sourcePageHost`・`language`・`languageLabel`・秘密なら `secret`（`level` high/medium・`formats[]`（`id`・`label`）・`autoDelete`）と
+`size: "hidden"`、秘密でなければ `totalBytes`・（1 MB 以下の平文なら）`characters`・`lines`。中身・平文・URL・ファイル名・ハッシュの鍵はない（`AIListTests` が守る）。
+
+AI がクリップボードにも置くときは `PasteboardMarkers.savedByMakuripAI`（`com.takushio2525.makurip.saved-by-ai`）の型を足し、
+監視は `SkipReason.savedByAI` で取り込まない（保存は済んでいる）。秘密っぽいものは ConcealedType も足す。
+本体: `AppController.observeAIGateway`（知らせを受けて一覧の読み直し・秘密の自動消去の掛け直し）・`setAIAccess`・`mcpRegisterCommand`。
+設定画面: `SettingsEnvironment.aiAccess`（`AIAccessEnvironment`）→ `SettingsModel.aiAccessRowID` の行（`SettingsAIAccessRow`）。
+
 ## DB スキーマ（版 2・`PRAGMA user_version = 2`）
 
 ```sql
@@ -375,9 +415,12 @@ CREATE TABLE representation (
 );
 
 -- 版 2（#5）: 小さな覚え書き。key = 'secretScanVersion'（既存の履歴に当て直した判定の版）
+-- #6 で key = 'aiAccess'（'on' / 'off'。AI の口）・'aiAccessChangedAt'（切り替えた時刻）を足した（表は変えていないので版は 2 のまま）
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ```
 
+MCP・`--ai` の CLI のプロセスと動いているアプリは、同じ DB を別の接続で読み書きする（WAL・`busy_timeout` 2 秒・複数の文をまとめて書く操作は `BEGIN IMMEDIATE`）。
+
 `PRAGMA secure_delete = ON`（消した行をファイルの上でも 0 で上書きする）。秘密を消したあとは `wal_checkpoint(TRUNCATE)` で WAL を空にする。
 
-データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・`settings.json`（+ 壊れていたときの `settings.broken.json`）・（検証時のみ）`debug-status.json`。
+データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・`settings.json`（+ 壊れていたときの `settings.broken.json`）・`snippets.json`・`ai-activity.jsonl`（AI の操作の記録）・（検証時のみ）`debug-status.json`。

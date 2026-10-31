@@ -158,6 +158,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
             self?.debugControl?.writeStatus()
         }
         snippetStore.startWatching()
+        observeAIGateway()
         rescanSecretsIfNeeded(store: store)
 
         if options.debugControl {
@@ -454,12 +455,86 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
                     appName: { Self.appName(bundleID: $0) },
                     hotKeyRegistered: { [weak self] action in self?.isRegistered(action) },
                     launchAtLoginNote: { [weak self] in self?.launchAtLoginNote },
-                    recordingDidChange: { [weak self] recording in self?.setRecordingKeys(recording) }))
+                    recordingDidChange: { [weak self] recording in self?.setRecordingKeys(recording) },
+                    aiAccess: AIAccessEnvironment(
+                        isEnabled: { [weak self] in self?.isAIAccessEnabled ?? false },
+                        setEnabled: { [weak self] enabled in self?.setAIAccess(enabled) ?? false },
+                        recentActivity: { [weak self] limit in self?.aiActivity.recent(limit: limit) ?? [] },
+                        registerCommand: { [weak self] in self?.mcpRegisterCommand ?? "" },
+                        copyRegisterCommand: { [weak self] in self?.copyMCPRegisterCommand() })))
         }
         settingsWindow?.show()
     }
 
     var isSettingsVisible: Bool { settingsWindow?.isVisible ?? false }
+
+    // MARK: AI の口（#6）
+
+    /// MCP・`--ai` の CLI（別のプロセス）が行ったことの知らせを受ける（`HistoryChangeSignal`。このデータフォルダの分だけ）
+    private func observeAIGateway() {
+        let center = DistributedNotificationCenter.default()
+        let object = HistoryChangeSignal.object(for: dataDirectory)
+        let history = center.addObserver(forName: HistoryChangeSignal.name, object: object, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.externalHistoryDidChange() }
+        }
+        let activity = center.addObserver(forName: HistoryChangeSignal.activityName, object: object, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.settingsWindow?.environmentDidChange()
+                self?.debugControl?.writeStatus()
+            }
+        }
+        environmentObservers += [(center, history), (center, activity)]
+    }
+
+    /// 外で履歴が変わった（AI が足した・消した）。開いている一覧を読み直し、秘密の自動消去を掛け直す
+    func externalHistoryDidChange() {
+        externalHistoryChanges += 1
+        Log.capture.info("AI の口で履歴が変わったので読み直す")
+        history?.historyDidChange()
+        scheduleSecretSweep()
+        settingsWindow?.environmentDidChange()
+        debugControl?.writeStatus()
+    }
+
+    /// 外から履歴が変わったと知らされた回数（検証の状態出力用）
+    private(set) var externalHistoryChanges = 0
+
+    var aiActivity: AIActivityLog { AIActivityLog(directory: dataDirectory) }
+
+    var isAIAccessEnabled: Bool {
+        store.map { AIAccess.isEnabled(store: $0) } ?? false
+    }
+
+    /// AI の口を切り替える。**オンにするのは設定画面（と、隔離したときだけ効く検証用の遠隔操作）からだけ**
+    @discardableResult
+    func setAIAccess(_ enabled: Bool) -> Bool {
+        guard let store else { return false }
+        do {
+            try AIAccess.setEnabled(enabled, store: store)
+            Log.app.info("AI の口 enabled=\(enabled)")
+            settingsWindow?.environmentDidChange()
+            debugControl?.writeStatus()
+            return true
+        } catch {
+            Log.app.error("AI の口を切り替えられなかった: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    /// Claude Code に登録するコマンド（この実行ファイルのパス。隔離中はデータフォルダも付ける）
+    var mcpRegisterCommand: String {
+        let executable =
+            Bundle.main.executablePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } ?? "Makurip"
+        let command = AIAccessEnvironment.claudeRegisterCommand(executablePath: executable)
+        return isolated ? command + " --data-dir '\(dataDirectory.path)'" : command
+    }
+
+    private func copyMCPRegisterCommand() {
+        pasteboard.clearContents()
+        pasteboard.setString(mcpRegisterCommand, forType: .string)
+    }
 
     // MARK: 定型文（#7）
 
