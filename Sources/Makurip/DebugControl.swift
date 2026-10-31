@@ -18,6 +18,9 @@ final class DebugControl {
         case simulateCopyShortcut
         /// 貼り付けの宛先を pid で固定する（userInfo["pid"]）
         case setPasteTarget
+        /// 記録の一時停止・再開（メニューの「記録を一時停止」と同じ）
+        case pause
+        case resume
         /// 状態を書く
         case writeStatus
         case quit
@@ -60,6 +63,10 @@ final class DebugControl {
                     frontmostApp: front.map { SourceApp(bundleID: $0.bundleIdentifier, name: $0.localizedName) }))
         case .setPasteTarget:
             controller.pasteTargetOverride = pid
+        case .pause:
+            controller.setPaused(true)
+        case .resume:
+            controller.setPaused(false)
         case .writeStatus:
             break
         case .quit:

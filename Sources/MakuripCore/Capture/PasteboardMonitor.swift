@@ -38,19 +38,25 @@ public final class PasteboardMonitor {
     private var timer: Timer?
     private var lastChangeCount: Int
     private var pendingShortcut: CopyShortcutSignal?
+    /// 変化を見つけてから、書き込みが落ち着くのを待っているもの
+    private var pendingChange: PendingChange?
+    /// 変化を見つけてから読むまで待つ時間。0 ならその場で読む（単体テスト用）
+    public let settleDelay: TimeInterval
+    static let maxSettleAttempts = 5
     public private(set) var isPaused = false
     /// 取り込みの結果（ログ・UI の再読み込み用）。中身は含まない
     public var onEvent: ((Event) -> Void)?
 
     public init(
         pasteboard: NSPasteboard, store: ClipStore, limits: Limits, environment: Environment,
-        interval: TimeInterval = 0.25
+        interval: TimeInterval = 0.25, settleDelay: TimeInterval = 0.08
     ) {
         self.pasteboard = pasteboard
         self.store = store
         self.limits = limits
         self.environment = environment
         self.interval = interval
+        self.settleDelay = settleDelay
         // 起動した時点でペーストボードに載っているものは取り込まない（起動後の変化だけを記録する）
         self.lastChangeCount = pasteboard.changeCount
     }
@@ -92,7 +98,14 @@ public final class PasteboardMonitor {
         lastChangeCount = changeCount
     }
 
-    /// 変化があれば取り込む。変化がなければ nil
+    /// 変化があれば取り込む。
+    ///
+    /// 書き手は clearContents のあと writeObjects で項目を足すが、changeCount が増えるのは clearContents のときだけ。
+    /// その途中で読むと項目が欠けたまま取り込んでしまう（残りは二度と見えない）。なので変化を見つけたら型の並びを
+    /// 控え、`settleDelay` 待って並びが変わっていないことを確かめてから読む。変わっていればもう一度待つ。
+    ///
+    /// 戻り値: その場で取り込んだ（`settleDelay` が 0 の）ときの結果。待つときや変化がないときは nil で、
+    /// 結果は `onEvent` に届く
     @discardableResult
     public func poll() -> Event? {
         let current = pasteboard.changeCount
@@ -102,13 +115,62 @@ public final class PasteboardMonitor {
         let signal = pendingShortcut
         pendingShortcut = nil
 
-        let event = capture(at: now, signal: signal)
+        if isPaused {
+            pendingChange = nil
+            return emit(.skipped(.paused))
+        }
+        guard settleDelay > 0 else { return emit(capture(at: now, signal: signal)) }
+        pendingChange = PendingChange(
+            changeCount: current, detectedAt: now, signal: signal, typeSignature: typeSignature(), attempts: 0)
+        scheduleSettle()
+        return nil
+    }
+
+    private struct PendingChange {
+        var changeCount: Int
+        var detectedAt: Date
+        var signal: CopyShortcutSignal?
+        var typeSignature: [[String]]
+        var attempts: Int
+    }
+
+    private func scheduleSettle() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay) { [weak self] in
+            MainActor.assumeIsolated { self?.settle() }
+        }
+    }
+
+    private func settle() {
+        guard var change = pendingChange else { return }
+        // 待っている間に次のコピーが来た・書き戻した・一時停止したなら、この変化は捨てる（新しい方は次の poll が拾う）
+        guard pasteboard.changeCount == change.changeCount, !isPaused else {
+            pendingChange = nil
+            return
+        }
+        let signature = typeSignature()
+        if signature != change.typeSignature, change.attempts < Self.maxSettleAttempts {
+            change.typeSignature = signature
+            change.attempts += 1
+            pendingChange = change
+            scheduleSettle()
+            return
+        }
+        pendingChange = nil
+        emit(capture(at: change.detectedAt, signal: change.signal))
+    }
+
+    /// 項目ごとの型名の並び（データは読まない）
+    private func typeSignature() -> [[String]] {
+        (pasteboard.pasteboardItems ?? []).map { $0.types.map(\.rawValue) }
+    }
+
+    @discardableResult
+    private func emit(_ event: Event) -> Event {
         onEvent?(event)
         return event
     }
 
     private func capture(at now: Date, signal: CopyShortcutSignal?) -> Event {
-        if isPaused { return .skipped(.paused) }
         switch PasteboardReader.read(pasteboard, maxRepresentationBytes: limits.maxRepresentationBytes) {
         case .excluded:
             return .skipped(.excludedMarker)

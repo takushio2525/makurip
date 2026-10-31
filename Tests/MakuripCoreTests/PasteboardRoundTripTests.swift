@@ -99,7 +99,7 @@ struct PasteboardRoundTripTests {
             pasteboard: board.pasteboard, store: store, limits: .default,
             environment: .init(
                 now: { Date() }, frontmostApp: { SourceApp(bundleID: "com.example.front", name: "Front") },
-                keyMonitorActive: { keyMonitorActive }))
+                keyMonitorActive: { keyMonitorActive }), settleDelay: 0)
         #expect(monitor.poll() == nil)
         #expect(try store.count() == 0)
 
@@ -166,12 +166,41 @@ struct PasteboardRoundTripTests {
         let board = PrivatePasteboard()
         let monitor = PasteboardMonitor(
             pasteboard: board.pasteboard, store: store, limits: .default,
-            environment: .init(now: { Date() }, frontmostApp: { nil }, keyMonitorActive: { true }))
+            environment: .init(now: { Date() }, frontmostApp: { nil }, keyMonitorActive: { true }), settleDelay: 0)
         for _ in 0..<5 {
             board.write([[(PasteboardTypes.utf8PlainText, Data("repeat".utf8))]])
             monitor.poll()
         }
         #expect(try store.count() == 1)
         #expect(try store.items().first?.copyCount == 5)
+    }
+
+    @Test("書き込みの途中（clearContents のあと項目を足している最中）に見つけても、全項目が揃ってから取り込む")
+    func settlesBeforeCapture() async throws {
+        let dir = TemporaryDirectory()
+        let store = try ClipStore(directory: dir.url)
+        let board = PrivatePasteboard()
+        var events: [PasteboardMonitor.Event] = []
+        let monitor = PasteboardMonitor(
+            pasteboard: board.pasteboard, store: store, limits: .default,
+            environment: .init(now: { Date() }, frontmostApp: { nil }, keyMonitorActive: { true }), settleDelay: 0.05)
+        monitor.onEvent = { events.append($0) }
+
+        // 1 項目目だけ書いた瞬間に見つける
+        board.pasteboard.clearContents()
+        let first = NSPasteboardItem()
+        first.setString("part 1", forType: .string)
+        board.pasteboard.writeObjects([first])
+        #expect(monitor.poll() == nil)
+
+        // changeCount を増やさずに残りの項目が足される
+        let second = NSPasteboardItem()
+        second.setString("part 2", forType: .string)
+        board.pasteboard.writeObjects([second])
+
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(events.count == 1)
+        let item = try #require(try store.items().first)
+        #expect(item.pasteboardItemCount == 2)
     }
 }
