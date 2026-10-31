@@ -228,7 +228,8 @@ public struct AICLI {
         let abbreviation = object["abbreviation"]?.stringValue.map { "（\($0)）" } ?? ""
         return [
             object["id"]?.stringValue ?? "", (object["name"]?.stringValue ?? "（名前なし）") + abbreviation,
-            "\(object["characters"]?.intValue ?? 0) 文字",
+            object["characters"]?.intValue.map { "\($0) 文字" }
+                ?? (object["size"]?.stringValue == "hidden" ? "大きさは伏せる" : ""),
         ].joined(separator: "  ")
     }
 

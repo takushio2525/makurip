@@ -58,8 +58,12 @@ public final class SnippetController {
 
     // MARK: 変える
 
+    // どれも書く前にファイルを読み直す（外の AI の口・手が書いてから監視が読み直すまでの間や、見張りが外れているときに、
+    // 手元の古い値で外の変更を消さないため。編集中のものが外で消されていれば、その時点で知らせて「ない」と断る）
+
     @discardableResult
     public func add(_ draft: SnippetDraft, at index: Int? = nil) throws -> Snippet {
+        reload()
         var next = collection
         let snippet = try next.add(draft, at: index, now: clock())
         try write(next)
@@ -68,6 +72,7 @@ public final class SnippetController {
 
     @discardableResult
     public func update(id: UUID, with draft: SnippetDraft) throws -> Snippet {
+        reload()
         var next = collection
         let snippet = try next.update(id: id, with: draft, now: clock())
         if next != collection { try write(next) }
@@ -76,6 +81,7 @@ public final class SnippetController {
 
     @discardableResult
     public func remove(id: UUID) throws -> Snippet {
+        reload()
         var next = collection
         let snippet = try next.remove(id: id)
         try write(next)
@@ -83,6 +89,7 @@ public final class SnippetController {
     }
 
     public func move(id: UUID, to index: Int) throws {
+        reload()
         var next = collection
         try next.move(id: id, to: index)
         if next != collection { try write(next) }
@@ -90,6 +97,7 @@ public final class SnippetController {
 
     @discardableResult
     public func move(id: UUID, by delta: Int) throws -> Bool {
+        reload()
         var next = collection
         guard try next.move(id: id, by: delta) else { return false }
         try write(next)

@@ -3,9 +3,11 @@ import Foundation
 /// AI の口の道具の一覧と、引数の検証・実行。MCP（`MCPServer`）と `--ai` の CLI（`AICLI`）は、どちらもここを通す
 /// （同じ引数を同じ検証にかけ、同じ JSON を返す）。
 ///
-/// - 履歴の道具（`add_to_history`・`list_history`・`delete_secrets`・`delete_history`）は AI の口がオンのときだけ使える
-/// - 設定の道具（`settings_*`）はオフでも使える。中身は #4 の設定の CLI（`SettingsCLI`）で、検証も出力も同じ。
-///   設定には秘密が入っていないため（#4 の CLI もオン・オフなしで使える）。AI の口のオン・オフはここからは変えられない
+/// - 履歴の道具（`add_to_history`・`list_history`・`delete_secrets`・`delete_history`）・定型文の道具と、
+///   設定を変える道具（`settings_set`・`settings_reset`）は AI の口がオンのときだけ使える。設定を変えると、上限を下げて
+///   履歴を消したり、記録しないアプリを外したり、秘密の自動消去を遅らせたりできるため（#26）
+/// - 設定を読む道具（`settings_schema`・`settings_list`・`settings_get`）はオフでも使える（設定に秘密は入っていない）。
+///   中身は #4 の設定の CLI（`SettingsCLI`）で、検証も出力も同じ。AI の口のオン・オフはここからは変えられない
 /// - **AI の口をオンにする道具はない**（設定画面からだけ。`AIAccess`）
 /// - 行ったこと（メタデータだけ）を `AIActivityLog` に残す
 @MainActor
@@ -15,7 +17,7 @@ public final class AITools {
         public let title: String
         public let description: String
         public let inputSchema: JSONValue
-        /// 履歴を触る（AI の口がオンのときだけ使える）
+        /// 履歴・定型文を触るか、履歴を減らしうる（AI の口がオンのときだけ使える）
         public let needsAccess: Bool
         /// 何も変えない
         public let readOnly: Bool
@@ -167,7 +169,7 @@ public final class AITools {
         let secret =
             result.flags.contains(.secretKnownFormat)
             ? "high" : result.flags.contains(.secretLikely) ? "medium" : "none"
-        var parts = [result.movedToTop ? "同じ内容が既にあったので先頭へ移しました" : "\(result.kind.label)を履歴に追加しました"]
+        var parts = [result.movedToTop ? "AI が前に足した同じ内容を先頭へ移しました" : "\(result.kind.label)を履歴に追加しました"]
         if result.pinned { parts.append("ピン留めしました") }
         if result.copiedToClipboard { parts.append("クリップボードにも置きました") }
         if secret != "none" {
@@ -490,7 +492,7 @@ extension AITools {
     static let filterProperties: [String: JSONValue] = [
         "kind": enumProperty(ClipKind.allCases.map(\.rawValue), kindDescription),
         "secret": enumProperty(AISecretFilter.allCases.map(\.rawValue), secretDescription),
-        "addedByAI": property("boolean", "true なら AI が追加したもの（同じ内容を AI が追加し直したものを含む）だけ、false ならそれ以外"),
+        "addedByAI": property("boolean", "true なら AI が追加したものだけ、false ならそれ以外（AI の追加は、人がコピーした同じ内容とは別の項目になる）"),
         "withinMinutes": property(
             "integer", "最後にコピー・使ってからこの分数以内のもの（「さっきの」なら 10〜30 くらい）",
             extra: ["minimum": .int(1), "maximum": .int(525_600)]),
@@ -508,7 +510,7 @@ extension AITools {
         Tool(
             name: Name.add, title: "履歴に追加",
             description:
-                "Makurip のクリップボード履歴に 1 件追加する（例:「このコマンドを履歴に入れておいて」）。text・imagePath（画像ファイルの絶対パス）・filePaths（ファイルの参照。Finder でコピーしたのと同じ形）のどれか 1 つ。種類（コード・コマンド・URL など）と秘密っぽいかは Makurip が形式から判定する。秘密っぽい形式なら一覧で伏せ字になり、確度「高」は時間が来ると自動で消える。copyToClipboard: true でクリップボードにも置く（既定は置かない）。返すのは id と形式の情報だけ。AI の口がオンのときだけ使える。",
+                "Makurip のクリップボード履歴に 1 件追加する（例:「このコマンドを履歴に入れておいて」）。text・imagePath（画像ファイルの絶対パス）・filePaths（ファイルの参照。Finder でコピーしたのと同じ形）のどれか 1 つ。種類（コード・コマンド・URL など）と秘密っぽいかは Makurip が形式から判定する。秘密っぽい形式なら一覧で伏せ字になり、確度「高」は時間が来ると自動で消える。copyToClipboard: true でクリップボードにも置く（既定は置かない）。人がコピーした項目に同じ内容があっても合流せず、別の項目として足す（AI が前に足した同じ内容なら先頭へ移す）。返すのは id と形式の情報だけ。AI の口がオンのときだけ使える。",
             inputSchema: schema([
                 "text": property("string", "履歴に入れる文字（50 MB まで）"),
                 "imagePath": property("string", "画像ファイルの絶対パス（png・jpeg・tiff・gif・heic・webp・bmp・pdf）"),
@@ -559,22 +561,22 @@ extension AITools {
         Tool(
             name: Name.settingsSchema, title: "設定項目の一覧",
             description:
-                "Makurip の設定項目の一覧（ID・型・既定値・いまの値・取りうる値・説明・頼みの例）。「候補窓は出さないで」のような頼みを、label・description・examples から項目と値に結びつけるときにまず読む。設定に秘密は入っていない。AI の口がオフでも使える。",
+                "Makurip の設定項目の一覧（ID・型・既定値・いまの値・取りうる値・説明・頼みの例）。「候補窓は出さないで」のような頼みを、label・description・examples から項目と値に結びつけるときにまず読む。設定に秘密は入っていない。AI の口がオフでも読める（変える settings_set・settings_reset はオンのときだけ）。",
             inputSchema: schema([:]), needsAccess: false, readOnly: true, destructive: false, logged: false),
         Tool(
             name: Name.settingsList, title: "いまの設定",
-            description: "Makurip のいまの設定の値（changed は既定から変えた項目）・キーの重なり・設定ファイルの読めなかった項目。AI の口がオフでも使える。",
+            description: "Makurip のいまの設定の値（changed は既定から変えた項目）・キーの重なり・設定ファイルの読めなかった項目。AI の口がオフでも読める。",
             inputSchema: schema([:]), needsAccess: false, readOnly: true, destructive: false, logged: false),
         Tool(
             name: Name.settingsGet, title: "設定の値",
-            description: "Makurip の設定 1 つの値。AI の口がオフでも使える。",
+            description: "Makurip の設定 1 つの値。AI の口がオフでも読める。",
             inputSchema: schema(
                 ["id": property("string", "設定項目の ID（settings_schema の id。例: hotkeyMode・keys.open）")], required: ["id"]),
             needsAccess: false, readOnly: true, destructive: false, logged: false),
         Tool(
             name: Name.settingsSet, title: "設定を変える",
             description:
-                "Makurip の設定を変える（例:「候補窓は出さないで」→ id: hotkeyMode, value: paste。「呼び出しを ⌥V にして」→ id: keys.open, value: ⌥V。「Safari のコピーは残さないで」→ id: excludedApps, operation: add, value: com.apple.Safari）。設定画面と同じ検証を通し、通らなければ理由を返すので、理由を読んで値を直すかユーザーに確かめる。動いている Makurip にすぐ効く。AI の口のオン・オフはここでは変えられない（設定画面からだけ）。AI の口がオフでも使える。",
+                "Makurip の設定を変える（例:「候補窓は出さないで」→ id: hotkeyMode, value: paste。「呼び出しを ⌥V にして」→ id: keys.open, value: ⌥V。「Safari のコピーは残さないで」→ id: excludedApps, operation: add, value: com.apple.Safari）。設定画面と同じ検証を通し、通らなければ理由を返すので、理由を読んで値を直すかユーザーに確かめる。動いている Makurip にすぐ効く。上限（maxItems・maxTotalMB）を下げると、超えた分の履歴（ピン留め以外）がすぐに消え、元に戻せない。記録しないアプリ（excludedApps）から外すとそのアプリのコピーも記録され、secretAutoDeleteMinutes を延ばすと秘密が長く残る。こうした変更は、ユーザーが頼んだときだけ行う。AI の口のオン・オフはここでは変えられない（設定画面からだけ）。AI の口がオンのときだけ使える。",
             inputSchema: schema(
                 [
                     "id": property("string", "設定項目の ID（settings_schema の id）"),
@@ -586,13 +588,14 @@ extension AITools {
                     "operation": enumProperty(
                         ["set", "add", "remove"], "set（既定。置き換える）・add・remove（並び・アプリごとの項目・キーに 1 つ足す / 外す）"),
                     "takeOver": property("boolean", "キーが他の操作と重なったら、その操作から外して付け替える（既定 false = 拒否する）"),
-                ], required: ["id", "value"]), needsAccess: false, readOnly: false, destructive: false, logged: true),
+                ], required: ["id", "value"]), needsAccess: true, readOnly: false, destructive: true, logged: true),
         Tool(
             name: Name.settingsReset, title: "設定を既定に戻す",
-            description: "Makurip の設定を既定に戻す。ids（項目の ID の並び）か all: true のどちらか。AI の口がオフでも使える。",
+            description:
+                "Makurip の設定を既定に戻す。ids（項目の ID の並び）か all: true のどちらか。上限を既定より上げていた項目を戻すと、超えた分の履歴（ピン留め以外）がすぐに消え、元に戻せない。記録しないアプリの一覧も既定に戻る。ユーザーが頼んだときだけ行う。AI の口がオンのときだけ使える。",
             inputSchema: schema([
                 "ids": property("array", "既定に戻す項目の ID の並び", extra: ["items": .object(["type": .string("string")])]),
                 "all": property("boolean", "すべての設定を既定に戻す"),
-            ]), needsAccess: false, readOnly: false, destructive: false, logged: true),
+            ]), needsAccess: true, readOnly: false, destructive: true, logged: true),
     ]
 }

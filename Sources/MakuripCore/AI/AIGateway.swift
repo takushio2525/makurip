@@ -223,7 +223,7 @@ public final class AIGateway {
             "appRunning": .bool(running),
             "isolatedDataDirectory": .bool(isolated),
             "historyTools": .string(enabled ? "使える" : "使えない（AI の口がオフ）"),
-            "settingsTools": .string("使える（設定に秘密は入っていない）"),
+            "settingsTools": .string(enabled ? "読み書きできる" : "読むだけ（変えるのは AI の口がオンのときだけ）"),
         ]
         if enabled, let store = existingStore(), let items = try? store.items() {
             object["itemCount"] = .int(items.count)
@@ -232,7 +232,7 @@ public final class AIGateway {
         }
         var message =
             enabled
-            ? "AI の口はオンです。履歴への追加・形式の一覧・秘密の削除・条件での削除ができます（中身は見られません）。"
+            ? "AI の口はオンです。履歴への追加・形式の一覧・秘密の削除・条件での削除・設定の変更ができます（中身は見られません）。"
             : AIAccess.disabledMessage
         if !running {
             message += "Makurip が動いていません（このデータフォルダで）。追加したものは、次に起動したときに一覧に出ます。"
@@ -245,7 +245,7 @@ public final class AIGateway {
 
     public struct AddResult: Sendable, Equatable {
         public var id: UUID
-        /// 同じ内容が既にあって先頭へ移した
+        /// AI が前に足した同じ内容があって、先頭へ移した（人のコピーには合流しないので、人の履歴にあるかは分からない）
         public var movedToTop: Bool
         public var kind: ClipKind
         public var flags: Set<ClipFlag>
@@ -270,6 +270,8 @@ public final class AIGateway {
             throw AIToolError.invalid("入れるものが空です。")
         }
         clip.flags.insert(.addedByAI)
+        // 人のコピーとは別の空間（人の項目に合流させない。合流すると、推した値があるかが分かる）
+        clip.contentHash = ContentHasher.aiAdded(clip.contentHash)
         let result: ClipStore.SaveResult
         do {
             try store.setLimits(limits)

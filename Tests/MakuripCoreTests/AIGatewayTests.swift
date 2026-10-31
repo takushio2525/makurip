@@ -228,11 +228,16 @@ struct AIAccessTests {
             #expect(output.exitCode == AICLI.ExitCode.rejected)
             #expect(output.stderr.contains("設定画面からだけ"))
         }
+        // 設定を変える道具は、オフなら門で断り、オンでも口の項目は「設定画面からだけ」と断る
+        let on = try AIHarness()
         for id in ["aiAccess", "AIAccess", "ai.access", "mcp", "ai"] {
             #expect(
-                ai.error(AITools.Name.settingsSet, ["id": string(id), "value": .bool(true)])?.code == .settingsRejected)
+                ai.error(AITools.Name.settingsSet, ["id": string(id), "value": .bool(true)])?.code == .aiAccessDisabled)
+            #expect(ai.error(AITools.Name.settingsReset, ["ids": .array([string(id)])])?.code == .aiAccessDisabled)
+            #expect(
+                on.error(AITools.Name.settingsSet, ["id": string(id), "value": .bool(true)])?.code == .settingsRejected)
+            #expect(on.error(AITools.Name.settingsReset, ["ids": .array([string(id)])])?.code == .settingsRejected)
             #expect(ai.error(AITools.Name.settingsGet, ["id": string(id)])?.code == .settingsRejected)
-            #expect(ai.error(AITools.Name.settingsReset, ["ids": .array([string(id)])])?.code == .settingsRejected)
             let settings = SettingsCLI(file: SettingsFile(directory: ai.dir.url)).run(["set", id, "true"])
             #expect(settings.exitCode == SettingsCLI.ExitCode.rejected)
             #expect(settings.stderr.contains("設定画面からだけ"))
@@ -528,7 +533,7 @@ struct AIDeleteTests {
 struct AISettingsToolTests {
     @Test("検証に通らない値は、設定の CLI と同じ理由で拒否する")
     func sameValidationAsCLI() throws {
-        let ai = try AIHarness(enabled: false)
+        let ai = try AIHarness()
         let cli = SettingsCLI(file: SettingsFile(directory: ai.dir.url))
         for (id, value, args) in [
             ("maxItems", JSONValue.int(5), ["5"]), ("keys.open", string("V"), ["V"]),
@@ -545,7 +550,7 @@ struct AISettingsToolTests {
 
     @Test("頼みの例（候補窓は出さないで・呼び出しを ⌥V に・Safari は残さないで）が通り、設定ファイルに書く")
     func examples() throws {
-        let ai = try AIHarness(enabled: false)
+        let ai = try AIHarness()
         _ = try ai.ok(AITools.Name.settingsSet, ["id": string("hotkeyMode"), "value": string("paste")])
         let keys = try ai.ok(AITools.Name.settingsSet, ["id": string("keys.open"), "value": string("⌥V")])
         #expect(keys.objectValue?["value"] == .array([string("⌥V")]))
