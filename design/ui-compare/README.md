@@ -5,6 +5,7 @@
 フェーズ3（#3）でコードの色付け・コマンドのプロンプト・コピー元のページを足した（「コードの色付け」）。
 フェーズ4（#4）で設定画面（試作の設定シート）を足した（「設定画面」）。
 フェーズ5（#5）で秘密の伏せ字と ⌥ での表示を足した（「秘密」）。
+フェーズ7（#7）で定型文の一覧（⌘S）と定型文の窓を足した（「定型文」）。
 画面ロック中でも作れる（試作はヘッドレス Chrome、SwiftUI はオフスクリーン描画）。
 
 ## 作り直し方
@@ -37,7 +38,7 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 
 ### 意図して変えたところ・範囲外のもの
 
-- **定型文のタブ・「⌘S 定型文を見る」がない**: 定型文は #7。押しても何も起きない入口は置かない（設定の歯車は #4 で足した。押すと設定画面を開く）
+- ~~**定型文のタブ・「⌘S 定型文を見る」がない**: 定型文は #7。押しても何も起きない入口は置かない~~（#7 で足した。`compare-empty-history.png` に「⌘S 定型文を見る」が出る）
 - **カードのコピー方法が「⌘C」でなく「キー」**: 取り込みでは ⌘C と ⌘X を見分けていない（詳細は「キー操作（⌘C / ⌘X）」）
 - **⌘E のアプリ選択をパネルの内側に収めた**: 試作はパネルの右へはみ出すが、窓の外に出すには別の窓とフォーカスの扱いが要るため
 - **等幅の書体**: 試作の CSS は SF Mono を指定しているが、Chrome は名前で見つけられず Menlo で描いている。SwiftUI は指定どおり SF Mono（字幅が 2.6% 広い）
@@ -189,6 +190,46 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 
 - 信号機のボタンの位置（44pt のバーの中で上下の中央に来るか）・窓の影・Makurip を前面にしたときのフォーカス
 - キーの記録（全体のキー ⌃⌘V なども、記録の間はホットキーを外すので記録できるか）・「追加…」のメニューと「その他…」の選ぶ画面
+
+## 定型文（#7・2026-10-31）
+
+試作の定型文の一覧（`b.html` で ⌘S。`screenshots/b-snippets.png`）と SwiftUI を並べた。試作側は `b-states.html` に `state=snippets`（と `q=…` の検索語）を足して撮る。
+データは試作と同じ 6 件（`SampleHistory.snippets`）。試作に定型文の**窓**（登録・編集）はないので、窓は見た目の元にした試作の設定シートと並べた。
+
+| 状態 | 画像 |
+|---|---|
+| 定型文の一覧（2 件目を選択。`b-snippets.png` と同じ）・ダーク（4 件目まで送る） | `images/compare-snippets.png`・`images/compare-snippets-dark.png` |
+| ⌘Y の定型文（差し込みの札と説明） | `images/compare-peek-snippet-light.png`・`images/compare-peek-snippet-dark.png` |
+| 検索（rebyu- → レビュー） | `images/compare-snippets-search.png` |
+| 履歴が空（「⌘S 定型文を見る」） | `images/compare-empty-history.png` |
+| 定型文の窓（試作の設定シートと並べる）: 編集・新しい下書き（履歴から登録） | `images/compare-snippet-editor-light.png`・`images/compare-snippet-editor-dark.png`・`images/compare-snippet-editor-new-light.png`・`images/compare-snippet-editor-new-dark.png` |
+| 一覧のエッジケース（試作に無い）: 0 件・長い名前と空白のない長い行・10 行・壊れた記法・同じ名前・差し込みだらけ・300 件 | `images/edge-snippets-empty.png`・`images/edge-snippets-empty-dark.png`・`images/edge-snippets-long.png`・`images/edge-snippets-long-dark.png`・`images/edge-snippets-many.png` |
+| 窓のエッジケース: 保存できない（本文が空）・0 件・ファイルに読めない項目・長いもの・300 件 | `images/edge-snippet-editor-error.png`・`images/edge-snippet-editor-empty-dark.png`・`images/edge-snippet-editor-issues.png`・`images/edge-snippet-editor-long.png`・`images/edge-snippet-editor-many.png` |
+| 設定画面の「定型文」のまとまり（日付の書き方） | `images/edge-settings-snippet.png` |
+
+### 見比べた結果
+
+タブ（種類は薄く・定型文のタブは青）・見出し（「定型文 6 件　⌘S 履歴に戻る」）・薄くした絞り込み・カードの名前と本文 3 行・差し込みの札（色・角丸・大きさ・行の中の位置）・
+「定型文 · ;略語」・番号・カードの高さと位置に大きなずれはない（ライト・ダークとも）。見比べで次を直した。
+
+- **札のある行が高かった**: 最初は札を SwiftUI の `Text(Image)` で文に入れたが、基準線より下に出る分だけ行が高くなり（約 24pt。試作は 18.85pt）、2 枚目から下のカードがずれた。
+  本文を TextKit で組み、段落の行の高さを CSS の line-height に固定して、札を `NSTextAttachment` にした（`SnippetBodyText`）
+- **3 行で切ったときの「…」**: TextKit の行数の上限に任せると、空の 3 行目を飛ばして 4 行目の文を出していた。CSS の line-clamp と同じく、
+  先頭の 3 行で切って末尾に「…」を足すようにした（PR の説明テンプレートの 3 行目が「…」だけになる）
+
+### 意図して変えたところ・試作に無いもの
+
+- **⌘Y の説明に編集のキー**: 試作の「色の付いた部分は貼り付けるときに置き換わります（日付 → 今日の日付、クリップボード → 最新のテキスト）。」の下に
+  「⇧⌘S で編集します。」を足した（試作に編集の画面がないので、入口のキーをここで示す）。日付は今日の日付を設定の書き方で出す
+- **定型文が 0 件の一覧**: 試作は 6 件の見本で 0 件にならない。履歴の空の案内と同じ形で「定型文はまだありません」と「⇧⌘S 新しい定型文」を出す
+- **定型文の窓**: 試作に無い。設定シートと同じ窓の色・44pt の題名のバー・リードの文・選んだ行の色・下の段のキーのヒントにそろえた。
+  左に一覧（番号・名前・略語・本文の 1 行目、上下のボタンで並べ替え）、右に名前・略語・本文（差し込みに定型文の色）と、差し込みを入れる札
+- **⌘Y の本文は選べない**: 試作は文字を選べるが、札を画像にしているので、選んでコピーすると札が文字にならない。貼るのは ↩ で行う
+- **⌘⌫ で定型文を消さない**: 試作どおり（一覧では消せない）。消すのは定型文の窓で、確かめてから
+
+### オフスクリーン描画では分からないこと（実機で確かめる。#9）
+
+- 本物のアプリに貼ったときの置き換えと `{{カーソル}}` の位置・定型文の窓での日本語入力・削除の確かめ（シート）・窓を閉じたときの保存
 
 ## 開く速さ（`images/open-speed.txt`・`images/store-speed.txt`）
 

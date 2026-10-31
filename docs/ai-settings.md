@@ -72,6 +72,9 @@ $MAKURIP --settings list
 | 履歴の削除は ⌥⌫ にして | `keys.delete` | `⌥⌫` | `set keys.delete ⌥⌫` |
 | API キーは 1 時間で消して | `secretAutoDeleteMinutes`（秘密を自動で消すまで） | `60`（`1時間` とも書ける） | `set secretAutoDeleteMinutes 1時間` |
 | 隠した内容は ⌘ を押している間に見せて | `keys.reveal`（隠した内容を表示） | `⌘`（修飾キー 1 つ） | `set keys.reveal ⌘` |
+| 定型文の日付をハイフン区切りにして | `snippetDateFormat`（日付の書き方） | `hyphen`（2026-10-31） | `set snippetDateFormat hyphen` |
+| 日付は「2026年10月31日」のように | `snippetDateFormat` | `japanese` | `set snippetDateFormat japanese` |
+| 定型文を開くキーを ⌘J にして | `keys.snippets`（定型文を表示） | `⌘J` | `set keys.snippets ⌘J` |
 
 補足:
 
@@ -152,7 +155,8 @@ $ Makurip --settings add candPasteTiming Slack=onCommit
 | `candPasteTiming` | 確定まで貼らないアプリ | バンドル ID → `immediate` / `onCommit` | なし（ターミナル・チャットは既定で `onCommit`） |
 | `candIdleTimeout` | 候補窓を自動で閉じるまで（詳細） | 数 2〜120（秒） | 10 |
 | `candReplaceMethod` | 差し替え方式の決め打ち（詳細・画面には出さない） | バンドル ID → `selectRange` / `undo` / `deferred` | なし |
-| `keys.<操作 ID>` | 各操作のキー（25 個） | キーの並び | 試作どおり |
+| `snippetDateFormat` | 日付の書き方（定型文の `{{日付}}`） | `slash`（2026/10/31）/ `hyphen`（2026-10-31）/ `japanese`（2026年10月31日） | `slash` |
+| `keys.<操作 ID>` | 各操作のキー（27 個。秘密の `keys.reveal`、定型文の `keys.snippets`・`keys.editSnippet` を含む） | キーの並び | 試作どおり |
 
 設定にしないもの: パスワード等の印（ConcealedType）が付いたコピーを保存しない動き（プライバシーを守る振る舞いは、
 AI や他のアプリが設定ファイルを書き換えても弱められないようにしてある）・監視の間隔などの内部の定数。

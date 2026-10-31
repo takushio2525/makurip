@@ -160,7 +160,7 @@ public enum KeyCodes {
 ///
 /// 設定スキーマ（`SettingsSchema`）は操作ごとに `keys.<ID>` の項目を作り、設定画面・CLI・AI（MCP）が同じ ID と説明文で付け替える。
 /// ID（rawValue）と並びは試作（`makurip-design/ui/shared/core.js` の `Mk.ACTIONS`）と同じにしてある。
-/// 定型文の操作は #7 で足す。
+/// `editSnippet` は試作に無い（定型文の窓を開く。#7）。
 public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case openHistory = "open"
     case openList
@@ -176,12 +176,14 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case cycleMethod = "method"
     case chooseApp = "app"
     case pinnedOnly = "pinned"
+    case snippets
     case togglePin = "pin"
     case preview = "look"
     case reveal
     case openSource = "source"
     case delete
     case settings
+    case editSnippet
     case candidateUp = "candUp"
     case candidateDown = "candDown"
     case candidateCommit = "candCommit"
@@ -211,8 +213,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         switch self {
         case .openHistory, .openList, .close: "呼び出す"
         case .previous, .next, .paste, .pastePlain, .copyOnly, .quickPaste: "選ぶ・貼る"
-        case .kindNext, .kindPrevious, .cycleMethod, .chooseApp, .pinnedOnly: "絞り込み"
-        case .togglePin, .preview, .reveal, .openSource, .delete, .settings: "項目の操作"
+        case .kindNext, .kindPrevious, .cycleMethod, .chooseApp, .pinnedOnly, .snippets: "絞り込み"
+        case .togglePin, .preview, .reveal, .openSource, .delete, .settings, .editSnippet: "項目の操作"
         case .candidateUp, .candidateDown, .candidateCommit, .candidateCancel, .candidateExpand: "候補窓"
         }
     }
@@ -233,12 +235,14 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .cycleMethod: "コピー方法を切り替え"
         case .chooseApp: "コピー元アプリを選ぶ"
         case .pinnedOnly: "ピン留めだけ表示"
+        case .snippets: "定型文を表示"
         case .togglePin: "ピン留めする／外す"
         case .preview: "大きくプレビュー"
         case .reveal: "隠した内容を表示（押している間）"
         case .openSource: "コピー元のページを開く"
         case .delete: "履歴から削除"
         case .settings: "設定を開く"
+        case .editSnippet: "定型文を編集／履歴から登録"
         case .candidateUp: "上の候補へ"
         case .candidateDown: "下の候補へ"
         case .candidateCommit: "確定"
@@ -265,6 +269,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .cycleMethod: "コピーの方法で絞る。すべて → キー操作 → ボタンなど の順に切り替わる。"
         case .chooseApp: "コピー元のアプリを一覧から選んで絞る。"
         case .pinnedOnly: "ピン留めした項目だけを表示する。もう一度押すと戻る。"
+        case .snippets: "定型文の一覧に切り替える。もう一度押すと履歴に戻る。"
         case .togglePin: "選んだ項目を固定し、古くなっても消えないようにする。"
         case .preview: "選んだ項目を大きく表示する（画像やコードの確認用）。"
         case .reveal:
@@ -272,6 +277,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .openSource: "コピーした元のページ（ブラウザや AI チャット）を開く。"
         case .delete: "選んだ項目を履歴から消す。"
         case .settings: "この設定画面を開く（一覧を閉じてから開く）。"
+        case .editSnippet:
+            "定型文の一覧では、選んだ定型文を編集する窓を開く（1 件もなければ新しく作る）。履歴の一覧では、選んだ項目の文字から新しい定型文を作る。"
         case .candidateUp: "候補窓で 1 つ上の履歴に貼り替える。ターミナル式の並びでは 1 つ古い履歴になる。"
         case .candidateDown: "候補窓で 1 つ下の履歴に貼り替える。ターミナル式の並びでは 1 つ新しい履歴になる。"
         case .candidateCommit: "貼った中身を確定して候補窓を閉じる。改行や送信はしない。"
@@ -303,12 +310,14 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .cycleMethod: [KeyCombo(.code(40), .command)]  // ⌘K
         case .chooseApp: [KeyCombo(.code(14), .command)]  // ⌘E
         case .pinnedOnly: [KeyCombo(.code(35), [.command, .shift])]  // ⌘⇧P
+        case .snippets: [KeyCombo(.code(1), .command)]  // ⌘S
         case .togglePin: [KeyCombo(.code(35), .command)]  // ⌘P
         case .preview: [KeyCombo(.code(16), .command)]  // ⌘Y
         case .reveal: [KeyCombo(.hold, .option)]  // ⌥ を押している間
         case .openSource: [KeyCombo(.code(31), .command)]  // ⌘O
         case .delete: [KeyCombo(.code(KeyCodes.delete), .command)]  // ⌘⌫
         case .settings: [KeyCombo(.code(KeyCodes.comma), .command)]  // ⌘,
+        case .editSnippet: [KeyCombo(.code(1), [.command, .shift])]  // ⌘⇧S
         case .candidateUp: [KeyCombo(.code(KeyCodes.upArrow))]
         case .candidateDown: [KeyCombo(.code(KeyCodes.downArrow))]
         case .candidateCommit: [KeyCombo(.code(KeyCodes.tab)), KeyCombo(.code(KeyCodes.returnKey))]

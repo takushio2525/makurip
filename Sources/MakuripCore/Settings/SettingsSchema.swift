@@ -135,6 +135,7 @@ public enum SettingID {
     public static let pasteTiming = CandidateSettings.Key.pasteTiming
     public static let idleTimeout = CandidateSettings.Key.idleTimeout
     public static let replaceMethod = CandidateSettings.Key.replaceMethod
+    public static let snippetDateFormat = "snippetDateFormat"
     public static let keyPrefix = "keys."
 
     public static func keys(_ action: KeyAction) -> String { keyPrefix + action.rawValue }
@@ -174,7 +175,7 @@ public struct SettingChange: Sendable {
 
 /// 設定項目の一覧（スキーマ）と、値の読み書き・検証。**検証はここの 1 か所だけ**で行い、画面・CLI・ファイルの読み込みが同じ関数を通す
 public enum SettingsSchema {
-    public static let behaviorGroups = ["動き", "履歴", "アプリごと", "詳細"]
+    public static let behaviorGroups = ["動き", "履歴", "定型文", "アプリごと", "詳細"]
 
     public static let items: [SettingItem] = behaviorItems + KeyAction.allCases.map(keyItem)
 
@@ -244,6 +245,15 @@ public enum SettingsSchema {
             kind: .appList,
             examples: [.init("Safari でコピーしたものは残さないで", .array([.string("com.apple.Safari")]))]),
         SettingItem(
+            id: SettingID.snippetDateFormat, group: "定型文", label: "日付の書き方",
+            summary: "定型文の {{日付}} を貼るときに入れる、今日の日付の書き方。",
+            kind: .choice(
+                SnippetDateFormat.allCases.map { SettingChoice($0.rawValue, $0.label, Self.dateFormatSummary($0)) }),
+            examples: [
+                .init("定型文の日付をハイフン区切りにして", .string("hyphen")),
+                .init("日付は「2026年10月31日」のように", .string("japanese")),
+            ]),
+        SettingItem(
             id: SettingID.pasteTiming, group: "アプリごと", label: "確定まで貼らないアプリ",
             summary:
                 "候補窓を出したとき、すぐ仮に貼るか、確定（Tab・Enter）するまで貼らないかをアプリごとに決める。ターミナルとチャット（Slack・Discord・LINE・メッセージなど）は、何も書かなくても確定まで貼らない。ここに書いたものはその既定より優先する。",
@@ -271,6 +281,14 @@ public enum SettingsSchema {
             examples: [.init("VS Code では ⌘Z で差し替えて", .object(["com.microsoft.VSCode": .string("undo")]))],
             advanced: true, shownInWindow: false),
     ]
+
+    static func dateFormatSummary(_ format: SnippetDateFormat) -> String {
+        switch format {
+        case .slash: "年/月/日（月と日は 2 桁）。"
+        case .hyphen: "年-月-日（月と日は 2 桁）。"
+        case .japanese: "年・月・日を漢字で（月と日は 1 桁のときは 1 桁）。"
+        }
+    }
 
     /// キーの項目。説明は試作の文のまま（効く範囲は CLI の型・JSON の keyScope で別に出す）
     static func keyItem(_ action: KeyAction) -> SettingItem {
@@ -308,6 +326,7 @@ public enum SettingsSchema {
         case SettingID.pasteTiming: return .object(settings.pasteTiming.mapValues { .string($0.rawValue) })
         case SettingID.idleTimeout: return .number(settings.idleTimeout)
         case SettingID.replaceMethod: return .object(settings.replaceMethod.mapValues { .string($0.rawValue) })
+        case SettingID.snippetDateFormat: return .string(settings.snippetDateFormat.rawValue)
         default: return nil
         }
     }
@@ -340,6 +359,8 @@ public enum SettingsSchema {
         case SettingID.pasteTiming: settings.pasteTiming = map.compactMapValues(PasteTiming.init)
         case SettingID.idleTimeout: settings.idleTimeout = value.doubleValue ?? AppSettings.default.idleTimeout
         case SettingID.replaceMethod: settings.replaceMethod = map.compactMapValues(ReplaceMethod.init)
+        case SettingID.snippetDateFormat:
+            settings.snippetDateFormat = value.stringValue.flatMap(SnippetDateFormat.init) ?? .default
         default: break
         }
     }

@@ -55,6 +55,10 @@ struct SettingsSnapshotTests {
             scroll($0, to: SettingID.idleTimeout)
             $0.beginEditing(SettingID.idleTimeout)
         },
+        // 定型文の日付の書き方（#7 で足した「定型文」のまとまり）
+        Scenario(name: "edge-settings-snippet", file: ["snippetDateFormat": .string("japanese")]) {
+            scroll($0, to: SettingID.snippetDateFormat)
+        },
         // 変えた直後の知らせ（下の段）
         Scenario(name: "edge-settings-message") { $0.choose(SettingID.candidateOrder, "ime") },
         // 設定ファイルに読めない値があったときの注記（変えるとファイルを書き直すので、何も変えずに写す）

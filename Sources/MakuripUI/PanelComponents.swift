@@ -245,10 +245,23 @@ struct EmptyStateView: View {
     }
 
     static func content(for model: HistoryPanelModel) -> Content {
+        if model.showsSnippets {
+            if !model.query.isEmpty, !model.allSnippets.isEmpty {
+                return Content(
+                    symbol: "magnifyingglass", title: "「\(model.query)」は見つかりませんでした",
+                    message: "名前・略語・本文から探します。ローマ字・ひらがな・カタカナ・半角でも探せます。", hint: (.close, "検索を消す"))
+            }
+            // 試作に無い状態（試作の定型文は 6 件の見本で、0 件にならない）
+            return Content(
+                symbol: PanelSymbols.snippet, title: "定型文はまだありません",
+                message: "よく使う文を登録しておくと、ここから貼れます。{{日付}} などの差し込みは、貼るときに置き換わります。",
+                hint: (.editSnippet, "新しい定型文"))
+        }
         if model.allItems.isEmpty {
             return Content(
                 symbol: "tray", title: "まだ履歴がありません",
-                message: "キー操作でも、コピーボタンでも、コピーしたものはここにたまります。画像・コード・ファイルも残ります。")
+                message: "キー操作でも、コピーボタンでも、コピーしたものはここにたまります。画像・コード・ファイルも残ります。",
+                hint: (.snippets, "定型文を見る"))
         }
         if !model.query.isEmpty {
             return Content(

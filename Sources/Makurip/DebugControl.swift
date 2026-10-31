@@ -25,6 +25,10 @@ final class DebugControl {
         /// 記録の一時停止・再開（メニューの「記録を一時停止」と同じ）
         case pause
         case resume
+        /// 定型文を貼る（userInfo["index"] は 1 からの番号、["mode"] は normal・plainText・copyOnly。一覧の Enter と同じ）
+        case pasteSnippet
+        /// 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る）
+        case clearHistory
         /// 状態を書く
         case writeStatus
         case quit
@@ -43,10 +47,12 @@ final class DebugControl {
             let observer = center.addObserver(
                 forName: Notification.Name(Self.prefix + command.rawValue), object: object, queue: .main
             ) { [weak self] notification in
+                let info = notification.userInfo ?? [:]
                 let pid =
-                    (notification.userInfo?["pid"] as? NSNumber)?.int32Value
-                    ?? (notification.userInfo?["pid"] as? String).flatMap { Int32($0) }
-                MainActor.assumeIsolated { self?.handle(command, pid: pid) }
+                    (info["pid"] as? NSNumber)?.int32Value ?? (info["pid"] as? String).flatMap { Int32($0) }
+                let index = (info["index"] as? NSNumber)?.intValue ?? (info["index"] as? String).flatMap { Int($0) }
+                let mode = (info["mode"] as? String).flatMap(PasteMode.init(rawValue:))
+                MainActor.assumeIsolated { self?.handle(command, pid: pid, index: index, mode: mode) }
             }
             observers.append(observer)
         }
@@ -54,7 +60,7 @@ final class DebugControl {
         Log.app.info("検証用の遠隔操作を有効にした")
     }
 
-    private func handle(_ command: Command, pid: Int32?) {
+    private func handle(_ command: Command, pid: Int32?, index: Int? = nil, mode: PasteMode? = nil) {
         guard let controller else { return }
         switch command {
         case .toggleHistory:
@@ -75,6 +81,13 @@ final class DebugControl {
             controller.setPaused(true)
         case .resume:
             controller.setPaused(false)
+        case .pasteSnippet:
+            let list = controller.snippets()
+            if let index, list.indices.contains(index - 1) {
+                controller.pasteSnippet(id: list[index - 1].id, mode: mode ?? .normal)
+            }
+        case .clearHistory:
+            controller.clearHistory()
         case .writeStatus:
             break
         case .quit:
@@ -104,6 +117,23 @@ final class DebugControl {
         return summary
     }
 
+    /// 定型文の件数・読み直した回数・読めなかった項目の数と、直近に貼った定型文の長さ（中身は出さない）
+    private static func snippetSummary(_ controller: AppController) -> [String: Any] {
+        var summary: [String: Any] = [
+            "count": controller.snippets().count,
+            "reloadCount": controller.snippetStore?.reloadCount ?? 0,
+            "issueCount": controller.snippetStore?.issues.count ?? 0,
+            "watching": controller.snippetStore?.isWatching ?? false,
+            "editorVisible": controller.isSnippetEditorVisible,
+            "dateFormat": controller.snippetDateFormat().rawValue,
+        ]
+        if let last = controller.lastSnippetPaste {
+            summary["lastPasteLength"] = last.length
+            summary["lastCursorOffsetFromEnd"] = last.cursorOffsetFromEnd ?? NSNull()
+        }
+        return summary
+    }
+
     func writeStatus() {
         guard let controller else { return }
         var status: [String: Any] = [
@@ -128,6 +158,7 @@ final class DebugControl {
             "candidateHotKeyMode": controller.candidate?.settings.hotKeyMode.rawValue ?? "",
             "settings": Self.settingsSummary(controller),
             "settingsVisible": controller.isSettingsVisible,
+            "snippets": Self.snippetSummary(controller),
             "secrets": controller.secretStatus,
         ]
         status["writtenAt"] = ISO8601DateFormatter().string(from: Date())

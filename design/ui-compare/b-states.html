@@ -50,6 +50,10 @@
     pi.value = 'めーる'; pi.dispatchEvent(new Event('input'));
   }
   if (S === 'peek-code') { A.move(1); A.setLook(true); }
+  // フェーズ7: 定型文の一覧（⌘S）。q=… で検索語を入れる（state=snippets&move=1&look=1 など）
+  if (S === 'snippets') A.setScope('snippets');
+  const Q = Mk.params.get('q');
+  if (Q) type(Q);
   // 種類で絞って n 件目を選び、⌘Y で開く（state=custom&kind=code&move=2&look=1。フェーズ3 のコード・コマンドの見比べ）
   const K = Mk.params.get('kind');
   if (K) A.setKind(K);

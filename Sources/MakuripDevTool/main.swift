@@ -334,6 +334,13 @@ func run() throws {
         source.releaseGlobally()
         print("restored items=\(snapshot.items.count) digest=\(digest(readSnapshot(.general)))")
 
+    case "pb-text":
+        // 名前付きペーストボードの平文（E2E が自分で書いたテストデータを確かめる用）。一般ペーストボードは読まない
+        guard let name = option("--pasteboard"), name != "general" else {
+            throw DevToolError(description: "--pasteboard に名前付きペーストボードの名前が要る（一般ペーストボードは読まない）")
+        }
+        print(NSPasteboard(name: NSPasteboard.Name(name)).string(forType: .string) ?? "", terminator: "")
+
     case "pb-release":
         guard let name = arguments.first else { throw DevToolError(description: "名前が要る") }
         NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally()
@@ -371,6 +378,8 @@ func run() throws {
             .standardizedFileURL.path
         var userInfo: [String: Any] = [:]
         if let pid = option("--pid") { userInfo["pid"] = pid }
+        if let index = option("--index") { userInfo["index"] = index }
+        if let mode = option("--mode") { userInfo["mode"] = mode }
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("com.takushio2525.makurip.debug." + name), object: path,
             userInfo: userInfo.isEmpty ? nil : userInfo, deliverImmediately: true)
@@ -447,8 +456,9 @@ let usage = """
       pb-stash --to NAME                       一般ペーストボードを名前付きへ退避
       pb-unstash --from NAME                   退避したものを一般ペーストボードへ戻して名前付きを消す
       pb-release NAME
+      pb-text --pasteboard NAME                名前付きペーストボードの平文（自作のテストデータの確認用。一般は読まない）
       post-keys --pid PID [--text S] [--key return|escape|up|down|cmd-v|cmd-c|cmd-a|cmd-s]   pid 宛てにキーを送る
-      notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|writeStatus|quit> [--pid PID]
+      notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|pasteSnippet|clearHistory|writeStatus|quit> [--pid PID] [--index N --mode normal|plainText|copyOnly]
       window-id --pid PID                      その pid のいちばん大きい窓の番号（screencapture -l 用）
       image-stats PATH                         画像が真っ黒でないかの確認用
       activate --pid PID                       その pid のアプリを前面に戻す

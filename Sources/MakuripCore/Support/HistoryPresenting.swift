@@ -18,12 +18,15 @@ public protocol HistoryPresenting: AnyObject {
     var debugState: [String: String] { get }
     /// キーの割り当てが変わった（設定から）。開いていれば画面のヒントもすぐ変える
     func keymapDidChange(_ keymap: Keymap)
+    /// 定型文が変わった（定型文の窓・ファイルの書き換え）。開いていれば読み直す
+    func snippetsDidChange()
 }
 
 extension HistoryPresenting {
     public var debugState: [String: String] { [:] }
     public func show(selecting itemID: UUID?) { show() }
     public func keymapDidChange(_ keymap: Keymap) {}
+    public func snippetsDidChange() {}
 }
 
 /// 貼り付けのしかた
@@ -56,6 +59,14 @@ public protocol HistoryActions: AnyObject {
     func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data?
     /// 設定画面を開く（一覧の ⌘,。UI は先に閉じておく）
     func openSettings()
+    /// 定型文（一覧の順）
+    func snippets() -> [Snippet]
+    /// 定型文の差し込みを置き換えて、元いたアプリへ貼る（UI は先に閉じておく）。履歴には足さない
+    func pasteSnippet(id: UUID, mode: PasteMode)
+    /// 定型文の窓を開く（UI は先に閉じておく）
+    func openSnippetEditor(_ request: SnippetEditRequest)
+    /// {{日付}} の書き方（プレビューの説明に使う）
+    func snippetDateFormat() -> SnippetDateFormat
 }
 
 extension HistoryActions {
@@ -67,6 +78,41 @@ extension HistoryActions {
     public func representationInfos(itemID: UUID) -> [RepresentationInfo] { [] }
     public func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data? { nil }
     public func openSettings() {}
+    public func snippets() -> [Snippet] { [] }
+    public func pasteSnippet(id: UUID, mode: PasteMode) {}
+    public func openSnippetEditor(_ request: SnippetEditRequest) {}
+    public func snippetDateFormat() -> SnippetDateFormat { .default }
+}
+
+/// 定型文の窓を開くときの頼み
+public enum SnippetEditRequest: Equatable, Sendable {
+    /// 開くだけ（前に選んでいたもの、なければ先頭を選ぶ）
+    case open
+    /// その定型文を選んで開く
+    case edit(UUID)
+    /// 新しい定型文の下書き（本文を入れておく。保存するまで一覧には足さない）
+    case new(body: String)
+    /// 履歴の項目の文字から新しい定型文の下書きを作る（本体が文字を読んで `new` にする）
+    case fromHistory(UUID)
+}
+
+/// 定型文の窓（`MakuripUI` が実装する）。値の読み書きは `SnippetController` を通す
+@MainActor
+public protocol SnippetEditorPresenting: AnyObject {
+    var isVisible: Bool { get }
+    /// 窓を出して前面にする
+    func show(_ request: SnippetEditRequest)
+    func close()
+}
+
+/// 定型文の窓が本体に聞くこと
+public struct SnippetEditorEnvironment {
+    /// {{日付}} の書き方（下書きの見本に使う）
+    public var dateFormat: @MainActor () -> SnippetDateFormat
+
+    public init(dateFormat: @escaping @MainActor () -> SnippetDateFormat = { .default }) {
+        self.dateFormat = dateFormat
+    }
 }
 
 /// 設定画面（`MakuripUI` が実装する）。値の読み書きは `SettingsController` を通す

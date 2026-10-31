@@ -22,16 +22,15 @@ struct KeymapTests {
         #expect(Set(KeyAction.allCases.map(\.rawValue)).count == KeyAction.allCases.count)
     }
 
+    /// 試作に無い `editSnippet`（定型文の窓を開く。#7）は「項目の操作」の最後に足した
     @Test("ID と並びは試作（core.js の Mk.ACTIONS）と同じ")
     func prototypeIDs() {
         let ids = KeyAction.allCases.map(\.rawValue)
         #expect(
             ids == [
                 "open", "openList", "close", "prev", "next", "paste", "pastePlain", "copyOnly", "quick", "kindNext",
-                "kindPrev", "method", "app", "pinned", "pin", "look", "reveal", "source", "delete", "settings",
-                "candUp",
-                "candDown",
-                "candCommit", "candCancel", "candExpand",
+                "kindPrev", "method", "app", "pinned", "snippets", "pin", "look", "reveal", "source", "delete",
+                "settings", "editSnippet", "candUp", "candDown", "candCommit", "candCancel", "candExpand",
             ])
     }
 

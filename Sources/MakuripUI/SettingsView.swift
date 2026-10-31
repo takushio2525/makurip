@@ -97,11 +97,13 @@ struct SettingsView: View {
 
 /// 窓の上のバー（試作の .set-bar。信号機のボタンは本物の窓のものが重なる）
 struct SettingsTitleBar: View {
+    /// 題名（定型文の窓も同じバーを使う）
+    var title = "Makurip 設定"
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Text("Makurip 設定")
+        Text(title)
             .css(SettingsCSS.title)
             .foregroundStyle(palette.text)
             .frame(maxWidth: .infinity)

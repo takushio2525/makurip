@@ -64,22 +64,23 @@ private struct PanelContent: View {
     }
 }
 
-/// 上段のタブ（種類 9 つ｜ピン留め）
+/// 上段のタブ（種類 9 つ｜ピン留め・定型文）。定型文の一覧では種類のタブを薄くして効かなくする（試作と同じ）
 private struct KindTabs: View {
     let model: HistoryPanelModel
     @Environment(\.palette) private var palette
 
     var body: some View {
+        let snippets = model.showsSnippets
         HStack(spacing: 1) {
             ForEach(HistoryFilter.kindTabs, id: \.self) { kind in
-                let on = model.kind == kind
+                let on = model.kind == kind && !snippets
                 let color = palette.kind(kind)
                 TabButton(
                     symbol: PanelSymbols.kind(kind),
                     iconColor: kind == nil ? (on ? palette.text : palette.text2) : color,
                     background: on ? (kind == nil ? palette.fill2 : color.opacity(0.17)) : .clear,
                     border: on ? (kind == nil ? palette.sep : color.opacity(0.4)) : .clear,
-                    help: "\(KindNames.label(kind))（\(model.kindCounts[kind] ?? 0) 件）"
+                    help: "\(KindNames.label(kind))（\(model.kindCounts[kind] ?? 0) 件）", disabled: snippets
                 ) { model.setKind(kind) }
             }
             Rectangle().fill(palette.sep).frame(width: 0.5, height: 18).padding(.horizontal, 5)
@@ -89,6 +90,11 @@ private struct KindTabs: View {
                 background: model.pinnedOnly ? palette.accent : .clear, border: .clear,
                 help: "ピン留め（\(pinnedHint)）"
             ) { model.togglePinnedOnly() }
+            let snippetHint = model.keymap.primary(.snippets)?.displayString ?? ""
+            TabButton(
+                symbol: PanelSymbols.snippet, iconColor: snippets ? .white : palette.text2,
+                background: snippets ? palette.accent : .clear, border: .clear, help: "定型文（\(snippetHint)）"
+            ) { model.toggleSnippets() }
             Spacer(minLength: 0)
         }
         .padding(.top, 10)
@@ -102,6 +108,7 @@ private struct TabButton: View {
     let background: Color
     let border: Color
     let help: String
+    var disabled = false
     let action: () -> Void
 
     var body: some View {
@@ -116,16 +123,37 @@ private struct TabButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(disabled ? 0.3 : 1)
+        .disabled(disabled)
         .help(help)
     }
 }
 
-/// 選んでいる種類の名前と件数（すべて 27 件　⇥ 次の種類）
+/// 選んでいる種類の名前と件数（すべて 27 件　⇥ 次の種類）。定型文の一覧では「定型文 6 件　⌘S 履歴に戻る」
 private struct CaptionRow: View {
     let model: HistoryPanelModel
     @Environment(\.palette) private var palette
 
     var body: some View {
+        if model.showsSnippets {
+            HStack(spacing: 6) {
+                Text("定型文").fontWeight(.semibold).foregroundStyle(palette.snippet)
+                Text(verbatim: "\(model.snippetItems.count) 件").monospacedDigit().foregroundStyle(palette.text3)
+                Spacer(minLength: 0)
+                if let combo = model.keymap.primary(.snippets) {
+                    KeyChip(combo)
+                    Text("履歴に戻る").foregroundStyle(palette.text3)
+                }
+            }
+            .font(.system(size: 12))
+            .frame(height: 28)
+            .padding(.horizontal, 14)
+        } else {
+            historyCaption
+        }
+    }
+
+    private var historyCaption: some View {
         HStack(spacing: 6) {
             if model.pinnedOnly { Text("ピン留め · ") }
             Text(KindNames.label(model.kind))
@@ -182,22 +210,23 @@ private struct SearchRow: View {
     }
 }
 
-/// コピー方法（⌘K）とアプリ（⌘E）の絞り込み
+/// コピー方法（⌘K）とアプリ（⌘E）の絞り込み。定型文の一覧では薄くして効かなくする（試作と同じ）
 private struct FilterRow: View {
     let model: HistoryPanelModel
 
     var body: some View {
+        let disabled = model.showsSnippets
         HStack(spacing: 6) {
             FilterButton(
                 on: model.method != .all, combo: model.keymap.primary(.cycleMethod), help: "コピー方法で絞り込む",
-                action: { model.setMethod(model.method.next) }
+                disabled: disabled, action: { model.setMethod(model.method.next) }
             ) {
                 Image(systemName: PanelSymbols.methodFilter(model.method)).font(.system(size: 11.5))
                 Text(DisplayText.methodFilter(model.method))
             }
             FilterButton(
                 on: model.app != nil, combo: model.keymap.primary(.chooseApp), help: "コピー元のアプリで絞り込む",
-                action: { model.openPicker() }
+                disabled: disabled, action: { model.openPicker() }
             ) {
                 if let app = model.app {
                     AppIconView(bundleID: model.appBundleID, name: model.appName ?? app, size: 14)
@@ -218,6 +247,7 @@ private struct FilterButton<Label: View>: View {
     let on: Bool
     let combo: KeyCombo?
     let help: String
+    var disabled = false
     let action: () -> Void
     @ViewBuilder let label: () -> Label
     @Environment(\.palette) private var palette
@@ -243,6 +273,8 @@ private struct FilterButton<Label: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(disabled ? 0.4 : 1)
+        .disabled(disabled)
         .help(help)
         .frame(maxWidth: .infinity)
     }
@@ -255,8 +287,10 @@ private struct CardList: View {
     @Environment(\.palette) private var palette
 
     var body: some View {
-        if model.items.isEmpty {
+        if model.rowCount == 0 {
             EmptyStateView(model: model)
+        } else if model.showsSnippets {
+            SnippetCardList(model: model)
         } else {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -308,6 +342,48 @@ private struct CardList: View {
         } else if model.items.indices.contains(index) {
             proxy.scrollTo(model.items[index].id.uuidString)
         }
+    }
+}
+
+/// 定型文のカードの一覧（日付の見出しはない。試作と同じ）
+private struct SnippetCardList: View {
+    let model: HistoryPanelModel
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(model.snippetItems.enumerated()), id: \.element.id) { index, snippet in
+                        SnippetCardView(
+                            snippet: snippet, index: index, isSelected: index == model.selectedIndex,
+                            query: model.searchQuery, quickHeld: model.quickModifierHeld,
+                            quickCombo: model.keymap.primary(.quickPaste)
+                        )
+                        .id(snippet.id)
+                        .onTapGesture(count: 2) {
+                            model.select(index)
+                            model.pasteSelected(.normal)
+                        }
+                        .onTapGesture { model.select(index) }
+                    }
+                }
+                .padding(
+                    EdgeInsets(
+                        top: 4, leading: HistoryPanelView.listInset, bottom: 10, trailing: HistoryPanelView.listInset))
+            }
+            .scrollIndicators(.automatic)
+            .onAppear {
+                let index = model.selectedIndex
+                DispatchQueue.main.async { scroll(proxy, to: index) }
+            }
+            .onChange(of: model.selectedIndex) { _, index in scroll(proxy, to: index) }
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to index: Int) {
+        guard model.snippetItems.indices.contains(index) else { return }
+        let id = model.snippetItems[index].id
+        if index == 0 { proxy.scrollTo(id, anchor: .top) } else { proxy.scrollTo(id) }
     }
 }
 

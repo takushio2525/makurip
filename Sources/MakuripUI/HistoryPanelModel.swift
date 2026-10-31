@@ -17,6 +17,10 @@ final class HistoryPanelModel {
         var previewChanged: (Bool) -> Void = { _ in }
         /// 設定画面を開く（一覧を閉じてから）
         var openSettings: () -> Void = {}
+        /// 定型文を貼る（置き換えは本体が行う）
+        var pasteSnippet: (UUID, PasteMode) -> Void = { _, _ in }
+        /// 定型文の窓を開く（一覧を閉じてから）
+        var editSnippet: (SnippetEditRequest) -> Void = { _ in }
     }
 
     /// 一覧に読み込む最大件数。ストアの件数上限（既定 1000）より大きくして全件を読む
@@ -49,6 +53,11 @@ final class HistoryPanelModel {
     /// コピー元アプリ（`HistoryFilter.appKey(of:)`）
     private(set) var app: String?
     private(set) var pinnedOnly = false
+    /// 定型文の一覧を出しているか（⌘S。試作の scope = snippets）
+    private(set) var showsSnippets = false
+    private(set) var allSnippets: [Snippet] = []
+    /// 検索で絞った定型文（表示している順）
+    private(set) var snippetItems: [Snippet] = []
     private(set) var selectedIndex = 0
     /// ⌘Y の大きいプレビュー
     private(set) var isPreviewOpen = false {
@@ -82,6 +91,7 @@ final class HistoryPanelModel {
     private(set) var pickerSelection = 0
 
     @ObservationIgnored private var haystacks: [UUID: (hash: String, text: String)] = [:]
+    @ObservationIgnored private var snippetHaystacks: [UUID: (snippet: Snippet, text: String)] = [:]
     @ObservationIgnored private var warmTask: Task<Void, Never>?
 
     init(actions: HistoryActions?, keymap: Keymap = .default) {
@@ -93,9 +103,23 @@ final class HistoryPanelModel {
         HistoryFilter(kind: kind, method: method, app: app, pinnedOnly: pinnedOnly, query: searchQuery)
     }
 
+    /// 選んでいる履歴（定型文の一覧では nil）
     var selected: ClipItem? {
-        items.indices.contains(selectedIndex) ? items[selectedIndex] : nil
+        guard !showsSnippets else { return nil }
+        return items.indices.contains(selectedIndex) ? items[selectedIndex] : nil
     }
+
+    /// 選んでいる定型文（履歴の一覧では nil）
+    var selectedSnippet: Snippet? {
+        guard showsSnippets else { return nil }
+        return snippetItems.indices.contains(selectedIndex) ? snippetItems[selectedIndex] : nil
+    }
+
+    /// {{日付}} の書き方（⌘Y の説明に使う）
+    var snippetDateFormat: SnippetDateFormat { actions?.snippetDateFormat() ?? .default }
+
+    /// いま出している行の数（履歴か定型文）
+    var rowCount: Int { showsSnippets ? snippetItems.count : items.count }
 
     /// 選んでいるアプリの表示名
     var appName: String? {
@@ -124,12 +148,14 @@ final class HistoryPanelModel {
         method = .all
         app = nil
         pinnedOnly = false
+        showsSnippets = false
         isPreviewOpen = false
         isPickerOpen = false
         pickerQuery = ""
         revealHeld = false
         revealPressed = false
         now = clock()
+        loadSnippets()
         reload(keepSelection: false)
         if let itemID, let index = items.firstIndex(where: { $0.id == itemID }) { selectedIndex = index }
         focusRequest += 1
@@ -172,18 +198,60 @@ final class HistoryPanelModel {
     }
 
     private func refresh(keepSelection: Bool) {
-        let previous = selected?.id
+        let previous = showsSnippets ? selectedSnippet?.id : selected?.id
         let previousIndex = selectedIndex
         let filter = self.filter
         items = filter.apply(to: allItems, haystack: haystack)
         kindCounts = filter.kindCounts(in: allItems, haystack: haystack)
         rows = PanelRow.make(items, now: now)
-        if keepSelection, let previous, let index = items.firstIndex(where: { $0.id == previous }) {
+        snippetItems =
+            searchQuery.isEmpty
+            ? allSnippets : allSnippets.filter { searchQuery.matches(normalized: snippetHaystack($0)) }
+        let ids = showsSnippets ? snippetItems.map(\.id) : items.map(\.id)
+        if keepSelection, let previous, let index = ids.firstIndex(of: previous) {
             selectedIndex = index
         } else if keepSelection {
-            selectedIndex = min(previousIndex, max(0, items.count - 1))
+            selectedIndex = min(previousIndex, max(0, ids.count - 1))
         } else {
             selectedIndex = 0
+        }
+    }
+
+    // MARK: 定型文
+
+    /// 定型文を読み直す（開いたとき・定型文の窓やファイルで変わったとき）
+    func reloadSnippets() {
+        loadSnippets()
+        refresh(keepSelection: true)
+    }
+
+    private func loadSnippets() {
+        allSnippets = actions?.snippets() ?? []
+        let alive = Set(allSnippets.map(\.id))
+        snippetHaystacks = snippetHaystacks.filter { alive.contains($0.key) }
+    }
+
+    /// 定型文の検索用の文字列（中身が変わったら作り直す。数百件でも打鍵のたびに正規化しないように）
+    func snippetHaystack(_ snippet: Snippet) -> String {
+        if let cached = snippetHaystacks[snippet.id], cached.snippet == snippet { return cached.text }
+        let text = snippet.searchHaystack
+        snippetHaystacks[snippet.id] = (snippet, text)
+        return text
+    }
+
+    /// ⌘S: 定型文の一覧と履歴を切り替える。ピン留めだけの表示は外す（試作の scope は 1 つ）
+    func toggleSnippets() {
+        showsSnippets.toggle()
+        if showsSnippets { pinnedOnly = false }
+        refresh(keepSelection: false)
+    }
+
+    /// 定型文の窓を開く。定型文の一覧では選んだものを編集、履歴の一覧では選んだ項目から新しく作る
+    func editSnippet() {
+        if showsSnippets {
+            effects.editSnippet(selectedSnippet.map { .edit($0.id) } ?? .new(body: ""))
+        } else {
+            effects.editSnippet(selected.map { .fromHistory($0.id) } ?? .new(body: ""))
         }
     }
 
@@ -200,6 +268,10 @@ final class HistoryPanelModel {
     }
 
     func perform(_ action: KeyAction, digit: Int? = nil) {
+        // 定型文の一覧では、絞り込み・ピン留め・削除は効かない（試作と同じ。コピー元のページはないので揺らす）
+        if showsSnippets, [.kindNext, .kindPrevious, .cycleMethod, .chooseApp, .togglePin, .delete].contains(action) {
+            return
+        }
         switch action {
         case .openHistory, .openList, .candidateUp, .candidateDown, .candidateCommit, .candidateCancel,
             .candidateExpand:
@@ -221,7 +293,7 @@ final class HistoryPanelModel {
         case .copyOnly:
             pasteSelected(.copyOnly)
         case .quickPaste:
-            guard let digit, items.indices.contains(digit - 1) else { return }
+            guard let digit, digit - 1 < rowCount else { return }
             selectedIndex = digit - 1
             pasteSelected(.normal)
         case .kindNext:
@@ -234,6 +306,8 @@ final class HistoryPanelModel {
             openPicker()
         case .pinnedOnly:
             togglePinnedOnly()
+        case .snippets:
+            toggleSnippets()
         case .togglePin:
             togglePin()
         case .preview:
@@ -246,14 +320,16 @@ final class HistoryPanelModel {
             deleteSelected()
         case .settings:
             effects.openSettings()
+        case .editSnippet:
+            editSnippet()
         }
     }
 
     // MARK: 操作（マウスからも呼ぶ）
 
     func select(_ index: Int) {
-        guard !items.isEmpty else { return }
-        selectedIndex = min(max(0, index), items.count - 1)
+        guard rowCount > 0 else { return }
+        selectedIndex = min(max(0, index), rowCount - 1)
     }
 
     func move(by delta: Int) {
@@ -261,6 +337,14 @@ final class HistoryPanelModel {
     }
 
     func pasteSelected(_ mode: PasteMode) {
+        if showsSnippets {
+            guard let snippet = selectedSnippet else {
+                shakeCount += 1
+                return
+            }
+            effects.pasteSnippet(snippet.id, mode)
+            return
+        }
         guard let item = selected else {
             shakeCount += 1
             return
@@ -269,6 +353,7 @@ final class HistoryPanelModel {
     }
 
     func setKind(_ kind: ClipKind?) {
+        guard !showsSnippets else { return }
         self.kind = kind
         refresh(keepSelection: false)
     }
@@ -280,6 +365,7 @@ final class HistoryPanelModel {
     }
 
     func setMethod(_ method: CopyMethodFilter) {
+        guard !showsSnippets else { return }
         self.method = method
         refresh(keepSelection: false)
     }
@@ -289,8 +375,14 @@ final class HistoryPanelModel {
         refresh(keepSelection: false)
     }
 
+    /// 定型文の一覧で押したら、履歴のピン留めだけの表示へ移る（試作の setScope('pinned')）
     func togglePinnedOnly() {
-        pinnedOnly.toggle()
+        if showsSnippets {
+            showsSnippets = false
+            pinnedOnly = true
+        } else {
+            pinnedOnly.toggle()
+        }
         refresh(keepSelection: false)
     }
 
@@ -312,7 +404,10 @@ final class HistoryPanelModel {
     }
 
     func openSource() {
-        guard let item = selected else { return }
+        guard let item = selected else {
+            if showsSnippets { shakeCount += 1 }
+            return
+        }
         // 秘密の URL（`?token=…` のリンク）の一覧用の平文は伏せ字なので使わない（コピー元のページだけを開く）
         let text =
             item.kind == .url && !item.isSecretLikely
@@ -332,6 +427,7 @@ final class HistoryPanelModel {
     // MARK: ⌘E のアプリ選択
 
     func openPicker() {
+        guard !showsSnippets else { return }
         pickerOptions = filter.appOptions(in: allItems, haystack: haystack)
         pickerQuery = ""
         pickerSelection = max(0, pickerOptions.firstIndex { $0.key == app } ?? 0)
@@ -374,7 +470,9 @@ final class HistoryPanelModel {
     var debugState: [String: String] {
         [
             "query": query,
-            "rowCount": String(items.count),
+            "rowCount": String(rowCount),
+            "showsSnippets": String(showsSnippets),
+            "snippetCount": String(allSnippets.count),
             "loadedCount": String(allItems.count),
             "selectedIndex": String(selectedIndex),
             "selectedKind": selected?.kind.rawValue ?? "",
