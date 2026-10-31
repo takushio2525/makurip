@@ -1,0 +1,68 @@
+# 全テキストは自動判定＋コミット時LF統一
+* text=auto eol=lf
+
+# 明示的にテキスト扱い
+*.c      text eol=lf
+*.cpp    text eol=lf
+*.h      text eol=lf
+*.hpp    text eol=lf
+*.ino    text eol=lf
+*.pde    text eol=lf
+*.py     text eol=lf
+*.tex    text eol=lf
+*.cls    text eol=lf
+*.sty    text eol=lf
+*.bib    text eol=lf
+*.md     text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.ini    text eol=lf
+*.toml   text eol=lf
+*.sh     text eol=lf
+
+# バイナリ扱い
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.zip    binary
+*.bin    binary
+*.elf    binary
+*.hex    binary
+
+# ===== Git LFS（必要になったら有効化する）=====
+# 提出物 PDF・回路図・動画・音源のように「大きくて何度も更新されるファイル」を
+# 普通にコミットすると、履歴に全バージョンが残ってリポジトリが数百 MB に膨らむ。
+# clone に何分もかかるようになると、チーム全員の作業効率が落ちる。
+#
+# 【有効化の手順】
+#   1. 全員が `git lfs install` を実行する（未実行の人が clone すると中身が
+#      ポインタファイルになり「PDF が壊れている」と騒ぎになる）
+#   2. 下のコメントを外して、追跡したい拡張子だけ有効にする
+#   3. `git add .gitattributes` してコミット
+#   4. すでにコミット済みのファイルは自動では移行されない
+#      （`git lfs migrate import --include="*.pdf"` が要る。履歴が書き換わるので
+#        チーム全員の作業を止めてから行う）
+#
+# 【注意】GitHub の LFS 無料枠はストレージ・帯域とも 1 GB/月。
+# 数 MB の PDF を毎日更新する程度なら問題ないが、動画を大量に入れると足りなくなる。
+# 迷うなら「まず LFS なしで始め、.git が 100 MB を超えたら検討する」でよい。
+#
+# *.pdf    filter=lfs diff=lfs merge=lfs -text
+# *.mp4    filter=lfs diff=lfs merge=lfs -text
+# *.mov    filter=lfs diff=lfs merge=lfs -text
+# *.wav    filter=lfs diff=lfs merge=lfs -text
+# *.zip    filter=lfs diff=lfs merge=lfs -text
+
+# ===== Makurip（Swift / macOS）で追加 =====
+*.swift  text eol=lf
+*.plist  text eol=lf
+*.entitlements text eol=lf
+Makefile text eol=lf
+*.icns   binary
+*.tiff   binary
+*.tif    binary
+*.heic   binary

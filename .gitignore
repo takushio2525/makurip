@@ -1,0 +1,46 @@
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ===== SwiftPM / Xcode のビルド成果物 =====
+.build/
+.swiftpm/
+DerivedData/
+build/
+dist/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+*.dSYM/
+*.dSYM.zip
+
+# 組み立てた .app（scripts/build-app.sh の出力先）
+/.app-build/
+*.app/
+
+# ===== ローカル署名設定（チーム ID・証明書のハッシュ = アカウント情報なのでコミットしない）=====
+# 雛形の Config/signing.local.env.example だけコミットする
+Config/signing.local.env
+*.xcconfig.local
+
+# ===== テスト用データ・検証の残骸 =====
+# 隔離したデータフォルダ・E2E のスクショ（ユーザー名や画面が写り込みうる）
+/.e2e/
+/e2e-out/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+screenshots/
+*.screenshot.png
+
+# ===== エディタ =====
+.vscode/
+.idea/
+*.swp
+*~
