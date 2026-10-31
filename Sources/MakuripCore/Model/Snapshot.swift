@@ -60,4 +60,17 @@ public struct PasteboardSnapshot: Sendable, Hashable {
         }
         return nil
     }
+
+    /// 文字だけを残した写し（「プレーンテキストで貼り付け」用）。平文の型がなければ nil
+    public func plainTextOnly() -> PasteboardSnapshot? {
+        let textTypes: Set<String> = [
+            PasteboardTypes.utf8PlainText, PasteboardTypes.plainText, PasteboardTypes.utf16PlainText,
+            PasteboardTypes.utf16ExternalPlainText,
+        ]
+        let kept = items.compactMap { item -> PasteboardItemSnapshot? in
+            let representations = item.representations.filter { textTypes.contains($0.type) }
+            return representations.isEmpty ? nil : PasteboardItemSnapshot(representations: representations)
+        }
+        return kept.isEmpty ? nil : PasteboardSnapshot(items: kept)
+    }
 }
