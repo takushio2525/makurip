@@ -55,10 +55,13 @@ struct SettingsSnapshotTests {
             scroll($0, to: SettingID.idleTimeout)
             $0.beginEditing(SettingID.idleTimeout)
         },
-        // 変えた直後の知らせ（下の段）と、設定ファイルに読めない値があったときの注記
-        Scenario(name: "edge-settings-message", file: ["maxItems": .string("たくさん")]) {
-            $0.choose(SettingID.candidateOrder, "ime")
-        },
+        // 変えた直後の知らせ（下の段）
+        Scenario(name: "edge-settings-message") { $0.choose(SettingID.candidateOrder, "ime") },
+        // 設定ファイルに読めない値があったときの注記（変えるとファイルを書き直すので、何も変えずに写す）
+        Scenario(
+            name: "edge-settings-file-issue", dark: true,
+            file: ["maxItems": .string("たくさん"), "keys.open": .array([.string("V")])]
+        ) { _ in },
     ]
 
     static func recordMethod(_ model: SettingsModel) {

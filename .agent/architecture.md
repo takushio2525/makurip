@@ -12,9 +12,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
-| `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:)`・`CandidateUIFactory.make(actions:keymap:)` | MakuripCore |
-| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・起動引数・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)` | MakuripCore |
+| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・ログイン時の起動（ServiceManagement）・起動引数・`--settings` の入口・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
 
 依存の向き: `Makurip` → `MakuripUI` → `MakuripCore`。逆向き（Core が UI・アプリを知る、UI がアプリを知る）は禁止。
@@ -31,7 +31,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 ### 呼び出しと貼り付け
 
-1. ⌃⌘V（`HotKeyCenter`。キーは `Keymap` の `openHistory` から引く）→ `AppController.toggleHistory` — 前面のアプリを `previousApp` に控えて一覧を開く
+1. 一覧を開くキー（`HotKeyCenter`。キーは設定の `keys.openList`、既定 ⌃⌥⌘V）・メニュー → `AppController.openList` — 前面のアプリを `previousApp` に控えて一覧を開く
 2. `PanelController.show` — 窓を出す**前に**前面のアプリの文字カーソルを AX で取り（`InsertionPointLocator`）、`PanelPlacement` で位置を決める。
    パネルは nonactivating なので Makurip は前面にならず、元のアプリが前面のままキーだけを受け取る
 3. キーはパネルの窓のローカル監視 → `HistoryPanelModel.handle`（キーマップで操作を引く。日本語入力の変換中は横取りしない）
@@ -62,6 +62,24 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 部品: `CandidateCoordinator`（流れ）・`CandidateSession` / `CandidateLayout`（並び・寸法）・`ReplacePlanner`（方式）・
 `CandidateView` / `CandidatePanelController`（窓）・`KeyEventTap`（CGEventTap）・`CandidateBridge`（AX・ペーストボード・キー・ストア）。
+
+### 設定（フェーズ4・#4）
+
+1. 起動: 既定のデータフォルダなら `SettingsMigration` が UserDefaults の候補窓の設定を引き継ぐ（設定ファイルがないときに 1 回）。
+   `SettingsController` が `settings.json` を読み、`ClipStore`・`PasteboardMonitor`・一覧・候補窓をその値で作り、`SettingsApplier.apply(previous: nil)` で
+   ホットキーの登録・上限・記録しないアプリ・キーマップ・候補窓の設定を当てる
+2. 変える: 設定画面（`SettingsModel` → `SettingsController.set`）も CLI（別のプロセスの `SettingsCLI` → `SettingsFile.save`）も、
+   `SettingsSchema.applying` で検証してからファイルに書く（置き換えで書く）
+3. 読み直す: `SettingsController` がデータフォルダ（置き換えで名前が変わる）と設定ファイル（その場での書き換え）を DispatchSource で見張り、
+   変化から 0.05 秒待って読み直す。中身が同じなら何もしない（自分で書いた分も 1 回読むが知らせない）
+4. 反映: 変わった部分だけ `SettingsApplier` が `AppController`（`SettingsApplying`）へ渡す。上限は `ClipStore.setLimits`（下げたらその場で古い順に消す）と
+   `PasteboardMonitor.limits`、記録しないアプリは `PasteboardMonitor.excludedApps`（前面のアプリで判定し、データを読まずに捨てる）、
+   どこからでも効くキーは Carbon の登録を外して付け直す、キーマップは一覧・候補窓（とそのヒント）・メニューの表示、候補窓の設定は `CandidateCoordinator.settings`。
+   ログイン時の起動は変えたときだけ `SMAppService.mainApp` に登録・解除（隔離中はしない）
+5. キーの記録: 設定画面が記録を始めると、本体はどこからでも効くキーを外す（⌃⌘V などを記録できるように）。終わったら付け直す
+
+部品: `SettingsSchema`・`KeyRules`・`KeyComboText`・`AppSettings`・`SettingsFile`・`SettingsMigration`・`SettingsController`・`SettingsApplier`・`SettingsCLI`（Core）、
+`SettingsModel`・`SettingsView`・`SettingsWindowController`（UI）。
 
 ### 一覧（フェーズ2・`Sources/MakuripUI/`）
 
@@ -99,15 +117,16 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | `CopyMethod` | キー操作（⌘C/⌘X）/ それ以外 / 不明 |
 | `ClipFlag` | 開いた集合の印。`truncated`（上限で型を落とした）・`secretLikely`（フェーズ5）・`addedByAI`（フェーズ6） |
 | `SourceApp` | コピーした瞬間に前面にいたアプリ（バンドル ID・名前） |
-| `Limits` | 上限の既定値（件数 1000・合計 1 GB・型 1 つ 50 MB・1 件 100 MB・DB に入れる上限 64 KB） |
-| `HotKey` | 仮想キーコード + 修飾キー（Codable。フェーズ4の設定で保存する） |
+| `Limits` | 上限の既定値（件数 1000・合計 1 GB・型 1 つ 50 MB・1 件 100 MB・DB に入れる上限 64 KB）。件数と容量は設定で変わる |
+| `HotKey` | 仮想キーコード + 修飾キー（Carbon に登録する形。設定ではキーマップの `KeyCombo` を文字で持つ） |
+| `AppSettings` | 設定の値（呼び出しキーの動き・候補窓の並び・上限・アプリごとの扱い・キーマップ）。ファイルは `settings.json` |
 
 後のフェーズでの載せ方:
 - ~~フェーズ2（絞り込み）: `kind`・`copyMethod`・`source` は列として持っている。日本語検索の正規化は `preview_text` を元に別の列か索引を足す（スキーマ版を上げる）~~
 - フェーズ2（済）: 絞り込みと日本語検索はメモリの中で行う（DB の列は足していない。スキーマ版 1 のまま）。全件を読んでも 5000 件で 23 ms、温まった後の検索が 15 ms で足りるため。1 万件を大きく超える上限にするなら、正規化した列と FTS を足す
 - フェーズ2.5（候補窓・済）: 位置は `PanelPlacement.frame(... side: .beside(rowOffset:))`、手がかりは `InsertionPointLocator`。DB は変えていない（仮に貼っている間は `touch` せず、確定したときだけ先頭へ移す。回している間の並びは始めた時点のものを固定して持つ）
 - フェーズ3（プレビュー・済）: DB は変えていない。言語は表示のときに一覧の平文から判定してメモリにキャッシュする（列を足すと判定を直すたびに作り直しが要るため）。コピー元のページは取り込み時の `sourceURL` をそのまま使う
-- フェーズ4（設定）: `Limits` と `HotKey` を UserDefaults か設定ファイルに保存し、`ClipStore(directory:limits:)` と `HotKeyCenter.register` に渡す
+- フェーズ4（設定・済）: データフォルダの `settings.json`（DB は変えていない）。`ClipStore.limits` を変えられるようにし（`setLimits`）、ホットキーは設定が変わるたびに付け直す
 - フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない
 - フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す
 
@@ -149,6 +168,16 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | ⌘Y のコードの描画 | NSTextView（TextKit）+ NSRulerView の行番号 | SwiftUI の Text（色の区間が多いと組むのが極端に遅い。色付きの 600 行で 2.5 秒、1000 行で 17 秒。区間が少ないカードとコマンドはこちら）、1 行ずつの Text を LazyVStack に並べる（速いが、行をまたいで選べず、横に送ると行番号も一緒に動く）。NSTextView なら 3000 行でもパネルとプレビューの描画が約 120 ms で一定 |
 | プロンプトを外す場所 | 貼るときに書き戻す中身だけ（`PastePipeline`）。保存した履歴と RTF・HTML は変えない | 取り込みのときに外して保存する（元に戻せない・⇧↩ で元のまま貼れない）、全型を書き換える（RTF の制御語や HTML のタグを壊しうる） |
 
+## 技術選定（フェーズ4・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| 設定の保存先 | データフォルダの JSON ファイル（`settings.json`） | UserDefaults（CLI が別のプロセスから同じドメインを書くと、動いているアプリの cfprefsd のキャッシュと食い違いうる・`--data-dir` で隔離できない・値の検証を通さずに `defaults write` で書ける）、SQLite の表（人と AI が中を読みにくい）。JSON ならアプリと CLI が同じコードで読み書きでき、隔離したインスタンスの設定が本物と混ざらない |
+| 動いているアプリへの反映 | ファイルの監視（データフォルダと設定ファイルの DispatchSource） | 分散通知（CLI から送るのは簡単だが、手や AI がファイルを直接書き換えたときに気づけない）、定期的に読む（遅い・無駄）、FSEvents（ファイル単位の変化を取るのに C のコールバックとストリームの管理が要る）。DispatchSource 2 つで、置き換え（CLI）・その場での書き換え（エディタ）の両方を拾える |
+| キーの記録 | 自前（窓の `NSEvent` ローカル監視 → `SettingsModel.record`） | KeyboardShortcuts（sindresorhus。記録欄が NSSearchField 風の部品で、試作の「行を選んで Enter → 新しいキーを押す…」と見た目と操作が違う。重なりの扱いも試作と違う。依存が 1 つ増える）。一覧のキーと同じ監視の仕組みで書け、単体テストでモデルを駆動できる |
+| 設定画面の形 | 試作どおりの 1 つの一覧（動き → 履歴 → アプリごと → 詳細 → キーのまとまり） | 標準の `Settings` シーン + タブ（SwiftUI の App ライフサイクルが要る・試作と違う）。試作に無い項目（上限・アプリ）は同じ行の形（切り替え・数・札）で足した |
+| 検証の場所 | Core の `SettingsSchema.applying` の 1 か所（画面・CLI・ファイルの読み込みが通る） | 画面と CLI で別々に確かめる（ずれる）。重なりの扱いだけ呼ぶ側が選ぶ（CLI は拒否・画面は試作どおり付け替え・ファイルはそのまま） |
+
 ## 変更時の波及
 
 - DB スキーマを変える: `ClipStore.migrate()` に版を足し、`.agent/api.md` の「DB スキーマ」と `MetadataDump` を同時に直す
@@ -156,7 +185,10 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - 言語の判定・色付けを変える: `CodeLanguageDetectorTests`（各言語の代表例と紛らわしい組）・`SyntaxHighlighterTests`（区間が重ならない・サロゲートペアを割らない）に足し、`make ui-compare` で試作と並べる。言語を足すときは `CodeLanguage`（名前・コードブロックの別名）と `SyntaxHighlighter` の設定の両方
 - プロンプトの外し方を変える: `ShellPromptTests`（外さない例を必ず添える）と `PastePipelineTests`（名前付きペーストボードで書いて読み直す）。候補窓の流れは `CandidateCoordinatorTests`
 - UI を差し替える: `Sources/MakuripUI/` を置き換え、`HistoryUIFactory.make(actions:)` を同じ名前で用意する。E2E（`scripts/e2e/paste.sh`）は `debugState` の `rowCount` / `query` と `-MakuripPanelScreen` を使っているので、新しい UI でも同じ鍵を返すか、スクリプトを直す（案 B のパネルは同じ鍵を返す）
-- キーを足す・変える: `KeyAction`（ID・既定のキー・説明文）に足す。`KeymapTests` の「既定のキーに重なりがない」が守る。画面のヒントはキーマップから引くので直さなくてよい。候補窓のキー（範囲 `.candidate`）は候補窓のキーどうしだけで重なりを見る
+- キーを足す・変える: `KeyAction`（ID・既定のキー・説明文）に足す。`KeymapTests` の「既定のキーに重なりがない」と `SettingsSchemaTests` の「既定のキーはキーの決まりに通る」が守る。
+  設定の項目（`keys.<ID>`）・設定画面の行・CLI はキーマップから作るので直さなくてよい。候補窓のキー（範囲 `.candidate`）は候補窓のキーどうしだけで重なりを見る
+- 設定項目を足す: `SettingsSchema.behaviorItems` に足し（ID・まとまり・説明・型・頼みの例）、`SettingsSchema.value` と `assign`、`AppSettings` に値を足す。
+  反映が要るなら `SettingsApplying` に口を足す。`SettingsSchemaTests`（全項目の説明・既定・例が検証に通る）が守る。`docs/ai-settings.md` の一覧と `.agent/api.md` の「設定」も直す
 - 候補窓の閉じ方・横取りを変える: 閉じる経路を足したら `CandidateInterceptLifetimeTests.Path` に足す（全経路でタップ・窓・時計が残らないことを確かめる）。差し替えを変えたら `CandidateCoordinatorTests`（偽の入力欄で文書が元に戻るか）
 - 確定まで貼らないアプリを足す: `DeferredPasteApps`（バンドル ID は .app の Info.plist で確かめる）と `CandidateSettingsTests`
 - 検索を変える: `SearchTextTests` に例を足し、`.agent/conventions.md` の「検索」の限界を見直す。試作（`core.js`）と振る舞いを変えるときは理由を書く

@@ -172,9 +172,14 @@ struct SettingsLiveTests {
     @Test("CLI で変えると、動いている側に上限・呼び出しキー・キーマップ・候補窓の動きが届く（上限を下げたらその場で消す）")
     func endToEndThroughFile() async throws {
         let dir = TemporaryDirectory()
-        let store = try ClipStore(directory: dir.url)
-        for index in 0..<15 { try store.save(makeClip(Fixtures.text("item \(index)"), at: TimeInterval(index))) }
-        try store.setPinned(true, id: try #require(store.items().last).id)  // いちばん古いものをピン留め
+        // ストアに入れる重い処理はメインの外で行う（メインを塞ぐと、ペーストボード監視の時間に敏感なテストが落ちる）
+        let url = dir.url
+        let store = try await Task.detached {
+            let store = try ClipStore(directory: url)
+            for index in 0..<15 { try store.save(makeClip(Fixtures.text("item \(index)"), at: TimeInterval(index))) }
+            try store.setPinned(true, id: try #require(store.items().last).id)  // いちばん古いものをピン留め
+            return store
+        }.value
 
         let controller = SettingsController(file: SettingsFile(directory: dir.url))
         controller.reloadDelay = 0.02
@@ -215,9 +220,9 @@ struct SettingsLiveTests {
     }
 }
 
-@MainActor
-@Suite("上限と記録しないアプリ")
-struct SettingsCaptureTests {
+/// ストアだけを使うのでメインに縛らない（メインを塞がない）
+@Suite("上限を下げる")
+struct SettingsLimitTests {
     @Test("上限を下げると古い順（ピン留め以外）にその場で消す。上げても消さない")
     func lowerLimits() throws {
         let dir = TemporaryDirectory()
@@ -234,7 +239,11 @@ struct SettingsCaptureTests {
         try store.save(makeClip(Fixtures.text("new"), at: 100))
         #expect(try store.count() == 12)
     }
+}
 
+@MainActor
+@Suite("記録しないアプリ")
+struct SettingsExcludedAppTests {
     @Test("記録しないアプリが前面にあるときは、データを読まずに捨てる（大文字・小文字は区別しない）")
     func excludedApps() throws {
         let dir = TemporaryDirectory()

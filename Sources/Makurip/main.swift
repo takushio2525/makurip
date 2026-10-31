@@ -12,7 +12,10 @@ if let arguments = options.settingsArguments {
         // 既定のデータフォルダでは、アプリより先に CLI を使っても UserDefaults の設定を引き継ぐ
         _ = try? SettingsMigration.migrateIfNeeded(file: file, defaults: .standard, domainName: AppIdentity.bundleID)
     }
-    let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path
+    // 例のコマンドに使う実行ファイルの完全なパス（PATH の名前やリンクで呼ばれても、そのまま実行できる形にする）
+    let executable =
+        Bundle.main.executablePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+        ?? URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path
     func quoted(_ text: String) -> String {
         text.contains(where: { $0 == " " || $0 == "'" })
             ? "'\(text.replacingOccurrences(of: "'", with: "'\\''"))'" : text
