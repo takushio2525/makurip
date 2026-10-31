@@ -59,7 +59,9 @@ echo "== 起動（隔離: data=.e2e/$(basename "$RUN")/data, private ペース�
 launch_instance --pasteboard-name "$PB"
 check "起動直後は 0 件" "0" "$(item_count)"
 check "自動で消すまで 60 秒" "60" "$(status_value '.secrets.retentionSeconds')"
-check "判定の版を覚えた（空の履歴に当て直し済み）" "1" "$(sql_count "SELECT value FROM meta WHERE key='secretScanVersion'")"
+# 判定の版は SecretDetector.version（上げるたびにここを直さなくて済むよう、ソースから読む）
+SCAN_VERSION="$(sed -nE 's/^ *public static let version = ([0-9]+)$/\1/p' "$ROOT/Sources/MakuripCore/Secret/SecretDetector.swift")"
+check "判定の版を覚えた（空の履歴に当て直し済み）" "$SCAN_VERSION" "$(sql_count "SELECT value FROM meta WHERE key='secretScanVersion'")"
 
 echo "== 既知の形式（確度「高」）"
 expect_flags secret-github text "$HIGH"

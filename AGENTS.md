@@ -45,7 +45,7 @@ makurip/
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
 ├── Tests/MakuripDevToolTests/ ← 検証用 CLI のテストデータ（E2E の偽の秘密が判定の条件を必ず満たすこと）
-├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口）
+├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / secret-bench.sh（秘密の判定の見逃しと誤判定の計測）/ e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口）
 ├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）・ai-mcp.md（Claude Code への登録・道具・頼みと道具の対応・限界）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
 ├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
@@ -78,6 +78,7 @@ makurip/
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
 | メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]`（内容のハッシュは出さず、秘密の項目は大きさも伏せる） |
+| 秘密の判定の計測 | `scripts/secret-bench.sh`（乱数トークンの見逃しと、SDK・このリポジトリの文字列の誤判定の割合。判定を変える前と後で流して比べる。`.agent/conventions.md` の「計測」） |
 
 完了報告の前に `make check`（lint・ビルド・テスト）を通すこと。署名の設定は `Config/signing.local.env`（雛形を写して作る）。
 

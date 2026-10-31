@@ -179,8 +179,8 @@ struct SecretDetectorPositiveTests {
     }
 }
 
-/// 確度「中」のランダムな文字列の条件の境目（`.agent/conventions.md` の「確度「中」」）。
-/// E2E の偽の秘密が一様な乱数でこの境目の外に出て、まれに落ちていた（#21）。値は決まった並びから実行時に作る
+/// 確度「中」のランダムな文字列の条件の境目（`.agent/conventions.md` の「確度「中」」）。値は決まった並びから実行時に作る。
+/// #21 で `looksRandom` の境目（数字 2 つ・英字の連続 35%）を固定し、#30 で英単語らしさ（`isWordLike`）の境目に置き換えた
 @Suite("秘密の判定（ランダムな文字列の境目）")
 struct SecretDetectorRandomTokenBoundaryTests {
     static let uppers = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -218,26 +218,86 @@ struct SecretDetectorRandomTokenBoundaryTests {
         #expect(kinds == [[], [.randomToken], [.randomToken], []])
     }
 
-    @Test("同じ大きさの英字の 5 文字以上の連続: 35% ちょうどは拾い、超えると拾わない（識別子を外すため）")
+    @Test("同じ大きさの英字の長い連続: 英単語の並びなら拾わず、英単語でない並び（子音だけ）なら拾う（#30）")
     func sameCaseRun() {
-        let consonants = "bcdfghjklmnpqrstvwz"
-        let atBoundary = String(consonants.prefix(14)) + Self.cycled(26)
-        let over = String(consonants.prefix(15)) + Self.cycled(25)
-        let lengths = [atBoundary.count, over.count]
-        let kinds = [Self.kinds(atBoundary), Self.kinds(over)]
-        let random = [atBoundary, over].map { SecretDetector.looksRandom($0) }
+        let words = "pixelformattype" + Self.cycled(25)
+        let consonants = "bcdfghjklmnpqrs" + Self.cycled(25)
+        let lengths = [words.count, consonants.count]
+        let kinds = [Self.kinds(words), Self.kinds(consonants)]
+        // 既知の形式の本体などに使う looksRandom（英字の連続の長さで外す）は変えていない
+        let random = [words, consonants].map { SecretDetector.looksRandom($0) }
         #expect(lengths == [40, 40])
-        #expect(kinds == [[.randomToken], []])
-        #expect(random == [true, false])
+        #expect(kinds == [[], [.randomToken]])
+        #expect(random == [false, false])
     }
 
-    @Test("数字: 2 つは拾い、1 つ・0 は拾わない（英単語をつないだ名前を外すため）")
+    @Test("数字: 0〜2 個でも、英字がランダムなら拾う（#30。短いトークンの見逃しのいちばんの原因だった）")
     func digitCount() {
         let values = [2, 1, 0].map { Self.alternating(40, digitCount: $0) }
         let kinds = values.map(Self.kinds)
         let random = values.map { SecretDetector.looksRandom($0) }
-        #expect(kinds == [[.randomToken], [], []])
+        #expect(kinds == [[.randomToken], [.randomToken], [.randomToken]])
         #expect(random == [true, false, false])
+    }
+
+    /// 略語の多い識別子（`kMMCCmd_MODE_SELECT_6` など）は確度「中」で拾うことがある（`.agent/conventions.md` の「誤判定するもの」）
+    @Test("数字のない識別子・英単語をつないだ名前は拾わない（数字を求めない代わりに、英単語らしさで外す）")
+    func identifiersWithoutDigits() {
+        let names = [
+            "NSPasteboardTypeStringPlainText", "kCVPixelBufferIOSurfacePropertiesKey", "getUserAccessTokenFromCache",
+            "AVCaptureDeviceDiscoverySession",
+        ]
+        let kinds = names.map(Self.kinds)
+        #expect(kinds == Array(repeating: [], count: names.count))
+    }
+
+    /// よく出る並び（true）とそうでない並び（false）を指定どおりに並べた小文字の列（`isWordLike` の境目を作るため）
+    static func lowercaseRun(_ pattern: [Bool]) -> [Unicode.Scalar] {
+        var letters = [0]
+        for common in pattern {
+            let previous = letters.last!
+            let next = (0..<26).first { SecretDetector.commonBigrams[previous * 26 + $0] == common && $0 != previous }!
+            letters.append(next)
+        }
+        return letters.map { Unicode.Scalar(UInt8(0x61 + $0)) }
+    }
+
+    @Test("英単語らしさの境目: 10 対のうちよく出る並びが 7 個なら英単語でなく、8 個なら英単語（対数尤度比 3.5）")
+    func wordLikeBoundary() {
+        // 1 対あたり、よく出る並びなら ln(0.8 / 0.296) ≈ +0.99、そうでなければ ln(0.2 / 0.704) ≈ -1.26。
+        // 10 対では 2.25 × よく出る数 - 12.6 が 3.5 を超えるのは 8 個から（7 個 ≈ 3.19・8 個 ≈ 5.44）
+        let seven = Self.lowercaseRun(Array(repeating: true, count: 7) + Array(repeating: false, count: 3))
+        let eight = Self.lowercaseRun(Array(repeating: true, count: 8) + Array(repeating: false, count: 2))
+        let wordLike = [seven, eight].map {
+            SecretDetector.isWordLike($0, categories: $0.map(SecretDetector.characterCategory))
+        }
+        let scores = [7, 8].map { (SecretDetector.wordLikeScore(hits: $0, pairs: 10) * 100).rounded() / 100 }
+        #expect(SecretDetector.commonBigramCount == 200)
+        #expect(scores == [3.19, 5.44])
+        #expect(wordLike == [false, true])
+    }
+
+    @Test("末尾が「.拡張子」のものはファイル名として拾わない（スクリーンショット・man ページの名前）")
+    func fileExtension() {
+        let values = [
+            Self.cycled(30) + ".png", "Screenshot_2024-11-02_144456.png", "Tcl_AsyncCreate.3tcl",
+            "glCopyTexSubImage2D.3G",
+        ]
+        let kinds = values.map(Self.kinds)
+        #expect(kinds == Array(repeating: [], count: values.count))
+        #expect(Self.kinds(Self.cycled(30)) == [.randomToken])
+    }
+
+    @Test("本物の乱数トークン（20〜40 文字・英数字と記号）は 97% 以上拾う（#30。直す前は 20 文字で約 84%）", arguments: [20, 32, 40])
+    func recall(length: Int) {
+        let alphabets = [FakeSecret.alphanumerics, FakeSecret.alphanumerics + ["-", "_"], FakeSecret.base64]
+        for (index, alphabet) in alphabets.enumerated() {
+            let found = (0..<2000).filter { seed in
+                let token = FakeSecret.random(length, seed: UInt64(1000 + seed * 7 + index), alphabet: alphabet)
+                return !SecretDetector.findings(in: token).isEmpty
+            }.count
+            #expect(found >= 1940, "\(length) 文字・文字の種類 \(index): \(found) / 2000")
+        }
     }
 
     @Test("文字の種類が偏ったもの（小文字と数字だけ・大文字と数字だけ）は拾わない")

@@ -101,7 +101,8 @@ public struct SecretFinding: Hashable, Sendable {
 /// 判定を変えたら `version` を上げる（既存の履歴に 1 回だけ当て直す）。`SecretDetectorTests` に陽性と陰性の例を足すこと
 public enum SecretDetector {
     /// 判定の版。上げると、起動したときに既存の履歴へ 1 回だけ当て直す（`ClipStore` の meta）
-    public static let version = 1
+    /// （2: ランダムな文字列を英単語らしさで見分けるようにした。#30）
+    public static let version = 2
     /// 長い文字列は先頭だけ見る（UTF-16。数 MB のログで取り込みを遅くしないため）
     public static let scanLimit = 512 * 1024
 
@@ -556,13 +557,120 @@ public enum SecretDetector {
         guard (20...512).contains(length), !text.contains(where: { $0.isWhitespace }) else { return nil }
         guard text.unicodeScalars.allSatisfy({ tokenCharacters.contains($0) }) else { return nil }
         guard !isHex(text), !isUUIDLike(text), !isULID(text), !isEncodedNonSecret(text), !isPlaceholder(text),
-            !isCodeReference(text), !text.contains(".."), !publicPrefixes.contains(where: { text.hasPrefix($0) })
+            !isCodeReference(text), !text.contains(".."), !publicPrefixes.contains(where: { text.hasPrefix($0) }),
+            !hasFileExtension(text)
         else { return nil }
-        guard looksRandom(text), hasMixedCase(text) else { return nil }
+        guard looksLikeRandomToken(text), hasMixedCase(text) else { return nil }
         let start = (ns as String as NSString).range(of: text).location
         guard start != NSNotFound else { return nil }
         return SecretFinding(kind: .randomToken, location: start, length: length)
     }
+
+    /// 末尾が「.拡張子」のもの（`Screenshot_2024-11-02_144456.png`・`Tcl_AsyncCreate.3tcl`）はファイル名として拾わない
+    static func hasFileExtension(_ text: String) -> Bool {
+        text.range(of: #"\.[A-Za-z0-9]{1,10}$"#, options: .regularExpression) != nil
+    }
+
+    /// 確度「中」のランダムな文字列らしいか（#30）。文字の種類（大文字・小文字・数字・記号）の切り替わりが 3 割以上・
+    /// エントロピーが十分・英単語の並び（`isWordLike`）でないこと。
+    ///
+    /// 既知の形式の本体などに使う `looksRandom` より広い（数字を求めない・英字の連続の長さで外さない）。
+    /// 乱数のトークンは、20 文字だと数字が 0〜1 個のことや、同じ大きさの英字がたまたま長く続くことがよくあり、
+    /// `looksRandom` では 2 割近く見逃していた。広げた分は確度「中」（伏せるだけで消さない）にしか入らない
+    static func looksLikeRandomToken(_ text: String) -> Bool {
+        let scalars = Array(text.unicodeScalars)
+        let letters = scalars.filter { CharacterSet.letters.contains($0) }.count
+        guard scalars.count >= 8, letters >= 4 else { return false }
+        let categories = scalars.map(characterCategory)
+        var transitions = 0
+        for index in 1..<categories.count where categories[index] != categories[index - 1] { transitions += 1 }
+        guard Double(transitions) / Double(scalars.count - 1) >= 0.3 else { return false }
+        guard entropy(scalars) >= min(3.0, log2(Double(scalars.count)) * 0.8) else { return false }
+        return !isWordLike(scalars, categories: categories)
+    }
+
+    /// 0: 数字・1: 大文字・2: 小文字・3: そのほか
+    static func characterCategory(_ scalar: Unicode.Scalar) -> Int {
+        if CharacterSet.decimalDigits.contains(scalar) { return 0 }
+        if CharacterSet.uppercaseLetters.contains(scalar) { return 1 }
+        if CharacterSet.lowercaseLetters.contains(scalar) { return 2 }
+        return 3
+    }
+
+    /// 英単語をつないだもの（識別子・ファイル名・文）らしいか。
+    ///
+    /// 隣り合う英字の 2 文字（大文字小文字を区別しない）が「英語でよく出る並び」（`commonBigrams`・676 通りのうち 200 個）に
+    /// 入るかを数え、乱数（1 対あたり 200/676 の確率で入る）と英単語（1 対あたり 0.8）のどちらに近いかを尤度比で比べる。
+    /// 英単語の方が e^3.5（約 33 倍）より確からしければ英単語らしい。長いほど証拠が増えるので、乱数を英単語と取り違える割合も、
+    /// 英単語を乱数と取り違える割合も下がる（「期待 + 3 標準偏差」のように固定の幅で切ると、長さによらず乱数の約 1% を取り違え、
+    /// 64 文字では直す前より見逃しが増えた。#30 の計測）。
+    /// 全部の英字の対と、同じ大きさどうしの対（`getURLForKey` の `ge`・`et`・`or` のような語の中の対）の両方で見て、
+    /// どちらかで英単語らしければ英単語とする（`kMMCCmd_MODE_SELECT_10` のような大文字の語は、語の中の対で見つかる）
+    static func isWordLike(_ scalars: [Unicode.Scalar], categories: [Int]) -> Bool {
+        var all = (pairs: 0, hits: 0)
+        var same = (pairs: 0, hits: 0)
+        for index in 1..<scalars.count {
+            let previous = categories[index - 1]
+            let current = categories[index]
+            guard previous == 1 || previous == 2, current == 1 || current == 2,
+                let first = asciiLetterIndex(scalars[index - 1]), let second = asciiLetterIndex(scalars[index])
+            else { continue }
+            let common = commonBigrams[first * 26 + second] ? 1 : 0
+            all.pairs += 1
+            all.hits += common
+            if previous == current {
+                same.pairs += 1
+                same.hits += common
+            }
+        }
+        return wordLikeScore(hits: all.hits, pairs: all.pairs) > wordLikeThreshold
+            || wordLikeScore(hits: same.hits, pairs: same.pairs) > wordLikeThreshold
+    }
+
+    /// 英単語の対がよく出る並びに入る確率（`/usr/share/dict/words` の語では 0.9。識別子は略語が混じるので少し低く見る）
+    static let wordBigramProbability = 0.8
+    /// 対数尤度比の基準（e^3.5 ≈ 33 倍）。#30 の計測（`scripts/secret-bench.sh`）で、誤判定がどの種類でも増えず、
+    /// 見逃しがどの長さでも減るか変わらない値として選んだ
+    static let wordLikeThreshold = 3.5
+
+    /// 英単語と乱数の対数尤度比（`hits` 個がよく出る並びで、`pairs - hits` 個がそうでない）
+    static func wordLikeScore(hits: Int, pairs: Int) -> Double {
+        let random = commonBigramProbability
+        let word = wordBigramProbability
+        return Double(hits) * log(word / random) + Double(pairs - hits) * log((1 - word) / (1 - random))
+    }
+
+    /// `a`〜`z`・`A`〜`Z` を 0〜25 に（それ以外は nil）
+    static func asciiLetterIndex(_ scalar: Unicode.Scalar) -> Int? {
+        switch scalar.value {
+        case 0x41...0x5A: Int(scalar.value - 0x41)
+        case 0x61...0x7A: Int(scalar.value - 0x61)
+        default: nil
+        }
+    }
+
+    /// 英語でよく出る 2 文字の並び。macOS の `/usr/share/dict/words`（Webster's Second・23 万語）で数えた上位 200 個
+    /// （200 番目と 201 番目は回数が違うので、数え直しても同じになる。`SecretDetectorBench` が数え直して照らす）
+    static let commonBigramList = """
+        ab ac ad ae ag ai al am an ap ar as at au ba be bi bl bo br bu ca ce ch ci ck cl co cr ct cu cy da de di do dr \
+        ea ec ed ee ef eg ei el em en eo ep er es et eu ex fe fi fl fo fu ga ge gi gl go gr gu ha he hi ho hr hy ia ib \
+        ic id ie if ig il im in io ip ir is it iv iz ke ki la le li ll lo lt lu ly ma mb me mi mo mp mu my na nc nd ne \
+        ng ni nn no ns nt oa ob oc od og oi ol om on oo op or os ot ou ov ow pa pe ph pi pl po pr pt pu qu ra rc rd re \
+        ri rm rn ro rp rr rs rt ru ry sa sc se sh si sl sm so sp ss st su ta te th ti to tr tt tu ty ua ub uc ud ui ul \
+        um un up ur us ut va ve vi wa wi yl yp ys ze
+        """
+    static let commonBigramCount = commonBigramList.split(separator: " ").count
+    /// `commonBigramList` を 26 × 26 の表に（`first * 26 + second`）
+    static let commonBigrams: [Bool] = {
+        var table = [Bool](repeating: false, count: 676)
+        for pair in commonBigramList.split(separator: " ") {
+            let letters = pair.unicodeScalars.compactMap(asciiLetterIndex)
+            if letters.count == 2 { table[letters[0] * 26 + letters[1]] = true }
+        }
+        return table
+    }()
+    /// 乱数の英字の対が、よく出る並びに入る確率（200/676）
+    static let commonBigramProbability = Double(commonBigramCount) / 676
 
     /// 公開してよい鍵の接頭辞（Stripe の publishable key）
     static let publicPrefixes = ["pk_live_", "pk_test_"]
