@@ -149,12 +149,26 @@ final class FakeCandidateHost: CandidateHost {
 
     func discardPasteboardStash() { stash = nil }
 
+    /// 本体（CandidateBridge）と同じく PastePipeline.candidatePaste を通す（コマンドはプロンプトを外して貼る）
     func writePasteboard(itemID: UUID) -> PastedContent? {
         guard let content = contents[itemID] else { return nil }
-        editor.pasteboard = content
         switch content {
-        case .text(let string): return PastedContent(textLength: string.utf16.count)
-        case .image: return PastedContent(textLength: nil)
+        case .text(let string):
+            let kind = items.first { $0.id == itemID }?.kind ?? .text
+            let stored = PasteboardSnapshot(items: [
+                PasteboardItemSnapshot(representations: [
+                    PasteboardRepresentation(type: PasteboardTypes.utf8PlainText, data: Data(string.utf8))
+                ])
+            ])
+            let (snapshot, pasted) = PastePipeline.candidatePaste(stored, kind: kind)
+            let written = snapshot.firstData(for: PasteboardTypes.utf8PlainText).flatMap {
+                String(data: $0, encoding: .utf8)
+            }
+            editor.pasteboard = .text(written ?? string)
+            return pasted
+        case .image:
+            editor.pasteboard = content
+            return PastedContent(textLength: nil)
         }
     }
 

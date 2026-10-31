@@ -17,6 +17,9 @@ struct CandidateRowTextTests {
     @Test("右の薄い字（試作の sub と同じ決まり）")
     func details() {
         #expect(CandidateRowText.detail(item(.code, "a\nb\nc")) == "コード 3行")
+        // 言語が分かれば言語名（試作の「Swift 17行」）
+        #expect(CandidateRowText.detail(item(.code, "a\nb\nc"), language: .swift) == "Swift 3行")
+        #expect(CandidateRowText.detail(item(.code, "a"), language: .shell) == "シェル 1行")
         #expect(CandidateRowText.detail(item(.command, "$ git status")) == "コマンド")
         #expect(CandidateRowText.detail(item(.command, "$ a\n$ b")) == "コマンド 2行")
         #expect(CandidateRowText.detail(item(.text, "短い文")) == "テキスト")

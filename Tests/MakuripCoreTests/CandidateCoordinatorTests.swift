@@ -92,6 +92,35 @@ struct CandidateCoordinatorTests {
         #expect(h.coordinator.lastEndReason == .commitKey)
     }
 
+    @Test("コマンドはプロンプトを外して仮に貼り、↑↓ の差し替えも外した後の長さで範囲を選び直す。Esc で元どおり")
+    func commandPromptStripped() async {
+        let h = CandidateHarness(items: [
+            (.command, .text("$ brew install swiftlint\n$ swiftlint --fix")), (.text, .text("ひとつ前")),
+            (.command, .text("user@host:~$ make check")),
+        ])
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "メモ：brew install swiftlint\nswiftlint --fix")
+        #expect(h.tap.press(KeyCodes.upArrow) == .consume)
+        await h.coordinator.waitUntilIdle()
+        // 外した後の長さで選び直せていれば、前に貼ったものが残らない
+        #expect(h.editor.string == "メモ：ひとつ前")
+        #expect(h.tap.press(KeyCodes.upArrow) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "メモ：make check")
+        #expect(h.tap.press(KeyCodes.downArrow) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.tap.press(KeyCodes.downArrow) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "メモ：brew install swiftlint\nswiftlint --fix")
+        #expect(!h.host.sent.contains(.undo), "範囲を選び直せるアプリでは ⌘Z を使わない")
+        #expect(h.tap.press(KeyCodes.escape) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "メモ：")
+        #expect(h.editor.pasteboard == .text("元のクリップボード"))
+        h.expectClosed()
+    }
+
     @Test("Enter でも確定する。改行は入れない")
     func commitWithEnter() async {
         let h = CandidateHarness()
@@ -222,7 +251,8 @@ struct CandidateCoordinatorTests {
         #expect(h.editor.string == "前\n\(code)後")
         h.tap.press(KeyCodes.upArrow)
         await h.coordinator.waitUntilIdle()
-        #expect(h.editor.string == "前\n$ a\n$ b後")
+        // コマンドはプロンプトを外して貼る（一覧から貼るときと同じ。#3）
+        #expect(h.editor.string == "前\na\nb後")
         #expect(!h.host.sent.contains(.undo))
         h.tap.press(KeyCodes.escape)
         await h.coordinator.waitUntilIdle()

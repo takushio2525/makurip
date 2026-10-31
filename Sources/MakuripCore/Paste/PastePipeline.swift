@@ -16,6 +16,25 @@ public enum PastePipeline {
         }
     }
 
+    /// 候補窓から仮に貼るときの中身（一覧から貼るときと同じく、コマンドはプロンプトを外す）と、
+    /// 入力欄に増えるはずの文字の長さ。長さは外した後の文字で数える（↑↓ で差し替えるとき、この長さで範囲を選び直すため）
+    public static func candidatePaste(_ stored: PasteboardSnapshot, kind: ClipKind)
+        -> (snapshot: PasteboardSnapshot, content: PastedContent)
+    {
+        let snapshot = prepare(stored, kind: kind, mode: .normal)
+        return (snapshot, PastedContent(textLength: pastedTextLength(kind: kind, snapshot: snapshot)))
+    }
+
+    /// 文字だけの中身なら、入力欄に貼ると増えるはずの長さ（UTF-16）。画像・ファイル・リッチテキストは nil
+    public static func pastedTextLength(kind: ClipKind, snapshot: PasteboardSnapshot) -> Int? {
+        guard [.text, .code, .command, .url, .color].contains(kind), snapshot.items.count == 1,
+            let data = snapshot.items[0].representations.first(where: { $0.type == PasteboardTypes.utf8PlainText })?
+                .data,
+            let text = String(data: data, encoding: .utf8)
+        else { return nil }
+        return text.utf16.count
+    }
+
     /// 文字の型の中身からプロンプトを外した写し。外すものがなければ元のまま
     public static func strippingPrompts(_ snapshot: PasteboardSnapshot) -> PasteboardSnapshot {
         var result = snapshot

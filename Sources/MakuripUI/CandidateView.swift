@@ -140,13 +140,13 @@ enum CandidateRowText {
         return last.isASCII ? "\(source) の画像" : "\(source)の画像"
     }
 
-    /// 右に薄い字で出す種類と補足（予測変換の「ひらがな」の位置）
-    static func detail(_ item: ClipItem, imageSize: CGSize? = nil) -> String {
+    /// 右に薄い字で出す種類と補足（予測変換の「ひらがな」の位置）。コードは言語が分かれば言語名（試作の「Swift 17行」）
+    static func detail(_ item: ClipItem, imageSize: CGSize? = nil, language: CodeLanguage? = nil) -> String {
         let text = item.previewText
         let plus = isTruncated(text) ? "+" : ""
         switch item.kind {
         case .code:
-            return "コード \(lineCount(text))\(plus)行"
+            return "\(language?.displayName ?? "コード") \(lineCount(text))\(plus)行"
         case .command:
             let lines = lineCount(text)
             return lines > 1 ? "コマンド \(lines)\(plus)行" : "コマンド"
@@ -243,7 +243,7 @@ struct CandidateRowView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(CandidateRowText.detail(item, imageSize: image?.pixelSize))
+            Text(CandidateRowText.detail(item, imageSize: image?.pixelSize, language: loader.language(for: item)))
                 .font(.system(size: 11))
                 .foregroundStyle(selected ? Color.white.opacity(0.78) : palette.text3)
                 .lineLimit(1)
