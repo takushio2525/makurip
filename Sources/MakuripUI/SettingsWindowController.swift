@@ -70,7 +70,7 @@ final class SettingsWindowController: NSObject, SettingsPresenting, NSWindowDele
 
     private func installKeyMonitor() {
         removeKeyMonitor()
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             let consumed = MainActor.assumeIsolated { () -> Bool in
                 guard let self, event.windowNumber == self.window.windowNumber else { return false }
                 return self.handle(event)
@@ -86,6 +86,11 @@ final class SettingsWindowController: NSObject, SettingsPresenting, NSWindowDele
 
     private func handle(_ event: NSEvent) -> Bool {
         let press = PanelController.keyPress(event)
+        // 修飾キーの押し離しは、押している間だけ効くキー（隠した内容の表示）を記録している間だけ使う
+        if event.type == .flagsChanged {
+            if model.recording { model.recordModifier(press.modifiers) }
+            return false
+        }
         if model.editingID != nil {
             if press.modifiers.isEmpty, press.keyCode == KeyCodes.escape {
                 model.cancelEditing()

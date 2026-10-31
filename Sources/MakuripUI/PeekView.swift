@@ -41,11 +41,19 @@ private struct PeekContent: View {
         _detail = State(initialValue: loader.detail(for: item))
     }
 
+    /// 内容の要点（秘密は「API キーの形式 · 36 文字」。中身の数え方は本当の中身で）
+    private var info: String {
+        guard SecretDisplay.masks(item) else { return DisplayText.info(for: item, detail: detail) }
+        let secret = loader.secret(for: item)
+        return DisplayText.secretInfo(reason: secret.reason, characters: secret.characterCount)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 KindBadge(kind: item.kind)
-                Text(DisplayText.info(for: item, detail: detail))
+                if item.isSecretLikely { SecretBadge() }
+                Text(info)
                     .font(.system(size: 12))
                     .foregroundStyle(palette.text2)
                     .lineLimit(1)
@@ -62,16 +70,22 @@ private struct PeekContent: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 46)
-            PreviewBody(item: item, detail: detail, query: model.searchQuery, model: model, loader: loader)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.well))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(
-                        palette.wellLine, lineWidth: 0.5)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .padding(.horizontal, 12)
-            DetailsGrid(item: item, detail: detail, now: model.now, model: model)
+            Group {
+                if SecretDisplay.masks(item) {
+                    SecretPreviewBody(item: item, model: model, loader: loader)
+                } else {
+                    PreviewBody(item: item, detail: detail, query: model.searchQuery, model: model, loader: loader)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.well))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(
+                    palette.wellLine, lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 12)
+            DetailsGrid(item: item, detail: detail, info: info, now: model.now, model: model)
                 .padding(EdgeInsets(top: 12, leading: 16, bottom: 14, trailing: 16))
         }
         .task(id: item.contentHash) {
@@ -358,6 +372,7 @@ private struct CodePreview: View {
 private struct DetailsGrid: View {
     let item: ClipItem
     let detail: ClipDetail
+    let info: String
     let now: Date
     let model: HistoryPanelModel
     @Environment(\.palette) private var palette
@@ -387,7 +402,7 @@ private struct DetailsGrid: View {
                         palette.text3)
                 }
                 cell("内容") {
-                    Text(DisplayText.info(for: item, detail: detail)).lineLimit(1)
+                    Text(info).lineLimit(1)
                 }
             }
             // コピー元のページ（取れたときだけ。試作の .src: 題名の代わりにホストを、薄い字でパスを出す）

@@ -51,12 +51,15 @@ public struct HistoryFilter: Hashable, Sendable {
         source?.bundleID ?? source?.name
     }
 
-    /// 検索の対象にする文字列（正規化済み）。一覧の平文・アプリ名・種類名・コピー元ページのホスト名
+    /// 検索の対象にする文字列（正規化済み）。一覧の平文・アプリ名・種類名・コピー元ページのホスト名。
+    /// 秘密の一覧用の平文は伏せ字なので、見えている接頭辞（`sk-ant-`）と「秘密」「ひみつ」でだけ引ける（中身では引けない）
     public static func haystack(for item: ClipItem) -> String {
         var parts: [String] = []
         if let text = item.previewText { parts.append(text) }
         if let name = item.source?.name { parts.append(name) }
         parts.append(item.kind.label)
+        // 漢字は読みで引けないので、読み（ひみつ）も足す（「himitsu」でも引ける）
+        if item.isSecretLikely { parts.append("秘密 ひみつ") }
         if let host = item.sourceURL.flatMap({ URL(string: $0)?.host }) { parts.append(host) }
         return SearchText.normalize(parts.joined(separator: "\n"))
     }

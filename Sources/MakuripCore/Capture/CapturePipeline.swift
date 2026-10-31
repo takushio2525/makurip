@@ -49,6 +49,9 @@ public enum CapturePipeline {
         if dropped + context.droppedWhileReading > 0 { flags.insert(.truncated) }
 
         let kind = KindClassifier.classify(trimmed)
+        // 秘密っぽいもの（形式だけで判定）は印を付け、一覧用の平文を伏せ字にして入れる（画面・検索のどこからも中身が見えないように）
+        let secret = SecretScanner.assess(trimmed)
+        if let secret { flags.formUnion(secret.flags) }
         let clip = CapturedClip(
             snapshot: trimmed,
             contentHash: ContentHasher.hash(trimmed),
@@ -58,7 +61,8 @@ public enum CapturePipeline {
             sourceURL: SourceURLExtractor.extract(from: trimmed),
             capturedAt: context.now,
             flags: flags,
-            previewText: PreviewText.make(for: trimmed, kind: kind, limit: limits.previewCharacterLimit)
+            previewText: PreviewText.make(
+                for: trimmed, kind: kind, limit: limits.previewCharacterLimit, maskSecrets: secret != nil)
         )
         return .accept(clip)
     }
@@ -115,18 +119,25 @@ public enum ContentHasher {
     }
 }
 
-/// 一覧・絞り込み用の短い平文（純粋関数）
+/// 一覧・絞り込み用の短い平文（純粋関数）。
+///
+/// `maskSecrets` のときは、全文で秘密の値を伏せ字にしてから先頭を切る（切った境目で秘密の一部がのぞかないように）
 public enum PreviewText {
-    public static func make(for snapshot: PasteboardSnapshot, kind: ClipKind, limit: Int) -> String? {
+    public static func make(for snapshot: PasteboardSnapshot, kind: ClipKind, limit: Int, maskSecrets: Bool = false)
+        -> String?
+    {
         switch kind {
         case .file:
             let names = KindClassifier.fileURLs(of: snapshot).map { $0.lastPathComponent }
-            return names.isEmpty ? nil : String(names.joined(separator: "\n").prefix(limit))
+            guard !names.isEmpty else { return nil }
+            let joined = names.joined(separator: "\n")
+            return String((maskSecrets ? SecretMask.masked(joined).text : joined).prefix(limit))
         case .image:
             return nil
         default:
             guard let text = KindClassifier.plainText(of: snapshot) else { return nil }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shown = maskSecrets ? SecretMask.masked(text).text : text
+            let trimmed = shown.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : String(trimmed.prefix(limit))
         }
     }

@@ -322,7 +322,15 @@ struct KeyTapInputTests {
         let any = try key(0)
         #expect(KeyTapInput.make(type: .tapDisabledByTimeout, event: any) == .disabled)
         #expect(KeyTapInput.make(type: .tapDisabledByUserInput, event: any) == .disabled)
-        #expect(KeyTapInput.make(type: .flagsChanged, event: any) == .ignored)
+        #expect(KeyTapInput.make(type: .scrollWheel, event: any) == .ignored)
+    }
+
+    @Test("修飾キーの押し離しは、いま押されている修飾キーを渡す（隠した内容の表示に使う）")
+    func flagsChanged() throws {
+        let option = try key(58, flags: .maskAlternate)
+        #expect(KeyTapInput.make(type: .flagsChanged, event: option) == .event(.flagsChanged(.option)))
+        let released = try key(58)
+        #expect(KeyTapInput.make(type: .flagsChanged, event: released) == .event(.flagsChanged([])))
     }
 
     @Test("マウスのクリックは位置を渡す")

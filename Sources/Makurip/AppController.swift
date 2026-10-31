@@ -42,6 +42,12 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     private var statusMenu: StatusMenuController?
     private var debugControl: DebugControl?
 
+    /// 秘密（確度の高いもの）を自動で消すまでの秒数（設定の secretAutoDeleteMinutes）と、次に消す時刻のタイマー
+    private var secretRetention = AppSettings.default.secretRetention
+    private var secretSweepTimer: Timer?
+    /// 直近に自動で消した件数（検証の状態出力用）
+    private(set) var secretsAutoDeleted = 0
+
     /// 一覧を開いたときに前面にいたアプリ（貼り付けの宛先）
     private var previousApp: NSRunningApplication?
     /// 検証用: 貼り付けの宛先を pid で固定する（`--debug-control` のときだけ使う）
@@ -152,6 +158,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
             self?.debugControl?.writeStatus()
         }
         snippetStore.startWatching()
+        rescanSecretsIfNeeded(store: store)
 
         if options.debugControl {
             if isolated {
@@ -168,6 +175,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     func applicationWillTerminate(_ notification: Notification) {
         // 横取りを残さない（落ちたときは OS がタップを消す）
         candidate?.shutdown()
+        secretSweepTimer?.invalidate()
         monitor?.stop()
         detector?.stop()
         settings?.stopWatching()
@@ -292,8 +300,67 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     func clearHistory() {
         guard let store else { return }
         let removed = (try? store.clearUnpinned()) ?? 0
+        store.scrubDeletedData()
         Log.capture.info("履歴を消去 count=\(removed)")
         history?.historyDidChange()
+        scheduleSecretSweep()
+    }
+
+    // MARK: 秘密の自動消去・当て直し
+
+    /// 判定の版が上がったとき（初めて入れたときを含む）、既存の履歴に 1 回だけ判定を当て直す（裏のスレッドで）
+    private func rescanSecretsIfNeeded(store: ClipStore) {
+        Task { [weak self] in
+            let found = await Task.detached(priority: .utility) { try? SecretRescan.runIfNeeded(store: store) }.value
+            guard let self, let found else { return }
+            Log.capture.info("既存の履歴に秘密の判定を当て直した found=\(found)")
+            self.history?.historyDidChange()
+            self.scheduleSecretSweep()
+            self.debugControl?.writeStatus()
+        }
+    }
+
+    /// 時間が来た秘密を消し、次に消す時刻にタイマーを掛け直す（起動・取り込み・設定の変更・タイマーのたびに呼ぶ）
+    func scheduleSecretSweep(now: Date = Date()) {
+        secretSweepTimer?.invalidate()
+        secretSweepTimer = nil
+        guard let store, let secrets = try? store.items(flagged: .secretKnownFormat) else { return }
+        let expired = SecretExpiry.expired(secrets, now: now, retention: secretRetention)
+        if !expired.isEmpty {
+            do {
+                try store.delete(ids: expired)
+                store.scrubDeletedData()
+                secretsAutoDeleted += expired.count
+                Log.capture.info("秘密を自動で消した count=\(expired.count)")
+                history?.historyDidChange()
+            } catch {
+                Log.capture.error("秘密の自動消去に失敗: \(String(describing: error), privacy: .public)")
+            }
+        }
+        let remaining = secrets.filter { !expired.contains($0.id) }
+        guard let next = SecretExpiry.nextDeadline(remaining, now: now, retention: secretRetention) else { return }
+        // 時刻で掛けるタイマー（スリープの間に時間が来たら、起きたときに動く）
+        let timer = Timer(fire: next.addingTimeInterval(0.5), interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.scheduleSecretSweep()
+                self?.debugControl?.writeStatus()
+            }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        secretSweepTimer = timer
+    }
+
+    /// 検証の状態出力用（件数と時刻だけ。中身は出さない）
+    var secretStatus: [String: Any] {
+        let secrets = (try? store?.items(flagged: .secretLikely)) ?? []
+        return [
+            "count": secrets.count,
+            "knownFormat": secrets.filter { $0.flags.contains(.secretKnownFormat) }.count,
+            "autoDeleted": secretsAutoDeleted,
+            "retentionSeconds": Int(secretRetention),
+            "nextSweepAt": secretSweepTimer.map { ISO8601DateFormatter().string(from: $0.fireDate) } ?? "",
+        ]
     }
 
     var itemCount: Int { (try? store?.count()) ?? 0 }
@@ -310,9 +377,11 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
 
     func paste(itemID: UUID, mode: PasteMode) {
         guard let store, let monitor, let stored = try? store.snapshot(id: itemID) else { return }
-        // 全項目・全型をペーストボードへ戻す（プレーンテキストのときは文字の型だけ。コマンドはプロンプトを外す）。
-        // この変化は新しい履歴にせず、先頭へ移すだけにする
-        let snapshot = PastePipeline.prepare(stored, kind: (try? store.item(id: itemID))?.kind, mode: mode)
+        // 全項目・全型をペーストボードへ戻す（プレーンテキストのときは文字の型だけ。コマンドはプロンプトを外す。
+        // 秘密は ConcealedType の印を足す）。この変化は新しい履歴にせず、先頭へ移すだけにする
+        let item = try? store.item(id: itemID)
+        let snapshot = PastePipeline.prepare(
+            stored, kind: item?.kind, mode: mode, secret: item?.isSecretLikely ?? false)
         let changeCount = PasteboardWriter.write(snapshot, to: pasteboard)
         monitor.acknowledgeOwnWrite(changeCount: changeCount)
         try? store.touch(id: itemID)
@@ -349,8 +418,11 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
 
     func delete(itemID: UUID) {
         do {
+            let secret = (try? store?.item(id: itemID))?.isSecretLikely ?? false
             try store?.delete(id: itemID)
-            Log.capture.info("履歴から 1 件削除")
+            // 秘密は消したデータを WAL からも追い出す
+            if secret { store?.scrubDeletedData() }
+            Log.capture.info("履歴から 1 件削除 secret=\(secret)")
         } catch {
             Log.capture.error("削除に失敗: \(String(describing: error), privacy: .public)")
         }
@@ -531,6 +603,13 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         )
     }
 
+    func applySecretRetention(_ retention: TimeInterval) {
+        secretRetention = retention
+        Log.capture.info("秘密を自動で消すまで seconds=\(Int(retention))")
+        // 短くしたら、時間を過ぎたものをその場で消す
+        scheduleSecretSweep()
+    }
+
     func applyLaunchAtLogin(_ enabled: Bool) {
         // 検証用に隔離したインスタンスは、本物のログイン項目に触らない
         guard !isolated else {
@@ -607,10 +686,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
                 case .inserted: "inserted"
                 case .movedToTop: "movedToTop"
                 }
+            // 秘密かどうかは印だけを見る（中身は読まない・書かない）
+            let flags = (try? store?.item(id: result.id))?.flags ?? []
+            let secret =
+                flags.contains(.secretKnownFormat) ? "high" : flags.contains(.secretLikely) ? "medium" : "none"
             Log.capture.info(
-                "保存 \(action, privacy: .public) kind=\(kind.rawValue, privacy: .public) method=\(method.rawValue, privacy: .public) types=\(typeCount) bytes=\(bytes)"
+                "保存 \(action, privacy: .public) kind=\(kind.rawValue, privacy: .public) method=\(method.rawValue, privacy: .public) types=\(typeCount) bytes=\(bytes) secret=\(secret, privacy: .public)"
             )
             history?.historyDidChange()
+            if flags.contains(.secretKnownFormat) { scheduleSecretSweep() }
         case .skipped(let reason):
             Log.capture.info("取り込まない reason=\(reason.rawValue, privacy: .public)")
         case .failed(let message):

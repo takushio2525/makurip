@@ -29,8 +29,8 @@ struct KeymapTests {
         #expect(
             ids == [
                 "open", "openList", "close", "prev", "next", "paste", "pastePlain", "copyOnly", "quick", "kindNext",
-                "kindPrev", "method", "app", "pinned", "snippets", "pin", "look", "source", "delete", "settings",
-                "editSnippet", "candUp", "candDown", "candCommit", "candCancel", "candExpand",
+                "kindPrev", "method", "app", "pinned", "snippets", "pin", "look", "reveal", "source", "delete",
+                "settings", "editSnippet", "candUp", "candDown", "candCommit", "candCancel", "candExpand",
             ])
     }
 

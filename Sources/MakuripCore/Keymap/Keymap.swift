@@ -7,6 +7,8 @@ public struct KeyCombo: Codable, Hashable, Sendable {
         case code(UInt16)
         /// 数字の 1〜9（「番号の項目をすぐ貼り付け」のように、押した番号で動くもの）
         case digits
+        /// 修飾キーだけ（押している間だけ効く。「隠した内容を表示」の ⌥）。修飾キーは `modifiers` に 1 つだけ入れる
+        case hold
     }
 
     public var key: Key
@@ -21,7 +23,7 @@ public struct KeyCombo: Codable, Hashable, Sendable {
         self.init(.code(UInt16(hotKey.keyCode)), hotKey.modifiers)
     }
 
-    /// 押されたキーに合えば true。数字のキーなら `digit` に 1〜9 が入る
+    /// 押されたキーに合えば true。数字のキーなら `digit` に 1〜9 が入る（押している間だけ効くキーは、キーを押しても合わない）
     public func matches(_ press: KeyStroke) -> (matched: Bool, digit: Int?) {
         guard press.modifiers == modifiers else { return (false, nil) }
         switch key {
@@ -30,16 +32,24 @@ public struct KeyCombo: Codable, Hashable, Sendable {
         case .digits:
             guard let digit = KeyCodes.digit(of: press.keyCode) else { return (false, nil) }
             return (true, digit)
+        case .hold:
+            return (false, nil)
         }
+    }
+
+    /// 押している間だけ効くキーが、いま押されている修飾キーで効いているか（ほかの修飾キーが一緒でもよい）
+    public func isHeld(by pressed: HotKey.Modifiers) -> Bool {
+        key == .hold && !modifiers.isEmpty && pressed.isSuperset(of: modifiers)
     }
 
     /// 2 つの組み合わせが同じキーで発火しうるか（重なりの検出に使う）
     public func overlaps(_ other: KeyCombo) -> Bool {
         guard modifiers == other.modifiers else { return false }
         switch (key, other.key) {
-        case (.digits, .digits): return true
+        case (.digits, .digits), (.hold, .hold): return true
         case (.code(let a), .code(let b)): return KeyCodes.canonical(a) == KeyCodes.canonical(b)
         case (.digits, .code(let code)), (.code(let code), .digits): return KeyCodes.digit(of: code) != nil
+        case (.hold, _), (_, .hold): return false
         }
     }
 
@@ -59,6 +69,7 @@ public struct KeyCombo: Codable, Hashable, Sendable {
     public var keySymbol: String {
         switch key {
         case .digits: "1–9"
+        case .hold: ""
         case .code(let code): KeyCodes.names[KeyCodes.canonical(code)] ?? "#\(code)"
         }
     }
@@ -149,7 +160,7 @@ public enum KeyCodes {
 ///
 /// 設定スキーマ（`SettingsSchema`）は操作ごとに `keys.<ID>` の項目を作り、設定画面・CLI・AI（MCP）が同じ ID と説明文で付け替える。
 /// ID（rawValue）と並びは試作（`makurip-design/ui/shared/core.js` の `Mk.ACTIONS`）と同じにしてある。
-/// 秘密の表示の操作はフェーズ5（#5）で足す。`editSnippet` は試作に無い（定型文の窓を開く。#7）。
+/// `editSnippet` は試作に無い（定型文の窓を開く。#7）。
 public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case openHistory = "open"
     case openList
@@ -168,6 +179,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case snippets
     case togglePin = "pin"
     case preview = "look"
+    case reveal
     case openSource = "source"
     case delete
     case settings
@@ -202,7 +214,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .openHistory, .openList, .close: "呼び出す"
         case .previous, .next, .paste, .pastePlain, .copyOnly, .quickPaste: "選ぶ・貼る"
         case .kindNext, .kindPrevious, .cycleMethod, .chooseApp, .pinnedOnly, .snippets: "絞り込み"
-        case .togglePin, .preview, .openSource, .delete, .settings, .editSnippet: "項目の操作"
+        case .togglePin, .preview, .reveal, .openSource, .delete, .settings, .editSnippet: "項目の操作"
         case .candidateUp, .candidateDown, .candidateCommit, .candidateCancel, .candidateExpand: "候補窓"
         }
     }
@@ -226,6 +238,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .snippets: "定型文を表示"
         case .togglePin: "ピン留めする／外す"
         case .preview: "大きくプレビュー"
+        case .reveal: "隠した内容を表示（押している間）"
         case .openSource: "コピー元のページを開く"
         case .delete: "履歴から削除"
         case .settings: "設定を開く"
@@ -259,6 +272,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .snippets: "定型文の一覧に切り替える。もう一度押すと履歴に戻る。"
         case .togglePin: "選んだ項目を固定し、古くなっても消えないようにする。"
         case .preview: "選んだ項目を大きく表示する（画像やコードの確認用）。"
+        case .reveal:
+            "API キーなど隠している内容を、押している間だけ表示する（一覧・プレビュー・候補窓）。離すとすぐ隠れる。修飾キー（⌥・⌘・⌃・⇧）1 つで割り当てる。"
         case .openSource: "コピーした元のページ（ブラウザや AI チャット）を開く。"
         case .delete: "選んだ項目を履歴から消す。"
         case .settings: "この設定画面を開く（一覧を閉じてから開く）。"
@@ -274,6 +289,9 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
 
     /// 番号で動く操作か（キーは「修飾キー + 1〜9」で割り当てる）
     public var usesDigits: Bool { self == .quickPaste }
+
+    /// 押している間だけ効く操作か（キーは修飾キー 1 つで割り当てる）
+    public var holdsModifier: Bool { self == .reveal }
 
     /// 既定のキー（試作と同じ。先頭のものを画面のヒントに出す）
     public var defaultCombos: [KeyCombo] {
@@ -295,6 +313,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .snippets: [KeyCombo(.code(1), .command)]  // ⌘S
         case .togglePin: [KeyCombo(.code(35), .command)]  // ⌘P
         case .preview: [KeyCombo(.code(16), .command)]  // ⌘Y
+        case .reveal: [KeyCombo(.hold, .option)]  // ⌥ を押している間
         case .openSource: [KeyCombo(.code(31), .command)]  // ⌘O
         case .delete: [KeyCombo(.code(KeyCodes.delete), .command)]  // ⌘⌫
         case .settings: [KeyCombo(.code(KeyCodes.comma), .command)]  // ⌘,
@@ -331,6 +350,11 @@ public struct Keymap: Hashable, Sendable {
 
     public mutating func set(_ combos: [KeyCombo], for action: KeyAction) {
         bindings[action] = combos
+    }
+
+    /// 押している間だけ効く操作が、いま押されている修飾キーで効いているか
+    public func isHeld(_ action: KeyAction, modifiers: HotKey.Modifiers) -> Bool {
+        combos(for: action).contains { $0.isHeld(by: modifiers) }
     }
 
     /// 押されたキーに当たる操作（範囲 `scope` の中だけを見る）。数字のキーなら番号も返す

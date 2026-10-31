@@ -9,7 +9,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 
 - 目的: Windows のクリップボード履歴に相当するものを Mac で。種類・コピー方法・コピー元で絞り込めることが売り
 - 対象: 作者本人（開発・AI チャットでコピーを多用する人）
-- 状況: フェーズ4（設定スキーマ・設定画面・CLI・全キー割り当て #4）まで。次は秘密の検出（#5）（`.agent/roadmap.md`）
+- 状況: フェーズ5（秘密の検出・マスク表示・自動消去 #5）まで。次は AI の口（#6）（`.agent/roadmap.md`）
 
 ## 技術スタック
 
@@ -26,6 +26,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 | 定型文 | データフォルダの `snippets.json` + ファイルの監視（`Sources/MakuripCore/Snippets/`） | 履歴の DB とは別（上限・消去で消えない）。検証は `SnippetCollection.normalize` の 1 か所。履歴の SQLite に表を足す案と比べた（`.agent/architecture.md` の「技術選定（フェーズ7）」） |
 | 設定 | データフォルダの `settings.json` + ファイルの監視（`Sources/MakuripCore/Settings/`） | スキーマ・検証は Core の 1 か所。画面・CLI（`--settings`）が同じ関数を通す。UserDefaults・分散通知と比べた（`.agent/architecture.md` の「技術選定（フェーズ4）」） |
 | キーの記録 | 自前（窓の `NSEvent` ローカル監視 → `SettingsModel.record`） | KeyboardShortcuts（sindresorhus）は記録欄の見た目が試作の「新しいキーを押す…」と違い、依存も増えるので採らなかった |
+| 秘密の判定 | 自前（既知の接頭辞・文脈・ランダムさ。`Sources/MakuripCore/Secret/`） | gitleaks・trufflehog の規則と比べて採らなかった（`.agent/architecture.md` の「技術選定（フェーズ5）」）。判定の一覧と限界は `.agent/conventions.md` |
 
 **外部ライブラリは 0**。入れる場合は採用理由と比べた代替を PR とこの表に書く。
 技術選定で比べた代替（XcodeGen・GRDB・SwiftData・KeyboardShortcuts など）は `.agent/architecture.md` の「技術選定」節。
@@ -36,13 +37,13 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・定型文）。AppKit は NSPasteboard だけ使う
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文）。AppKit は NSPasteboard だけ使う
 │   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー・定型文の一覧）と候補窓と設定画面と定型文の窓。Core にだけ依存する
 │   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・起動引数・--settings の入口）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
-├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E。settings.sh は設定）
+├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文）
 ├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
 ├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
@@ -67,6 +68,7 @@ makurip/
 | 決まった場所へ入れる | `make install`（→ `~/Applications/Makurip.app`） |
 | 隔離 E2E（取り込み・永続化） | `make e2e`（一般ペーストボードに触らない） |
 | 隔離 E2E（設定） | `MAKURIP_APP=.app-build/Makurip.app make e2e-settings`（窓を出さない。ホットキーは使われていない組み合わせだけ） |
+| 隔離 E2E（秘密） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-secrets`（偽物のキーで印・伏せ字・1 分での自動消去・当て直し。2〜3 分かかる） |
 | 隔離 E2E（定型文） | `MAKURIP_APP=.app-build/Makurip.app make e2e-snippets`（登録・置き換え・名前付きペーストボードへの書き戻し・履歴の消去で消えないこと。窓を出さず、キーも送らない） |
 | 設定の CLI | `Makurip [--data-dir DIR] --settings list\|get\|set\|add\|remove\|reset\|schema [--json]`（`docs/ai-settings.md`） |
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
@@ -78,6 +80,7 @@ makurip/
 ## 安全規則（最重要・全フェーズ共通）
 
 - 実際のコピー内容・実履歴の中身を、ペイン・ログ・コミット・Issue に出さない。見てよいのはメタデータ（型名・バイト数・種類・時刻）と自作のテストデータだけ
+- 秘密の判定のテストに、本物の形式どおりの長い値を直書きしない（GitHub の secret scanning が反応しうる）。接頭辞と乱数を実行時につなぐ（`FakeSecret`・`MakuripDevTool` の `secret-*`）
 - 開発・検証は `--data-dir` で隔離したフォルダを使い、終わったら消す。既定のデータフォルダ（`~/Library/Application Support/com.takushio2525.makurip/`）を検証に使わない。設定の CLI の検証も `--data-dir` を付ける（設定ファイルはデータフォルダにある）
 - UserDefaults を使うテストは `UserDefaults(suiteName:)` で分ける。`register(defaults:)` はプロセス全体で共有されるので使わない
 - 隔離したインスタンスでホットキーの付け替えを試すときは、起動する前に CLI で使われていない組み合わせ（⌃⌥⇧⌘F11 など）にしておく（ほかのアプリのキーを奪わない）。ログイン時の起動は隔離中は登録しない作りにしてある

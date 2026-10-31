@@ -419,6 +419,65 @@ final class ClipContentLoader {
         previewTokens[key] = tokens
     }
 
+    // MARK: 秘密（本当の中身は、表示のキーを押している間と ⌘Y のプレビューのためだけに読む）
+
+    /// 秘密の項目の中身。`text` は本当の中身、`masked` はそれを伏せ字にしたもの（どちらも先頭 2 万文字まで）
+    struct SecretContent {
+        var text: String
+        var masked: String
+        /// 理由（「API キーの形式」）
+        var reason: String
+        /// 全文の文字数（見出しの「36 文字」）
+        var characterCount: Int
+        var truncated: Bool
+    }
+
+    private var secrets: [String: SecretContent] = [:]
+
+    func secret(for item: ClipItem) -> SecretContent {
+        let key = Self.contentKey(item)
+        if let cached = secrets[key] { return cached }
+        let full = secretSourceText(item) ?? ""
+        let (maskedFull, findings) = SecretMask.masked(full)
+        let truncated = full.count > Self.previewCharacterLimit
+        // 秘密と判定したのに、ここで読んだ文字の中に見つからない（RTF だけにある等）ときは、全体を伏せ字にする
+        let masked =
+            findings.isEmpty
+            ? String(repeating: SecretMask.bullet, count: 16) : String(maskedFull.prefix(Self.previewCharacterLimit))
+        let reason = findings.max { $0.kind.confidence < $1.kind.confidence }?.kind.reason ?? "秘密らしき値"
+        let content = SecretContent(
+            text: String(full.prefix(Self.previewCharacterLimit)), masked: masked, reason: reason,
+            characterCount: full.count, truncated: truncated)
+        if secrets.count > 50 { secrets.removeAll() }
+        secrets[key] = content
+        return content
+    }
+
+    /// 読んだ秘密の中身を捨てる（一覧・候補窓を閉じたとき）
+    func purgeSecrets() {
+        secrets.removeAll()
+    }
+
+    /// 秘密の項目の本当の中身（平文の型 → リッチテキスト → ファイル名。一覧用の平文は伏せ字なので使わない）
+    private func secretSourceText(_ item: ClipItem) -> String? {
+        if item.kind == .file {
+            let names = files(of: item, limit: 200).map(\.name)
+            return names.isEmpty ? nil : names.joined(separator: "\n")
+        }
+        for type in [PasteboardTypes.utf8PlainText, PasteboardTypes.plainText] {
+            if let text = string(item, type: type) { return text }
+        }
+        for type in [PasteboardTypes.utf16ExternalPlainText, PasteboardTypes.utf16PlainText] {
+            if let data = actions?.representationData(itemID: item.id, itemIndex: 0, type: type),
+                let text = String(data: data, encoding: .utf16)
+            {
+                return text
+            }
+        }
+        if let rich = richText(of: item, baseSize: 13, inline: false) { return String(rich.characters) }
+        return nil
+    }
+
     private func string(_ item: ClipItem, type: String, itemIndex: Int = 0) -> String? {
         guard let data = actions?.representationData(itemID: item.id, itemIndex: itemIndex, type: type),
             let text = String(data: data, encoding: .utf8)

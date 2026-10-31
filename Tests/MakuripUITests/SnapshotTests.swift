@@ -38,6 +38,8 @@ struct SnapshotTests {
         var selectAfterLayout: Int?
         /// 試作の 6 件の代わりに使う定型文（試作に同じ状態がないエッジケース）
         var snippets: [Snippet]?
+        /// 隠した内容を表示している（⌥ を押している間と同じ）
+        var reveal = false
         let setUp: (HistoryPanelModel) -> Void
     }
 
@@ -156,6 +158,29 @@ struct SnapshotTests {
         Scenario(
             name: "edge-snippets-many", selectAfterLayout: 150, snippets: SampleHistory.manySnippets(count: 300)
         ) { $0.toggleSnippets() },
+        // フェーズ5: 秘密（試作と同じ 27 件。5 件目が API キー、コマンドの 4 件目が export のトークン）
+        Scenario(name: "secret-light", entries: SampleHistory.secretEntries, selectAfterLayout: 4) { _ in },
+        Scenario(name: "secret-dark", dark: true, entries: SampleHistory.secretEntries, selectAfterLayout: 4) { _ in },
+        Scenario(name: "secret-peek-light", peek: true, entries: SampleHistory.secretEntries, selectAfterLayout: 4) {
+            _ in
+        },
+        Scenario(
+            name: "secret-peek-dark", dark: true, peek: true, entries: SampleHistory.secretEntries,
+            selectAfterLayout: 4
+        ) { _ in },
+        Scenario(
+            name: "secret-reveal-light", peek: true, entries: SampleHistory.secretEntries, selectAfterLayout: 4,
+            reveal: true
+        ) { _ in },
+        Scenario(
+            name: "secret-reveal-dark", dark: true, peek: true, entries: SampleHistory.secretEntries,
+            selectAfterLayout: 4, reveal: true
+        ) { _ in },
+        Scenario(name: "secret-cmd-light", peek: true, entries: SampleHistory.secretEntries, selectAfterLayout: 3) {
+            $0.setKind(.command)
+        },
+        // 試作に同じ状態がないもの: 秘密を検索で引く（中身では引けず、「秘密」で引ける）
+        Scenario(name: "edge-secret-search", entries: SampleHistory.secretEntries) { $0.query = "himitsu" },
     ]
 
     @Test("各状態を描き、試作と並べた比較画像を作る")
@@ -173,6 +198,7 @@ struct SnapshotTests {
             model.open()
             scenario.setUp(model)
             if scenario.peek { model.setPreviewOpen(true) }
+            model.revealHeld = scenario.reveal
             let loader = ClipContentLoader(actions: history)
             for item in model.items where item.kind == .image {
                 _ = loader.loadThumbnailNow(for: item)

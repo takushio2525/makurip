@@ -307,7 +307,8 @@ private struct CardList: View {
                                 CardView(
                                     item: item, index: index, isSelected: index == model.selectedIndex,
                                     query: model.searchQuery, now: model.now, quickHeld: model.quickModifierHeld,
-                                    quickCombo: model.keymap.primary(.quickPaste), loader: loader
+                                    quickCombo: model.keymap.primary(.quickPaste), loader: loader,
+                                    revealing: model.isRevealing, keymap: model.keymap
                                 )
                                 .id(row.id)
                                 .onTapGesture(count: 2) {

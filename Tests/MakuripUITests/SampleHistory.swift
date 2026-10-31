@@ -5,7 +5,7 @@ import MakuripCore
 @testable import MakuripUI
 
 /// 本体の代わり（メモリの中の履歴）。貼り付け・閉じる・ピン留め・削除の呼び出しを記録する。
-/// 中身はすべて自作の架空データ（試作 `makurip-design/ui/shared/data.js` と同じ文面。秘密の 2 件は #5 の範囲なので除く）
+/// 中身はすべて自作の架空データ（試作 `makurip-design/ui/shared/data.js` と同じ文面。秘密の 2 件は `secretEntries` だけに入れる）
 @MainActor
 final class FakeHistory: HistoryActions {
     var items: [ClipItem]
@@ -128,6 +128,8 @@ enum SampleHistory {
         let method: CopyMethod
         var pinned = false
         var source: String?
+        /// 秘密（本物のストアと同じく、印を付けて一覧用の平文を伏せ字にする）
+        var secret = false
         let body: Body
     }
 
@@ -175,6 +177,34 @@ enum SampleHistory {
         Snippet(
             id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index + 1))!, name: entry.0,
             abbreviation: entry.1, body: entry.2, createdAt: now, updatedAt: now)
+    }
+
+    /// 決まった種から作る擬似乱数の英数字（秘密の偽物の値を、ソースに直書きせずに作る）
+    static func pseudoRandom(_ count: Int, seed: UInt64) -> String {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+        var state = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return String(
+            (0..<count).map { _ in
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                return alphabet[Int((state >> 33) % UInt64(alphabet.count))]
+            })
+    }
+
+    /// 試作の秘密の 2 件（h05: ダッシュボードのコピーボタンで取った API キー、h18: ターミナルの export）と同じ形の偽物
+    static let secretKeyEntry = Entry(
+        kind: .text, minutesAgo: 18, app: "safari", method: .other, source: "https://dashboard.example.com/keys",
+        secret: true, body: .text("sk-" + "test-" + pseudoRandom(24, seed: 5) + "0000"))
+    static let secretExportEntry = Entry(
+        kind: .command, minutesAgo: 300, app: "terminal", method: .keyboard, secret: true,
+        body: .command("export API_TOKEN=tok-" + "test-" + pseudoRandom(16, seed: 18)))
+
+    /// 試作の全 27 件（秘密の 2 件を含む）。秘密の見比べ（#5）に使う
+    static var secretEntries: [Entry] {
+        var list = entries
+        for entry in [secretKeyEntry, secretExportEntry] {
+            list.insert(entry, at: list.firstIndex { $0.minutesAgo > entry.minutesAgo } ?? list.count)
+        }
+        return list
     }
 
     static let entries: [Entry] = [
@@ -393,11 +423,16 @@ enum SampleHistory {
                 preview = names.joined(separator: "\n")
             }
             let date = now.addingTimeInterval(-entry.minutesAgo * 60)
+            var flags: Set<ClipFlag> = []
+            if entry.secret, let text = preview {
+                flags = [.secretLikely, .secretKnownFormat]
+                preview = String(SecretMask.masked(text).text.prefix(Limits.default.previewCharacterLimit))
+            }
             items.append(
                 ClipItem(
                     id: id, contentHash: id.uuidString, kind: entry.kind, copyMethod: entry.method,
                     source: SourceApp(bundleID: app.id, name: app.name), sourceURL: entry.source, createdAt: date,
-                    lastUsedAt: date, copyCount: 1, isPinned: entry.pinned, flags: [], previewText: preview,
+                    lastUsedAt: date, copyCount: 1, isPinned: entry.pinned, flags: flags, previewText: preview,
                     totalBytes: reps.reduce(0) { $0 + $1.2.count },
                     pasteboardItemCount: (reps.map(\.0).max() ?? 0) + 1))
             payloads[id] = reps.map { (itemIndex: $0.0, type: $0.1, data: $0.2) }

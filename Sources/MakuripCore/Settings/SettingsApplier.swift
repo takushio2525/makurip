@@ -15,6 +15,8 @@ public protocol SettingsApplying: AnyObject {
     func applyCandidateSettings(_ settings: CandidateSettings)
     /// ログイン時に起動（起動したときには呼ばない。変えたときだけ）
     func applyLaunchAtLogin(_ enabled: Bool)
+    /// 秘密を自動で消すまでの秒数（短くしたら、時間を過ぎたものをその場で消す）
+    func applySecretRetention(_ retention: TimeInterval)
 }
 
 /// 設定の変化を、変わった部分だけ反映先へ渡す
@@ -34,5 +36,6 @@ public enum SettingsApplier {
         if previous?.keymap != new.keymap { target.applyKeymap(new.keymap) }
         if previous?.candidate != new.candidate { target.applyCandidateSettings(new.candidate) }
         if let previous, previous.launchAtLogin != new.launchAtLogin { target.applyLaunchAtLogin(new.launchAtLogin) }
+        if previous?.secretRetention != new.secretRetention { target.applySecretRetention(new.secretRetention) }
     }
 }

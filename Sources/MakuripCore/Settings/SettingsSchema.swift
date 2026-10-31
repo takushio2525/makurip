@@ -130,6 +130,7 @@ public enum SettingID {
     public static let launchAtLogin = "launchAtLogin"
     public static let maxItems = "maxItems"
     public static let maxTotalMegabytes = "maxTotalMB"
+    public static let secretAutoDelete = "secretAutoDeleteMinutes"
     public static let excludedApps = "excludedApps"
     public static let pasteTiming = CandidateSettings.Key.pasteTiming
     public static let idleTimeout = CandidateSettings.Key.idleTimeout
@@ -226,6 +227,18 @@ public enum SettingsSchema {
             kind: .integer(min: 100, max: 20_480, step: 256, unit: "MB"),
             examples: [.init("履歴の容量は 2GB まで", .int(2048))]),
         SettingItem(
+            id: SettingID.secretAutoDelete, group: "履歴", label: "秘密を自動で消すまで",
+            summary:
+                "API キー・トークン・秘密鍵・パスワードの代入など、形式から確度高く秘密と判定した項目を、最後に使ってからこの時間で履歴から消す（単位は分。「1時間」のようにも書ける）。ピン留めしたものは消さない。秘密の判定とマスク表示そのものは切れない（形式から外れるランダムな文字列はマスクするが消さない）。",
+            kind: .integer(min: SecretExpiry.minimumMinutes, max: SecretExpiry.maximumMinutes, step: 5, unit: "分"),
+            examples: [
+                .init("API キーは 1 時間で消して", .int(60)),
+                .init("秘密っぽいものはすぐ消して（1 分）", .int(1)),
+                .init(
+                    "コピーした API キーを消さないで", .int(SecretExpiry.maximumMinutes),
+                    note: "消さない設定はない（最長 1 日）。ずっと残したい項目はピン留めする"),
+            ]),
+        SettingItem(
             id: SettingID.excludedApps, group: "履歴", label: "記録しないアプリ",
             summary:
                 "このアプリを使っているときのコピーは、履歴に残さない。値はアプリのバンドル ID（例: com.apple.Safari）。パスワードを扱うアプリが付ける印（ConcealedType）の付いたコピーは、ここに入れなくても残さない。",
@@ -308,6 +321,7 @@ public enum SettingsSchema {
         case SettingID.launchAtLogin: return .bool(settings.launchAtLogin)
         case SettingID.maxItems: return .int(settings.maxItems)
         case SettingID.maxTotalMegabytes: return .int(settings.maxTotalMegabytes)
+        case SettingID.secretAutoDelete: return .int(settings.secretAutoDeleteMinutes)
         case SettingID.excludedApps: return .array(settings.excludedApps.map(JSONValue.string))
         case SettingID.pasteTiming: return .object(settings.pasteTiming.mapValues { .string($0.rawValue) })
         case SettingID.idleTimeout: return .number(settings.idleTimeout)
@@ -339,6 +353,8 @@ public enum SettingsSchema {
         case SettingID.maxItems: settings.maxItems = value.intValue ?? AppSettings.default.maxItems
         case SettingID.maxTotalMegabytes:
             settings.maxTotalMegabytes = value.intValue ?? AppSettings.default.maxTotalMegabytes
+        case SettingID.secretAutoDelete:
+            settings.secretAutoDeleteMinutes = value.intValue ?? AppSettings.default.secretAutoDeleteMinutes
         case SettingID.excludedApps: settings.excludedApps = strings
         case SettingID.pasteTiming: settings.pasteTiming = map.compactMapValues(PasteTiming.init)
         case SettingID.idleTimeout: settings.idleTimeout = value.doubleValue ?? AppSettings.default.idleTimeout
@@ -513,6 +529,7 @@ public enum SettingsSchema {
             switch unit {
             case "MB": [("gb", 1024), ("g", 1024), ("mb", 1), ("m", 1)]
             case "秒": [("秒", 1), ("sec", 1), ("s", 1)]
+            case "分": [("時間", 60), ("hours", 60), ("hour", 60), ("h", 60), ("分", 1), ("min", 1), ("m", 1)]
             default: [(unit.lowercased(), 1)]
             }
         for (suffix, value) in suffixes where lower.hasSuffix(suffix) {
@@ -568,6 +585,15 @@ public enum KeyRules {
     /// 使えなければ理由、使えれば nil
     public static func problem(with combo: KeyCombo, for action: KeyAction) -> String? {
         let hasStrong = !combo.modifiers.intersection(strong).isEmpty
+        if action.holdsModifier {
+            guard combo.key == .hold, KeyComboText.holdable(combo.modifiers) else {
+                return "押している間だけ効く操作は、修飾キー 1 つ（⌥・⌘・⌃・⇧）で割り当てる（例: ⌥）"
+            }
+            return nil
+        }
+        if combo.key == .hold {
+            return "修飾キーだけのキーは「\(KeyAction.reveal.label)」（keys.reveal）だけで使える"
+        }
         if action.usesDigits {
             guard combo.key == .digits else { return "番号の操作は「修飾キー + 1〜9」で割り当てる（例: ⌘1–9）" }
             return hasStrong ? nil : "数字と一緒に ⌘・⌃・⌥ のどれかを使う"

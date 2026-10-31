@@ -10,7 +10,7 @@
 #   MAKURIP_DESIGN_DIR=<試作の ui フォルダ> OUT=<出力先> design/ui-compare/shoot.sh
 #
 # 試作のファイルは読むだけ（書き換えない）。比べやすくするため、試作側はぼかしを切って単色の背景に置き、
-# パネルを CSS の (40, 40) に固定する。データは試作と同じ架空の履歴（秘密の 2 件は #5 の範囲なので除く）。
+# パネルを CSS の (40, 40) に固定する。データは試作と同じ架空の履歴（秘密の 2 件は、秘密の状態を撮るときだけ残す）。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -73,6 +73,14 @@ shoot peek-code-py-light light custom "&kind=code&move=2&look=1"
 shoot peek-code-sh-dark dark custom "&kind=code&move=3&look=1"
 shoot peek-cmd-light light custom "&kind=command&move=1&look=1"
 shoot peek-cmd-dark dark custom "&kind=command&look=1"
+# フェーズ5: 秘密（伏せ字・⌥ で表示）。秘密の 2 件を残した履歴で撮る
+shoot secret-light light custom "&secrets=1&move=4"
+shoot secret-dark dark custom "&secrets=1&move=4"
+shoot secret-peek-light light custom "&secrets=1&move=4&look=1"
+shoot secret-peek-dark dark custom "&secrets=1&move=4&look=1"
+shoot secret-reveal-light light custom "&secrets=1&move=4&look=1&reveal=1"
+shoot secret-reveal-dark dark custom "&secrets=1&move=4&look=1&reveal=1"
+shoot secret-cmd-light light custom "&secrets=1&kind=command&move=3&look=1"
 # フェーズ7: 定型文の一覧（⌘S）・⌘Y の定型文・検索（試作の b-snippets.png と同じく 2 件目を選ぶ）
 shoot snippets light snippets "&move=1"
 shoot snippets-dark dark snippets "&move=3"
@@ -96,6 +104,10 @@ shoot_cand candidate-scrolled-dark dark "&idx=15"
 shoot_cand candidate-ime light "&order=ime"
 shoot_cand candidate-empty light "&count=0"
 shoot_cand candidate-one light "&count=1"
+shoot_cand candidate-secret-light light "&secrets=1&idx=4"
+shoot_cand candidate-secret-dark dark "&secrets=1&idx=4"
+shoot_cand candidate-secret-reveal-light light "&secrets=1&idx=4&reveal=1"
+shoot_cand candidate-secret-reveal-dark dark "&secrets=1&idx=4&reveal=1"
 
 echo "== 試作の設定シート（統合版の ⌘,）をヘッドレス Chrome で撮る"
 sed "s#@DESIGN@#$DESIGN#g" "$HERE/settings-states.html" > "$OUT/work/settings-states.html"

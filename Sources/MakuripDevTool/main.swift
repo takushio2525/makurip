@@ -61,6 +61,18 @@ func digest(_ snapshot: PasteboardSnapshot) -> String {
 
 func token() -> String { String(UUID().uuidString.prefix(8)) }
 
+/// 偽の秘密の本体（実行のたびに作る乱数の英数字。実在しない値。ソースに本物の形式どおりの値を書かないため）
+func fakeSecretBody(_ count: Int, alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+    -> String
+{
+    let characters = Array(alphabet)
+    var result = ""
+    // ランダムらしさの判定（数字 2 つ以上・大文字と小文字）に必ず通るよう、頭に決まった並びを置く
+    if count >= 8 { result = "Zx8Qm4" }
+    while result.count < count { result.append(characters.randomElement()!) }
+    return result
+}
+
 func bitmap(width: Int, height: Int) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
@@ -191,6 +203,68 @@ func fixture(_ name: String, fileDirectory: String?, probeToken: String?) throws
         return (1...3).map { item([text("Makurip E2E 項目 \($0) / \(id)")]) }
     case "empty":
         return []
+    // 秘密の判定（#5）用の偽物。接頭辞は文字列をつないで作り、本体は実行のたびに乱数で作る
+    case "secret-github":
+        return [item([text("gh" + "p_" + fakeSecretBody(36))])]
+    case "secret-openai":
+        return [item([text("sk-" + "test-" + fakeSecretBody(32))])]
+    case "secret-aws":
+        // AWS の公式ドキュメントにある例示用のアクセスキー ID
+        return [item([text("AK" + "IA" + "IOSFODNN7EXAMPLE")])]
+    case "secret-env":
+        let env = """
+            # Makurip E2E \(token())
+            NODE_ENV=production
+            OPENAI_API_KEY=sk-\("proj-")\(fakeSecretBody(48))
+            DATABASE_URL=postgres://app:\(fakeSecretBody(12))@localhost:5432/app
+            DEBUG=false
+            """
+        return [item([text(env)])]
+    case "secret-pem":
+        let body = (0..<5).map { _ in
+            fakeSecretBody(64, alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+        }
+        let pem =
+            "-----BEGIN " + "OPENSSH PRIVATE KEY-----\n" + body.joined(separator: "\n") + "\n-----END "
+            + "OPENSSH PRIVATE KEY-----"
+        return [item([text(pem)])]
+    case "secret-rtf":
+        // 平文のない RTF だけ（書き手によってはこの形。秘密の値は RTF の中にそのまま入る）
+        let string = NSAttributedString(
+            string: "Makurip E2E \(token()) token: " + "gh" + "p_" + fakeSecretBody(36),
+            attributes: [.font: NSFont.systemFont(ofSize: 13)])
+        let rtf = try string.data(
+            from: NSRange(location: 0, length: string.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        return [item([(PasteboardTypes.rtf, rtf)])]
+    case "secret-file":
+        // 名前に秘密の値が入ったファイル（中身は読まない。名前とパスで判定する）
+        guard let fileDirectory else { throw DevToolError(description: "secret-file には --file-dir が要る") }
+        let url = URL(fileURLWithPath: fileDirectory).appendingPathComponent("gh" + "p_" + fakeSecretBody(36) + ".txt")
+        try Data("Makurip E2E\n".utf8).write(to: url)
+        let entry = NSPasteboardItem()
+        entry.setString(url.absoluteString, forType: .fileURL)
+        entry.setString(url.lastPathComponent, forType: .string)
+        return [entry]
+    case "secret-image-url":
+        // ブラウザの「画像をコピー」の形（画像と、トークン入りの URL の平文）
+        let rep = bitmap(width: 64, height: 48)
+        let url = "https://cdn.example.com/e2e-\(token()).png?token=" + fakeSecretBody(32)
+        return [item([(PasteboardTypes.png, rep.representation(using: .png, properties: [:])!), text(url)])]
+    case "secret-random":
+        // 形式から外れるランダムな文字列（確度は中。マスクするが自動では消さない）
+        return [item([text(fakeSecretBody(40))])]
+    case "secret-long":
+        // 1 MB のログの先頭に秘密（とても長いテキスト）
+        let line = "2026-10-31T12:00:00Z INFO request served path=/api/v1/items status=200 \(token())\n"
+        let log =
+            "GITHUB_TOKEN=" + "gh" + "p_" + fakeSecretBody(36) + "\n"
+            + String(repeating: line, count: 1_000_000 / line.utf8.count)
+        return [item([text(log)])]
+    case "not-secret":
+        // 紛らわしいもの（UUID・git のハッシュ・SHA-256）
+        let sha = SHA256.hash(data: Data(token().utf8)).map { String(format: "%02x", $0) }.joined()
+        return [item([text("\(UUID().uuidString)\n\(sha.prefix(40))\n\(sha)")])]
     default:
         throw DevToolError(description: "知らないテストデータ: \(name)")
     }

@@ -12,6 +12,8 @@ public struct AppSettings: Hashable, Sendable {
     public var maxItems: Int
     /// 全履歴の容量の上限（MB。1 MB = 1024 × 1024 バイト）
     public var maxTotalMegabytes: Int
+    /// 秘密（確度の高いもの）を、最後に使ってから自動で消すまでの分数（`SecretExpiry`）
+    public var secretAutoDeleteMinutes: Int
     /// 記録しないアプリ（バンドル ID。このアプリが前面にあるときのコピーは保存しない）
     public var excludedApps: [String]
     /// アプリごとの候補窓の貼り方（既定の一覧 `DeferredPasteApps` より優先）
@@ -31,6 +33,7 @@ public struct AppSettings: Hashable, Sendable {
         launchAtLogin = false
         maxItems = Limits.default.maxItems
         maxTotalMegabytes = Limits.default.maxTotalBytes / Self.megabyte
+        secretAutoDeleteMinutes = SecretExpiry.defaultMinutes
         excludedApps = []
         pasteTiming = candidate.pasteTiming
         replaceMethod = candidate.replaceMethod
@@ -60,6 +63,9 @@ public struct AppSettings: Hashable, Sendable {
     public func globalHotKey(_ action: KeyAction) -> HotKey? {
         keymap.primary(action)?.hotKey
     }
+
+    /// 秘密を自動で消すまでの秒数
+    public var secretRetention: TimeInterval { TimeInterval(secretAutoDeleteMinutes) * 60 }
 
     /// 記録しないアプリ（大文字・小文字を区別しない比較用）
     public var excludedAppSet: Set<String> { Set(excludedApps.map { $0.lowercased() }) }

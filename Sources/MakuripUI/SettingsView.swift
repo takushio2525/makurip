@@ -430,7 +430,7 @@ struct SettingsKeys: View {
     var body: some View {
         HStack(spacing: 4) {
             if recording {
-                Text(action.usesDigits ? "修飾キー＋数字を押す…" : "新しいキーを押す…")
+                Text(action.holdsModifier ? "修飾キーを押す…" : action.usesDigits ? "修飾キー＋数字を押す…" : "新しいキーを押す…")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)

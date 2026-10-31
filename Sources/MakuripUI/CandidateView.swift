@@ -41,6 +41,10 @@ final class CandidateViewModel {
     var selectedIndex: Int { state?.selectedIndex ?? 0 }
     var note: CandidateNote? { state?.note }
     var order: CandidateOrder { state?.order ?? .terminal }
+    /// 隠した内容（秘密）を表示しているか（表示のキーを押している間）
+    var revealed: Bool { state?.revealed ?? false }
+    /// 選んでいる項目が秘密なら、仮に貼らない理由の注記の代わりに秘密の注記を出す（試作どおり）
+    var showsSecretNote: Bool { state?.selectedItem?.isSecretLikely ?? false }
 
     static func visualRow(_ index: Int, count: Int, order: CandidateOrder) -> Int {
         order == .terminal ? count - 1 - index : index
@@ -66,9 +70,10 @@ final class CandidateViewModel {
     }
 
     var windowSize: CGSize {
-        CGSize(
-            width: CandidateLayout.width,
-            height: CandidateLayout.windowHeight(rowCount: items.count, hasNote: note != nil))
+        let note: CGFloat =
+            showsSecretNote ? CandidateLayout.secretNoteHeight : (self.note != nil ? CandidateLayout.noteHeight : 0)
+        return CGSize(
+            width: CandidateLayout.width, height: CandidateLayout.windowHeight(rowCount: items.count, noteHeight: note))
     }
 
     /// 新しいほうから数えた番号（試作の「4 / 27」）
@@ -106,6 +111,11 @@ enum CandidateRowText {
         -> Title
     {
         let text = item.previewText
+        // 秘密は伏せ字の 1 行目（一覧用の平文は取り込みのときに伏せ字にしてある。ファイル名・題名など本当の中身は使わない）
+        if item.isSecretLikely, item.kind != .image {
+            let line = firstLine(text)
+            return Title(body: line.isEmpty ? String(repeating: SecretMask.bullet, count: 16) : line, mono: true)
+        }
         switch item.kind {
         case .command:
             let line = firstLine(text)
@@ -142,6 +152,7 @@ enum CandidateRowText {
 
     /// 右に薄い字で出す種類と補足（予測変換の「ひらがな」の位置）。コードは言語が分かれば言語名（試作の「Swift 17行」）
     static func detail(_ item: ClipItem, imageSize: CGSize? = nil, language: CodeLanguage? = nil) -> String {
+        if item.isSecretLikely { return "秘密" }
         let text = item.previewText
         let plus = isTruncated(text) ? "+" : ""
         switch item.kind {
@@ -199,13 +210,20 @@ private struct CandidateContent: View {
             } else {
                 VStack(spacing: CandidateLayout.rowGap) {
                     ForEach(model.visibleRows) { row in
-                        CandidateRowView(item: row.item, selected: row.index == model.selectedIndex, loader: loader)
-                            .onTapGesture(count: 2) { model.onDoubleClick(row.index) }
-                            .onTapGesture { model.onClick(row.index) }
+                        CandidateRowView(
+                            item: row.item, selected: row.index == model.selectedIndex, revealed: model.revealed,
+                            loader: loader
+                        )
+                        .onTapGesture(count: 2) { model.onDoubleClick(row.index) }
+                        .onTapGesture { model.onClick(row.index) }
                     }
                 }
             }
-            if let note = model.note { CandidateNoteView(note: note) }
+            if model.showsSecretNote {
+                CandidateSecretNoteView(combo: model.keymap.primary(.reveal))
+            } else if let note = model.note {
+                CandidateNoteView(note: note)
+            }
             CandidateFooter(model: model)
         }
         .padding(CandidateLayout.padding)
@@ -225,6 +243,7 @@ private struct CandidateContent: View {
 struct CandidateRowView: View {
     let item: ClipItem
     let selected: Bool
+    var revealed = false
     let loader: ClipContentLoader
     @Environment(\.palette) private var palette
     @State private var thumb: ImageThumb?
@@ -235,14 +254,22 @@ struct CandidateRowView: View {
     var body: some View {
         let extras = loader.cardExtras(for: item)
         let image = currentThumb
-        let title = CandidateRowText.title(
-            item, urlTitle: extras.urlTitle, fileName: extras.files.first?.name, colorHex: extras.color?.hex)
+        let secret = SecretDisplay.masks(item)
+        let title = rowTitle(extras: extras, secret: secret)
         HStack(spacing: 8) {
             CandidateTile(item: item, selected: selected, thumb: image, color: extras.color)
-            Text(attributed(title))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 5) {
+                // 試作の .secret-inline: 鍵の印を本文の頭に（選んでいる行では白。表示中も鍵のまま）
+                if secret {
+                    Image(systemName: "lock")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(selected ? Color.white : palette.secret)
+                }
+                Text(attributed(title))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text(CandidateRowText.detail(item, imageSize: image?.pixelSize, language: loader.language(for: item)))
                 .font(.system(size: 11))
                 .foregroundStyle(selected ? Color.white.opacity(0.78) : palette.text3)
@@ -261,6 +288,14 @@ struct CandidateRowView: View {
             guard item.kind == .image, thumb == nil else { return }
             thumb = await loader.thumbnail(for: item, size: Self.thumbnailPixels)
         }
+    }
+
+    /// 1 行目。秘密は伏せ字（表示のキーを押している間だけ本当の 1 行目）
+    private func rowTitle(extras: ClipContentLoader.CardExtras, secret: Bool) -> CandidateRowText.Title {
+        var title = CandidateRowText.title(
+            item, urlTitle: extras.urlTitle, fileName: extras.files.first?.name, colorHex: extras.color?.hex)
+        if secret, revealed { title.body = CandidateRowText.firstLine(loader.secret(for: item).text) }
+        return title
     }
 
     private var currentThumb: ImageThumb? {
@@ -313,13 +348,15 @@ struct CandidateTile: View {
                 shape.fill(color?.color ?? palette.fill2)
                     .overlay(shape.strokeBorder(Color.black.opacity(0.18), lineWidth: 0.5))
             default:
-                let tint = palette.kind(item.kind)
+                // 秘密は鍵の札（試作の .ktile[data-kind=secret]）
+                let secret = item.isSecretLikely
+                let tint = secret ? palette.secret : palette.kind(item.kind)
                 shape.fill(selected ? Color.white.opacity(0.22) : tint.opacity(0.15))
                     .overlay {
                         if !selected { shape.strokeBorder(tint.opacity(0.22), lineWidth: 0.5) }
                     }
                     .overlay(
-                        Image(systemName: PanelSymbols.kind(item.kind))
+                        Image(systemName: secret ? "lock" : PanelSymbols.kind(item.kind))
                             .font(.system(size: 8.5))
                             .foregroundStyle(selected ? Color.white : tint)
                             .environment(\.locale, Locale(identifier: "en_US")))
@@ -348,6 +385,38 @@ struct CandidateNoteView: View {
         .padding(.horizontal, 9)
         .frame(height: CandidateLayout.noteHeight - 6)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(palette.accent.opacity(0.09)))
+        .padding(.horizontal, 2)
+        .padding(.top, 6)
+    }
+}
+
+/// 秘密の注記（試作の `.cd-note`。赤みの地に鍵。2 行）
+struct CandidateSecretNoteView: View {
+    let combo: KeyCombo?
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "lock")
+                .font(.system(size: 11))
+                .foregroundStyle(palette.secret)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("隠した項目は、確定したときだけ貼ります。")
+                HStack(spacing: 4) {
+                    if let combo { CandidateKeyChip(combo: combo) }
+                    Text(combo == nil ? "表示のキーは未設定です。" : "を押している間は中身を表示します。")
+                }
+                .frame(height: 17.25)
+            }
+            .font(.system(size: 11.5))
+            .foregroundStyle(palette.text2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(height: CandidateLayout.secretNoteHeight - 6, alignment: .top)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(palette.secret.opacity(0.09)))
         .padding(.horizontal, 2)
         .padding(.top, 6)
     }
