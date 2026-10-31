@@ -260,12 +260,24 @@ public final class MCPLineReader {
                 discarding = false
                 return last
             }
-            let chunk = (try? handle.read(upToCount: chunkSize)) ?? nil
-            if let chunk, !chunk.isEmpty {
+            if let chunk = readAvailable() {
                 buffer.append(chunk)
             } else {
                 finished = true
             }
+        }
+    }
+
+    /// 届いている分だけ読む（なければ届くまで待つ）。閉じたら nil。
+    /// `FileHandle.read(upToCount:)` はパイプでは大きさがそろうか閉じるまで戻らないので使わない
+    /// （相手が入力を開いたまま 1 行ずつ送って応答を待つと、互いに待ち続けてしまう）
+    private func readAvailable() -> Data? {
+        var bytes = [UInt8](repeating: 0, count: chunkSize)
+        while true {
+            let count = bytes.withUnsafeMutableBytes { read(handle.fileDescriptor, $0.baseAddress, chunkSize) }
+            if count > 0 { return Data(bytes[0..<count]) }
+            if count < 0, errno == EINTR { continue }
+            return nil
         }
     }
 }

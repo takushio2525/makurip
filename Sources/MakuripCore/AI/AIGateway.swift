@@ -302,8 +302,9 @@ public final class AIGateway {
             guard !text.isEmpty else { throw AIToolError.invalid("text が空です。") }
             let data = Data(text.utf8)
             guard data.count <= limits.maxRepresentationBytes else {
+                let size = String(format: "%.1f", Double(data.count) / 1_048_576)
                 throw AIToolError.invalid(
-                    "text が大きすぎます（\(data.count / 1_048_576) MB。\(limits.maxRepresentationBytes / 1_048_576) MB まで）。")
+                    "text が大きすぎます（\(size) MB。\(limits.maxRepresentationBytes / 1_048_576) MB まで）。")
             }
             return PasteboardSnapshot(items: [
                 PasteboardItemSnapshot(representations: [

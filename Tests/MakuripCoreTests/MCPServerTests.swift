@@ -193,4 +193,27 @@ struct MCPLineReaderTests {
         #expect(try lines(String(repeating: "y", count: 30), max: 10) == [.tooLarge])
         #expect(try lines("", max: 10).isEmpty)
     }
+
+    /// Claude Code などは入力を開いたまま 1 行ずつ送り、応答を待つ。届いた行はその場で返す（閉じるまで待たない）
+    @Test("入力を開いたままでも、届いた行をすぐ返す")
+    func returnsWithoutEOF() throws {
+        let pipe = Pipe()
+        defer { try? pipe.fileHandleForWriting.close() }
+        pipe.fileHandleForWriting.write(Data("{\"id\":1}\n".utf8))
+        nonisolated(unsafe) let reader = MCPLineReader(handle: pipe.fileHandleForReading, maxLineBytes: 1024)
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: MCPLineReader.Line?
+        DispatchQueue.global().async {
+            result = reader.next()
+            done.signal()
+        }
+        let returned = done.wait(timeout: .now() + 3) == .success
+        if !returned {
+            // 止まったままにしない（閉じれば読み手は戻る）
+            try? pipe.fileHandleForWriting.close()
+            _ = done.wait(timeout: .now() + 3)
+        }
+        #expect(returned, "入力を閉じるまで戻らなかった")
+        #expect(result == .line(Data("{\"id\":1}".utf8)))
+    }
 }
