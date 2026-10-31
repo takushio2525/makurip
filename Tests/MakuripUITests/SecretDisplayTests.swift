@@ -155,3 +155,55 @@ struct SecretDisplayTests {
         }
     }
 }
+
+/// 設定画面: 押している間だけ効くキー（隠した内容の表示）の記録と、秘密を消すまでの時間の行
+@MainActor
+@Suite("設定画面と秘密")
+struct SecretSettingsTests {
+    let dir = SettingsTempDirectory()
+    let controller: SettingsController
+    let model: SettingsModel
+
+    init() {
+        controller = SettingsController(file: SettingsFile(directory: dir.url))
+        model = SettingsModel(
+            controller: controller,
+            environment: SettingsEnvironment(appName: { _ in nil }, hotKeyRegistered: { _ in true }))
+        model.open()
+    }
+
+    @Test("表示のキーは、記録中に修飾キーを 1 つ押すとそのキーになる。文字のキーでは決まらない")
+    func recordHold() {
+        let id = SettingID.keys(.reveal)
+        model.startRecording(id)
+        #expect(model.recording)
+        model.record(KeyStroke(keyCode: 9, modifiers: .command))  // ⌘V
+        #expect(model.recording, "文字のキーでは決まらない")
+        #expect(model.message?.contains("修飾キー") == true)
+        model.recordModifier([.command, .shift])
+        #expect(model.recording, "修飾キー 2 つでは決まらない")
+        model.recordModifier(.command)
+        #expect(!model.recording)
+        #expect(controller.settings.keymap.combos(for: .reveal) == [KeyCombo(.hold, .command)])
+        #expect(model.message == "「隠した内容を表示（押している間）」を ⌘ にしました。")
+        // 記録していないときの修飾キーは何もしない
+        model.recordModifier(.option)
+        #expect(controller.settings.keymap.combos(for: .reveal) == [KeyCombo(.hold, .command)])
+    }
+
+    @Test("ほかの操作の記録中に修飾キーだけを押しても決まらない")
+    func otherActionIgnoresModifier() {
+        model.startRecording(SettingID.keys(.paste))
+        model.recordModifier(.option)
+        #expect(model.recording)
+        #expect(controller.settings.keymap.combos(for: .paste) == KeyAction.paste.defaultCombos)
+        model.cancelRecording()
+    }
+
+    @Test("「秘密を自動で消すまで」の行が「履歴」のまとまりにあり、分で出る")
+    func retentionRow() {
+        #expect(model.rowIDs.contains(SettingID.secretAutoDelete))
+        #expect(model.sections.first { $0.title == "履歴" }?.itemIDs.contains(SettingID.secretAutoDelete) == true)
+        #expect(model.valueText(SettingID.secretAutoDelete) == "10 分")
+    }
+}
