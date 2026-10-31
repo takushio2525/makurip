@@ -136,6 +136,21 @@ check "長い本文（5000 行）を貼れる" "5000" "$(paste_snippet 1 | wc -l
 check "書き戻した長さ（UTF-16）" "$(jq -r '.snippets[0].body | length' "$SNIPPETS")" \
     "$(status_value '.snippets.lastPasteLength')"
 
+echo "== 秘密っぽい定型文（#29 L3）: 貼るときは ConcealedType を足し、長さを伏せる（偽物の値は実行のたびに作り、出さない）"
+# pipefail の下で /dev/urandom を head で切ると SIGPIPE で止まるので、uuidgen から 36 文字を作る
+FAKE_KEY="gh""p_$(uuidgen | tr -d -)$(uuidgen | tr -d - | cut -c1-4)"
+write_snippets "$(jq -nc --arg k "$FAKE_KEY" '{name: "検証用のトークン", body: ("token: " + $k + "{{カーソル}}")}')"
+COUNT_BEFORE_SECRET="$(item_count)"
+notify pasteSnippet --index 1 --mode copyOnly
+sleep 0.6
+check "ConcealedType の印が付いた" "yes" \
+    "$("$DEVTOOL" pb-types --pasteboard "$PB" | grep -q 'org.nspasteboard.ConcealedType' && echo yes || echo no)"
+check "書き戻した文字は本文どおり" "yes" \
+    "$([ "$("$DEVTOOL" pb-text --pasteboard "$PB")" = "token: $FAKE_KEY" ] && echo yes || echo no)"
+check "長さは伏せる" "hidden" "$(status_value '.snippets.lastPasteLength')"
+check "カーソルの位置も伏せる" "hidden" "$(status_value '.snippets.lastCursorOffsetFromEnd')"
+check "書き戻しは新しい履歴にしない" "$COUNT_BEFORE_SECRET" "$(item_count)"
+
 echo
 echo "結果: OK $PASS / NG $FAIL"
 [ "$FAIL" -eq 0 ]

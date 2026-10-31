@@ -46,7 +46,7 @@
 `storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
 `secrets`（`count` 秘密の件数・`knownFormat` 自動消去の対象の件数・`autoDeleted` 起動してから自動で消した件数・`retentionSeconds`・`nextSweepAt` 次に消す時刻。中身は出さない）・
 `settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・
-`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない）・
+`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない。秘密の形の値を含んだときはどちらも `"hidden"`）・
 `ai`（`enabled` AI の口がオンか・`externalHistoryChanges` MCP・CLI が履歴を変えたと知らされた回数・`activityCount` AI の操作の記録の件数・`lastTool`・`lastOutcome`。#6）・`writtenAt`。
 `historyUI` には `showsSnippets`・`snippetCount` もある。
 

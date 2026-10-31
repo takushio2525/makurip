@@ -558,11 +558,14 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         let snapshot = SnippetPaste.snapshot(for: expansion.text)
         let changeCount = PasteboardWriter.write(snapshot, to: pasteboard)
         monitor.acknowledgeOwnWrite(changeCount: changeCount)
-        lastSnippetPaste = (expansion.text.utf16.count, expansion.cursorOffsetFromEnd)
+        // 秘密の形の値を含む（ConcealedType を足した）ときは、長さもログ・状態に出さない（取り込みのログと同じ。#29 L3）
+        let concealed = snapshot.allTypes.contains(PasteboardMarkers.concealed)
+        let length = concealed ? "hidden" : String(expansion.text.utf16.count)
+        lastSnippetPaste = (expansion.text.utf16.count, expansion.cursorOffsetFromEnd, concealed)
 
         if mode == .copyOnly {
             lastPasteOutcome = "copied"
-            Log.paste.info("定型文をコピーだけ length=\(expansion.text.utf16.count)")
+            Log.paste.info("定型文をコピーだけ length=\(length, privacy: .public)")
             historyDidClose()
             debugControl?.writeStatus()
             return
@@ -580,15 +583,16 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
                     offsetFromEnd: expansion.cursorOffsetFromEnd)
             }
             Log.paste.info(
-                "定型文を貼り付け outcome=\(outcome.rawValue, privacy: .public) mode=\(mode.rawValue, privacy: .public) length=\(expansion.text.utf16.count) cursorMoved=\(cursorMoved)"
+                "定型文を貼り付け outcome=\(outcome.rawValue, privacy: .public) mode=\(mode.rawValue, privacy: .public) length=\(length, privacy: .public) cursorMoved=\(cursorMoved)"
             )
             if outcome == .noPermission { statusMenu?.flashPermissionNeeded() }
             debugControl?.writeStatus()
         }
     }
 
-    /// 直近に貼った定型文の長さと、カーソルの位置（検証の状態出力用。中身は持たない）
-    private(set) var lastSnippetPaste: (length: Int, cursorOffsetFromEnd: Int?)?
+    /// 直近に貼った定型文の長さと、カーソルの位置（検証の状態出力用。中身は持たない）。秘密の形の値を含んだときは `concealed`
+    /// （状態出力ではどちらも伏せる）
+    private(set) var lastSnippetPaste: (length: Int, cursorOffsetFromEnd: Int?, concealed: Bool)?
 
     /// 差し込みに使う値。{{クリップボード}}・{{言語}} があるときだけ履歴を読む（秘密っぽい項目と、文字でない項目は飛ばす）
     private func snippetContext(for body: String) -> SnippetTemplate.Context {
