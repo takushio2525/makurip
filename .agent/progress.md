@@ -5,3 +5,6 @@
 ## 2026-10-31（プロジェクト開始）
 
 - リポジトリ雛形（AGENTS.md / .agent / README / .gitignore / .gitattributes）と要件の正本・ロードマップを作成
+- フェーズ1 実装: 全型の取り込み・除外・上限・重複・SQLite 永続化・⌃⌘V の仮一覧・pid 宛ての貼り付け・署名と導入。単体 49 件・隔離 E2E 51 項目が緑
+- 書き込み途中で読んで項目が欠ける競合を発見して修正（型の並びが落ち着くまで待つ）。GitHub への作成は権限で拒否され未実施、Issue は `.agent/issue-drafts/` に下書き
+- 次: GitHub の許可 → push・起票・PR、Makurip のアクセシビリティ許可 → `scripts/e2e/paste.sh`
