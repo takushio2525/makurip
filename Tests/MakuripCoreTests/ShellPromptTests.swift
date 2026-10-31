@@ -123,6 +123,20 @@ struct ShellPromptTests {
         #expect(analysis.stripped == "echo 「こんにちは」\nls 📁")
     }
 
+    @Test("コマンドの行（プロンプトの行と続きの行）と出力の行を分ける")
+    func commandLines() {
+        let input =
+            "$ make check\nBuild complete!\n$ docker run \\\n  -v a:b \\\n> ubuntu\n$ cat <<EOF\n> data\n> EOF\nok"
+        let analysis = ShellPrompt.analyze(input)
+        let source = input as NSString
+        let lines = analysis.commandLineRanges.map { source.substring(with: $0) }
+        #expect(lines == ["$ make check", "$ docker run \\", "  -v a:b \\", "> ubuntu", "$ cat <<EOF"])
+        // ヒアドキュメントの中身と終わりの印はデータ（コマンドの行にしない。「> 」は外す）
+        #expect(analysis.stripped.hasSuffix("cat <<EOF\ndata\nEOF\nok"))
+        // プロンプトのない文字列はコマンドの行もない（全体を色付けする側で扱う）
+        #expect(ShellPrompt.analyze("git status").commandLineRanges.isEmpty)
+    }
+
     @Test("迷う形（➜ の後ろに空白 2 つでディレクトリだけ）は外さない")
     func ambiguous() {
         #expect(ShellPrompt.strip("➜  ~") == "➜  ~")

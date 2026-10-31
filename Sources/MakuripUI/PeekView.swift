@@ -59,7 +59,7 @@ private struct PeekContent: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 46)
-            PreviewBody(item: item, detail: detail, query: model.searchQuery, model: model)
+            PreviewBody(item: item, detail: detail, query: model.searchQuery, model: model, loader: loader)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.well))
                 .overlay(
@@ -107,6 +107,7 @@ private struct PreviewBody: View {
     let detail: ClipDetail
     let query: SearchQuery
     let model: HistoryPanelModel
+    let loader: ClipContentLoader
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -116,6 +117,15 @@ private struct PreviewBody: View {
         case .color:
             colorBody.padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        case .code:
+            // コードは NSTextView が縦横に送る（上下の padding は中身と一緒に送られるよう NSTextView の中に持つ）
+            VStack(alignment: .leading, spacing: 0) {
+                CodePreview(item: item, text: DisplayText.codeText(text), query: query, loader: loader)
+                if detail.textTruncated {
+                    truncatedNote.padding(.bottom, 12)
+                }
+            }
+            .padding(.horizontal, 18)
         default:
             ScrollView([.vertical]) {
                 textualBody
@@ -147,19 +157,42 @@ private struct PreviewBody: View {
                 }
                 truncatedNote
             }
-        case .code:
-            CodePreview(text: text, query: query)
         case .command:
-            Text(CommandText.attributed(text, query: query, palette: palette))
+            VStack(alignment: .leading, spacing: 14) {
+                Text(
+                    loader.commandPreview(
+                        for: item, text: DisplayText.codeText(text), palette: palette, query: query)
+                )
                 .css(CSS.previewCommand)
+                .foregroundStyle(palette.text)
                 .textSelection(.enabled)
+                if detail.promptCount > 0 { promptNote }
+            }
         case .url:
             urlBody
         case .file:
             filesBody
-        case .image, .color:
+        case .image, .color, .code:
             EmptyView()
         }
+    }
+
+    /// コマンドの先頭の記号を外して貼ることの説明（試作の .pv-note）。外さずに貼るキーはキーマップから引く
+    private var promptNote: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: PanelSymbols.kind(.command)).font(.system(size: 11))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("貼り付けるときは、先頭の「$ 」などのプロンプトを外します。")
+                if let combo = model.keymap.primary(.pastePlain) {
+                    HStack(spacing: 5) {
+                        KeyChip(combo)
+                        Text("なら外さずにそのまま貼ります。")
+                    }
+                }
+            }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(palette.text2)
     }
 
     @ViewBuilder private var truncatedNote: some View {
@@ -295,30 +328,26 @@ private struct PreviewBody: View {
     }
 }
 
-/// コード: 行番号と等幅の本文（色付けはフェーズ3）
+/// コード: 行番号と、言語ごとに色を付けた等幅の本文（試作の .pv-code）。短いものはその場で（キャッシュから）、
+/// 長いものは裏で色付けの区間を作り、できるまでは色なしで出す
 private struct CodePreview: View {
+    let item: ClipItem
     let text: String
     let query: SearchQuery
+    let loader: ClipContentLoader
+    /// 裏で作った区間（作ったときの鍵と一緒に持ち、別の項目に変わったら使わない）
+    @State private var late: (key: String, tokens: [SyntaxToken])?
     @Environment(\.palette) private var palette
 
     var body: some View {
-        let code = text.replacingOccurrences(of: "\t", with: "    ")
-        let count = DisplayText.lineCount(code)
-        HStack(alignment: .top, spacing: 0) {
-            Text((1...max(1, count)).map(String.init).joined(separator: "\n"))
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(palette.text3)
-                .padding(.trailing, 14)
-                .overlay(alignment: .trailing) { Rectangle().fill(palette.sep).frame(width: 0.5) }
-                .padding(.trailing, 14)
-            ScrollView(.horizontal) {
-                Text(Highlight.attributed(code, query: query, mark: palette.mark))
-                    .fixedSize(horizontal: true, vertical: false)
-                    .textSelection(.enabled)
+        let key = "\(item.id.uuidString)-\(item.contentHash)"
+        let tokens = loader.cachedCodeTokens(for: item, text: text) ?? (late?.key == key ? late?.tokens : nil)
+        CodeTextView(contentKey: key, text: text, tokens: tokens, query: query, palette: palette)
+            .task(id: key) {
+                guard tokens == nil else { return }
+                let value = await loader.codeTokens(for: item, text: text)
+                late = (key, value)
             }
-            .scrollIndicators(.never)
-        }
-        .css(CSS.previewCode)
     }
 }
 
@@ -358,11 +387,12 @@ private struct DetailsGrid: View {
                     Text(DisplayText.info(for: item, detail: detail)).lineLimit(1)
                 }
             }
-            if let source = item.sourceURL, let url = URL(string: source) {
+            // コピー元のページ（取れたときだけ。試作の .src: 題名の代わりにホストを、薄い字でパスを出す）
+            if let page = DisplayText.sourcePage(item.sourceURL) {
                 GridRow {
                     cell("コピー元のページ") {
                         Image(systemName: "arrow.up.right").font(.system(size: 10))
-                        Text((url.host ?? "") + url.path)
+                        Text(sourceLabel(page))
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -373,6 +403,16 @@ private struct DetailsGrid: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sourceLabel(_ page: (host: String, path: String)) -> AttributedString {
+        var label = AttributedString(page.host)
+        if !page.path.isEmpty {
+            var path = AttributedString("　" + page.path)
+            path.foregroundColor = palette.text3
+            label += path
+        }
+        return label
     }
 
     private func cell<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

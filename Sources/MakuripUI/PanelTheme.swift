@@ -30,6 +30,8 @@ struct PanelPalette: Sendable {
     let hairline: Color
     let kindColors: [ClipKind: Color]
     let kindAll: Color
+    /// コードの配色（試作の --s-kw・--s-str など。Xcode の既定に寄せたもの）
+    let syntax: [SyntaxTokenKind: Color]
     var isDark = false
 
     func kind(_ kind: ClipKind?) -> Color {
@@ -54,7 +56,11 @@ struct PanelPalette: Sendable {
             .command: hex(0x1A8F42), .url: hex(0x0A6FE8), .file: hex(0xC46A00), .color: hex(0x9A7200),
             .other: hex(0x6E6E73),
         ],
-        kindAll: hex(0x6E6E73))
+        kindAll: hex(0x6E6E73),
+        syntax: [
+            .keyword: hex(0xAD3DA4), .string: hex(0xC41A16), .comment: hex(0x6C7986), .number: hex(0x272AD8),
+            .type: hex(0x703DAA), .function: hex(0x326D74), .attribute: hex(0x815F03), .flag: hex(0x0F68A0),
+        ])
 
     static let dark = PanelPalette(
         text: rgba(255, 255, 255, 0.92), text2: rgba(255, 255, 255, 0.62), text3: rgba(255, 255, 255, 0.4),
@@ -69,7 +75,11 @@ struct PanelPalette: Sendable {
             .command: hex(0x4CD774), .url: hex(0x5AAEFF), .file: hex(0xFFAF4D), .color: hex(0xFFD42E),
             .other: hex(0xA8A8AE),
         ],
-        kindAll: hex(0xA8A8AE), isDark: true)
+        kindAll: hex(0xA8A8AE),
+        syntax: [
+            .keyword: hex(0xFF7AB2), .string: hex(0xFF8170), .comment: hex(0x8A96A3), .number: hex(0xD9C97C),
+            .type: hex(0xDABAFF), .function: hex(0x78C2B3), .attribute: hex(0xFFA14F), .flag: hex(0x6BDFFF),
+        ], isDark: true)
 
     static func rgba(_ r: Double, _ g: Double, _ b: Double, _ a: Double) -> Color {
         Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: a)

@@ -17,6 +17,9 @@ public enum ShellPrompt {
         public let text: String
         /// 外すプロンプトの範囲（UTF-16。行頭から）。外すものがなければ空
         public let promptRanges: [NSRange]
+        /// コマンドの行（プロンプトの行と、その続きの行）の範囲（UTF-16。改行を含まない）。
+        /// プロンプトがあるとき、ここに入らない行はコマンドの出力（色付けしない）
+        public let commandLineRanges: [NSRange]
 
         public var hasPrompt: Bool { !promptRanges.isEmpty }
 
@@ -53,9 +56,11 @@ public enum ShellPrompt {
         // 続き行の「> 」（前の行のコマンドが閉じていないときだけ）
         var pending = ""
         var heredoc: String?
+        var isCommandLine = [Bool](repeating: false, count: lines.count)
         for index in lines.indices {
             let content = lines[index].content
             if let length = lengths[index] {
+                isCommandLine[index] = true
                 pending = String(content.utf16.dropFirst(length)) ?? ""
                 heredoc = heredocDelimiter(in: pending)
                 continue
@@ -63,6 +68,8 @@ public enum ShellPrompt {
             let isOpen = heredoc != nil || isUnfinished(pending)
             if isOpen, let length = continuationPromptLength(content) {
                 lengths[index] = length
+                // ヒアドキュメントの中身はデータ（コマンドの行にしない）
+                isCommandLine[index] = heredoc == nil
                 let body = String(content.utf16.dropFirst(length)) ?? ""
                 if let delimiter = heredoc {
                     if body.trimmingCharacters(in: .whitespaces) == delimiter {
@@ -75,6 +82,12 @@ public enum ShellPrompt {
                 }
                 continue
             }
+            // 「> 」のない続きの行（文書から写した `docker run \` の次の行など）。外すものはない
+            if isOpen, heredoc == nil, !content.trimmingCharacters(in: .whitespaces).isEmpty {
+                isCommandLine[index] = true
+                pending += "\n" + content
+                continue
+            }
             // プロンプトのない行（出力・コメント）で、続きの状態は切れる
             pending = ""
             heredoc = nil
@@ -84,7 +97,10 @@ public enum ShellPrompt {
             guard let length = lengths[index], length > 0 else { return nil }
             return NSRange(location: lines[index].start, length: length)
         }
-        return Analysis(text: text, promptRanges: ranges)
+        let commandLines = lines.indices.filter { isCommandLine[$0] }.map {
+            NSRange(location: lines[$0].start, length: lines[$0].content.utf16.count)
+        }
+        return Analysis(text: text, promptRanges: ranges, commandLineRanges: commandLines)
     }
 
     /// プロンプトを外した文字列（外すものがなければ元のまま）

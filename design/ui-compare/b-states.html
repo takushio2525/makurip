@@ -45,6 +45,12 @@
     pi.value = 'めーる'; pi.dispatchEvent(new Event('input'));
   }
   if (S === 'peek-code') { A.move(1); A.setLook(true); }
+  // 種類で絞って n 件目を選び、⌘Y で開く（state=custom&kind=code&move=2&look=1。フェーズ3 のコード・コマンドの見比べ）
+  const K = Mk.params.get('kind');
+  if (K) A.setKind(K);
+  const MV = +(Mk.params.get('move') || 0);
+  if (MV) A.move(MV);
+  if (Mk.params.get('look') === '1') A.setLook(true);
 </script>
 <script>
 if (Mk.params.get('measure') === '1') {

@@ -246,9 +246,64 @@ enum SampleHistory {
             body: .text("〒000-0000 東京都サンプル区見本町 1-2-3 サンプルビル 4F")),
     ]
 
+    /// フェーズ3 のエッジケース（試作に同じ状態がないもの）。言語不明・1 文字・全角混じり・とても長い 1 行・
+    /// 数千行・PS1 と出力と続き行の混じったコマンド・コピー元のページ付きの文章
+    static let edgeEntries: [Entry] = [
+        Entry(
+            kind: .code, minutesAgo: 1, app: "vscode", method: .keyboard,
+            body: .code("main :: IO ()\nmain = do\n  let xs = [1, 2, 3]\n  print (sum xs) -- 合計を出す")),
+        Entry(kind: .code, minutesAgo: 2, app: "xcode", method: .keyboard, body: .code("x")),
+        Entry(
+            kind: .code, minutesAgo: 3, app: "xcode", method: .keyboard,
+            body: .code(
+                """
+                // 履歴の見出し（全角の識別子と絵文字を含む）
+                let 見出し = "クリップボード履歴 📋"
+                guard let 件数 = Int("１２") else { return }
+                print("\\(見出し)：\\(件数) 件")
+                """)),
+        Entry(
+            kind: .code, minutesAgo: 4, app: "claude", method: .other, source: "https://chat.example.ai/c/long-line",
+            body: .code(
+                "const config={"
+                    + (0..<160).map { "item\($0):{id:\($0),label:\"項目\($0)\",enabled:true}" }.joined(separator: ",")
+                    + "};export default config;")),
+        Entry(
+            kind: .code, minutesAgo: 5, app: "xcode", method: .keyboard,
+            body: .code(longSwift(lines: 3000))),
+        Entry(
+            kind: .command, minutesAgo: 6, app: "terminal", method: .keyboard,
+            body: .command(
+                """
+                sample@MacBook-Pro makurip % make check
+                swift format lint --strict --recursive Sources Tests
+                Build complete!
+                sample@MacBook-Pro makurip % docker run --rm \\
+                > -v "$PWD":/work \\
+                > ubuntu ls /work
+                # コメントの行はそのまま
+                """)),
+        Entry(
+            kind: .text, minutesAgo: 7, app: "safari", method: .keyboard,
+            source: "https://docs.example.com/guide/%E5%B1%A5%E6%AD%B4?token=sample",
+            body: .text("コピー元のページが取れた文章の例です。")),
+    ]
+
+    /// 行数を決めた Swift のコード（速さの計測とエッジケース用）
+    static func longSwift(lines: Int) -> String {
+        let unit = [
+            "struct Row: View {",
+            "    let item: ClipItem // 履歴 1 件",
+            "    @Binding var isSelected: Bool",
+            "    var body: some View { Text(\"label \\(item.id)\").padding(.horizontal, 12) }",
+            "}",
+        ]
+        return (0..<lines).map { unit[$0 % unit.count] }.joined(separator: "\n")
+    }
+
     /// 履歴を作る。`imageDirectory` に試作の画像（h03.png など）があればそれを、なければ図形を描いた画像を使う
     @MainActor
-    static func make(imageDirectory: URL? = nil) -> FakeHistory {
+    static func make(imageDirectory: URL? = nil, entries: [Entry] = entries) -> FakeHistory {
         var items: [ClipItem] = []
         var payloads: [UUID: [(itemIndex: Int, type: String, data: Data)]] = [:]
         for entry in entries {
@@ -260,7 +315,8 @@ enum SampleHistory {
             switch entry.body {
             case .text(let value), .code(let value), .command(let value), .color(let value):
                 reps.append(text(value))
-                preview = value
+                // 本物のストアと同じく、一覧の平文は先頭 1000 文字（Limits.previewCharacterLimit）
+                preview = String(value.prefix(Limits.default.previewCharacterLimit))
             case .rich(let value, let heading):
                 reps.append(text(value))
                 reps.append((0, PasteboardTypes.rtf, rtf(value, heading: heading)))
