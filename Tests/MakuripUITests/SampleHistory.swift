@@ -153,6 +153,20 @@ enum SampleHistory {
             abbreviation: entry.1, body: entry.2, createdAt: now, updatedAt: now)
     }
 
+    /// 試作の 6 件の 2 件目に、本文が秘密の形の偽物の定型文を挟んだもの（#29 L3。値は実行時に作る）
+    static var secretSnippets: [Snippet] {
+        var list = snippets
+        list.insert(
+            Snippet(
+                id: UUID(uuidString: "00000000-0000-0000-0002-000000000001")!, name: "検証用の API キー",
+                abbreviation: ";key", body: "検証環境のキー:\n" + secretSnippetValue, createdAt: now, updatedAt: now),
+            at: 1)
+        return list
+    }
+
+    /// 秘密の定型文の本当の値（偽物）
+    static let secretSnippetValue = "sk-" + "test-" + pseudoRandom(24, seed: 21) + "0000"
+
     /// 数百件の定型文（名前と本文は番号だけの架空のもの）
     static func manySnippets(count: Int) -> [Snippet] {
         (0..<count).map {

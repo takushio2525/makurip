@@ -158,6 +158,18 @@ struct SnapshotTests {
         Scenario(
             name: "edge-snippets-many", selectAfterLayout: 150, snippets: SampleHistory.manySnippets(count: 300)
         ) { $0.toggleSnippets() },
+        // 試作に同じ状態がないもの: 秘密っぽい定型文（伏せ字と「秘密」の札・⌥ を押している間の表示。#29 L3）
+        Scenario(name: "edge-snippet-secret", peek: true, snippets: SampleHistory.secretSnippets) {
+            $0.toggleSnippets()
+            $0.select(1)
+        },
+        Scenario(
+            name: "edge-snippet-secret-reveal-dark", dark: true, peek: true, snippets: SampleHistory.secretSnippets,
+            reveal: true
+        ) {
+            $0.toggleSnippets()
+            $0.select(1)
+        },
         // フェーズ5: 秘密（試作と同じ 27 件。5 件目が API キー、コマンドの 4 件目が export のトークン）
         Scenario(name: "secret-light", entries: SampleHistory.secretEntries, selectAfterLayout: 4) { _ in },
         Scenario(name: "secret-dark", dark: true, entries: SampleHistory.secretEntries, selectAfterLayout: 4) { _ in },
