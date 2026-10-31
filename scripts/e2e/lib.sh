@@ -75,9 +75,9 @@ item_count() {
     dump | jq '.itemCount'
 }
 
-# 先頭（いちばん新しい）項目のメタデータを 1 行で
+# 先頭（いちばん新しい）項目のメタデータを 1 行で（秘密の項目は大きさを伏せてあるので bytes=hidden）
 top_summary() {
-    dump | jq -r '.items[0] | "kind=\(.kind) method=\(.copyMethod) items=\(.pasteboardItems|length) types=\([.pasteboardItems[][]]|length) flags=\(.flags|join(",")) bytes=\(.totalBytes) copyCount=\(.copyCount)"'
+    dump | jq -r '.items[0] | "kind=\(.kind) method=\(.copyMethod) items=\(.pasteboardItems|length) types=\([.pasteboardItems[][]]|length) flags=\(.flags|join(",")) bytes=\(.totalBytes // .size) copyCount=\(.copyCount)"'
 }
 
 top_field() {

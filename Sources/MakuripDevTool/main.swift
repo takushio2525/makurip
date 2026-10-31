@@ -382,6 +382,27 @@ func run() throws {
         }
         print(NSPasteboard(name: NSPasteboard.Name(name)).string(forType: .string) ?? "", terminator: "")
 
+    case "pb-guess":
+        // 漏れの検査用（#23・#24）。推す側（AI）が手元で作れる値を JSON で出す: 平文 1 つの形の「同じ内容か」のハッシュ・
+        // 名前付きペーストボードそのままのハッシュ・平文のバイト数と文字数。E2E はファイルに書いて照らすだけで、画面に出さない。
+        // 一般ペーストボードは読まない
+        guard let name = option("--pasteboard"), name != "general" else {
+            throw DevToolError(description: "--pasteboard に名前付きペーストボードの名前が要る（一般ペーストボードは読まない）")
+        }
+        let board = NSPasteboard(name: NSPasteboard.Name(name))
+        let text = board.string(forType: .string) ?? ""
+        let guess = PasteboardSnapshot(items: [
+            PasteboardItemSnapshot(representations: [
+                PasteboardRepresentation(type: PasteboardTypes.utf8PlainText, data: Data(text.utf8))
+            ])
+        ])
+        let object: [String: Any] = [
+            "guessHash": ContentHasher.hash(guess), "boardHash": ContentHasher.hash(readSnapshot(board)),
+            "bytes": Data(text.utf8).count, "characters": text.count,
+        ]
+        let json = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        print(String(decoding: json, as: UTF8.self))
+
     case "pb-release":
         guard let name = arguments.first else { throw DevToolError(description: "名前が要る") }
         NSPasteboard(name: NSPasteboard.Name(name)).releaseGlobally()
@@ -500,6 +521,7 @@ let usage = """
       pb-unstash --from NAME                   退避したものを一般ペーストボードへ戻して名前付きを消す
       pb-release NAME
       pb-text --pasteboard NAME                名前付きペーストボードの平文（自作のテストデータの確認用。一般は読まない）
+      pb-guess --pasteboard NAME               推す側が作れるハッシュと長さ（漏れの検査用。ファイルに書いて照らす。一般は読まない）
       post-keys --pid PID [--text S] [--key return|escape|up|down|cmd-v|cmd-c|cmd-a|cmd-s]   pid 宛てにキーを送る
       notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|pasteSnippet|clearHistory|enableAIAccess|disableAIAccess|copyMCPRegisterCommand|writeStatus|quit> [--pid PID] [--index N --mode normal|plainText|copyOnly]
       window-id --pid PID                      その pid のいちばん大きい窓の番号（screencapture -l 用）

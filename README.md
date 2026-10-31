@@ -124,6 +124,6 @@ open ~/Applications/Makurip.app
 | 取り込み・永続化の E2E（一般ペーストボードに触らない） | `make e2e` |
 | 設定の E2E（CLI で変えて、動いているインスタンスにすぐ効くか） | `MAKURIP_APP=.app-build/Makurip.app make e2e-settings` |
 | 一覧・貼り付けの E2E（画面ロック解除と許可が要る） | `scripts/e2e/paste.sh` |
-| メタデータだけを書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata` |
+| メタデータだけを書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata`（中身・内容のハッシュは出さず、秘密の項目は大きさも伏せる） |
 
 検証では `--data-dir` で隔離したデータフォルダを使う（起動引数は `.agent/api.md`）。AI 向けの規約は `AGENTS.md`。

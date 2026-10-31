@@ -56,20 +56,30 @@
 
 ```json
 {
-  "itemCount": 1,
-  "schemaVersion": 1,
+  "itemCount": 2,
+  "schemaVersion": 2,
   "items": [{
     "id": "UUID", "kind": "image", "copyMethod": "keyboard",
     "sourceBundleID": "com.apple.Preview", "sourceName": "プレビュー", "sourceURLHost": null,
     "createdAt": "ISO8601", "lastUsedAt": "ISO8601", "copyCount": 1, "pinned": false, "flags": [],
-    "totalBytes": 32264, "contentHashPrefix": "12 桁",
+    "totalBytes": 32264,
     "pasteboardItems": [[{"type": "public.png", "bytes": 1234, "storage": "inline"}]]
+  }, {
+    "id": "UUID", "kind": "text", "copyMethod": "button",
+    "sourceBundleID": "com.google.Chrome", "sourceName": "Google Chrome", "sourceURLHost": "console.example.com",
+    "createdAt": "ISO8601", "lastUsedAt": "ISO8601", "copyCount": 1, "pinned": false,
+    "flags": ["secretKnownFormat", "secretLikely"], "size": "hidden",
+    "pasteboardItems": [[{"type": "public.utf8-plain-text", "storage": "inline"}, {"type": "org.chromium.source-url", "storage": "inline"}]]
   }]
 }
 ```
 
 新しい順（`lastUsedAt` の降順）。`sourceURLHost` はホスト名だけ（クエリに秘密が入りうるため）。
-`flags` に `secretLikely`（秘密っぽい）・`secretKnownFormat`（確度が高い。自動消去の対象）が入る（#5）。`schemaVersion` は 2。
+`flags` に `secretLikely`（秘密っぽい）・`secretKnownFormat`（確度が高い。自動消去の対象）が入る（#5）。`schemaVersion` は DB の版（いまは 2）。
+
+AI の口の門の外（シェルを使えるエージェントなら、口がオフでも実行できる）なので、中身を推せる値は出さない（#23）。
+内容のハッシュはどの項目にも出さない（短い秘密は、推した値のハッシュと照らして当てられる。1 回の書き出しの中では、同じ内容の項目はもともと 1 つ）。
+秘密の項目（`secretLikely`）は `totalBytes` と型ごとの `bytes` を出さず `size: "hidden"`（AI の口の `list_history` と同じ）。
 
 ## UI との約束（`Sources/MakuripCore/Support/HistoryPresenting.swift`）
 
@@ -366,7 +376,9 @@ UI 側（`Sources/MakuripUI/`）: `SnippetCardView`・`SnippetPeekContent`（パ
 道具（MCP の名前。CLI の命令）: `status`（`status`）・`add_to_history`（`add`）・`list_history`（`list`）・`delete_secrets`（`delete-secrets`）・
 `delete_history`（`delete`）・`add_snippet`（`snippet-add`）・`list_snippets`（`snippets`）・`delete_snippets`（`snippet-delete`）・
 `settings_schema`・`settings_list`・`settings_get`・`settings_set`・`settings_reset`（CLI は `--settings`）。CLI だけ: `log`・`disable`（`enable` は拒否）。
-履歴と定型文の道具は AI の口がオンのときだけ（オフは `aiAccessDisabled`）。設定の道具と `status` はいつでも。
+履歴と定型文の道具と、設定を変える `settings_set`・`settings_reset`（`destructiveHint: true`）は AI の口がオンのときだけ（オフは `aiAccessDisabled`。#26）。
+設定を読む `settings_schema`・`settings_list`・`settings_get` と `status` はいつでも。
+`add_to_history` の結果の `result` は、人のコピーには合流しないので、AI が前に足した同じ内容があったときだけ `movedToTop`（ほかは `inserted`。#24）。
 
 MCP の応答: 成功は `result.content[0].text`（`structuredContent` の 1 行の JSON）・`structuredContent`・`isError: false`。
 道具の失敗は `isError: true`・`structuredContent`（`error`: `aiAccessDisabled` / `invalidArguments` / `settingsRejected` / `unavailable`・`message`）。
@@ -376,6 +388,7 @@ JSON-RPC の誤り: -32700（JSON でない）・-32600（形の誤り・大き�
 `list_history` の 1 件の鍵: `id`・`kind`・`kindLabel`・`createdAt`・`lastUsedAt`・`copyCount`・`copyMethod`・`pinned`・`addedByAI`・`truncated`・`pasteboardItems`・
 `types`・`sourceApp`（`bundleID`・`name`）・`sourcePageHost`・`language`・`languageLabel`・秘密なら `secret`（`level` high/medium・`formats[]`（`id`・`label`）・`autoDelete`）と
 `size: "hidden"`、秘密でなければ `totalBytes`・（1 MB 以下の平文なら）`characters`・`lines`。中身・平文・URL・ファイル名・ハッシュの鍵はない（`AIListTests` が守る）。
+`list_snippets` の 1 件も同じく、秘密っぽければ `characters`・`lines` を入れず `size: "hidden"`（`AISnippetSizeTests`）。
 
 AI がクリップボードにも置くときは `PasteboardMarkers.savedByMakuripAI`（`com.takushio2525.makurip.saved-by-ai`）の型を足し、
 監視は `SkipReason.savedByAI` で取り込まない（保存は済んでいる）。秘密っぽいものは ConcealedType も足す。

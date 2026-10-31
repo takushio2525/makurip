@@ -71,12 +71,12 @@ makurip/
 | 隔離 E2E（設定） | `MAKURIP_APP=.app-build/Makurip.app make e2e-settings`（窓を出さない。ホットキーは使われていない組み合わせだけ） |
 | 隔離 E2E（秘密） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-secrets`（偽物のキーで印・伏せ字・1 分での自動消去・当て直し。2〜3 分かかる） |
 | 隔離 E2E（定型文） | `MAKURIP_APP=.app-build/Makurip.app make e2e-snippets`（登録・置き換え・名前付きペーストボードへの書き戻し・履歴の消去で消えないこと。窓を出さず、キーも送らない） |
-| 隔離 E2E（AI の口） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-ai`（目印入りの履歴に MCP の全道具を JSON-RPC で呼び、応答に目印が 0 件か。一覧の窓を一瞬開く。巨大な要求の分で 1 分ほど） |
+| 隔離 E2E（AI の口） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-ai`（目印入りの履歴に MCP の全道具を JSON-RPC で呼び、応答に目印も偽の秘密のハッシュ・長さも 0 件か。一覧の窓を一瞬開く。巨大な要求の分で 1 分ほど） |
 | 設定の CLI | `Makurip [--data-dir DIR] --settings list\|get\|set\|add\|remove\|reset\|schema [--json]`（`docs/ai-settings.md`） |
 | AI の口 | `Makurip [--data-dir DIR] --mcp`（MCP サーバー）・`Makurip [--data-dir DIR] --ai status\|add\|list\|delete-secrets\|delete\|snippet-add\|snippets\|snippet-delete\|log\|disable [--json]`（`docs/ai-mcp.md`） |
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
-| メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]` |
+| メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]`（内容のハッシュは出さず、秘密の項目は大きさも伏せる） |
 
 完了報告の前に `make check`（lint・ビルド・テスト）を通すこと。署名の設定は `Config/signing.local.env`（雛形を写して作る）。
 
@@ -88,8 +88,9 @@ makurip/
 - UserDefaults を使うテストは `UserDefaults(suiteName:)` で分ける。`register(defaults:)` はプロセス全体で共有されるので使わない
 - 隔離したインスタンスでホットキーの付け替えを試すときは、起動する前に CLI で使われていない組み合わせ（⌃⌥⇧⌘F11 など）にしておく（ほかのアプリのキーを奪わない）。ログイン時の起動は隔離中は登録しない作りにしてある
 - `--debug-control`（E2E 用の遠隔操作）は `--data-dir` を指定したときしか効かない作りにしてある。この制約を外さない
-- AI の口をオンにする道具・CLI の命令・設定の項目を作らない（オンは設定画面からだけ）。AI の道具の応答に中身・URL（ホスト名を除く）・ファイル名・ハッシュを足さない
-  （`AIAccessTests`・`AIListTests`・`MCPServerTests` と `make e2e-ai` の漏れの検査が守る。`.agent/conventions.md` の「AI の口」）。
+- AI の口をオンにする道具・CLI の命令・設定の項目を作らない（オンは設定画面からだけ）。AI の道具の応答と `--dump-metadata`（門の外）に中身・URL（ホスト名を除く）・
+  ファイル名・ハッシュ・秘密の項目の長さを足さない。推した値が履歴にあるかも応答で分からないようにする
+  （`AIAccessTests`・`AIListTests`・`MCPServerTests`・`OutletLeakTests` と `make e2e-ai` の漏れの検査が守る。`.agent/conventions.md` の「AI の口」）。
   AI の口の検証も `--data-dir` で隔離し、本物の履歴でオンにしない。本物の Claude Code への登録（`claude mcp add`）は利用者が行う
 - 自動テストで前面のアプリにキーを送らない（`CGEvent.post(tap:)` 禁止）。送るときは `postToPid` で宛先を固定する
 - 候補窓のキーの横取り（CGEventTap）を残さない。閉じる経路を足すときは `CandidateInterceptLifetimeTests` に足す（`.agent/conventions.md` の「候補窓」）

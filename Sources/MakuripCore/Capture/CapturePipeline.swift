@@ -119,6 +119,17 @@ public enum ContentHasher {
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
+
+    /// AI の口が足したものの「同じ内容か」のハッシュ。人のコピーのハッシュ（`hash`）とは別の空間にする。
+    ///
+    /// 同じ空間だと、AI の追加が人の項目に合流し、推した文字列が履歴にあるかが結果（先頭へ移したか・既存の id・件数）から分かる。
+    /// 人の項目のコピー元・印・回数も AI のものに書き換わる（#24）。AI が足したもの同士は、今までどおり合流する
+    public static func aiAdded(_ hash: String) -> String {
+        var hasher = SHA256()
+        hasher.update(data: Data("makurip.addedByAI\u{0}".utf8))
+        hasher.update(data: Data(hash.utf8))
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 /// 一覧・絞り込み用の短い平文（純粋関数）。

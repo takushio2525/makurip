@@ -776,8 +776,10 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
             let flags = (try? store?.item(id: result.id))?.flags ?? []
             let secret =
                 flags.contains(.secretKnownFormat) ? "high" : flags.contains(.secretLikely) ? "medium" : "none"
+            // 秘密の項目は大きさも出さない（同じユーザーのプロセスは `log show` で読める。長さで短い秘密を絞れる。#23）
+            let size = secret == "none" ? String(bytes) : "hidden"
             Log.capture.info(
-                "保存 \(action, privacy: .public) kind=\(kind.rawValue, privacy: .public) method=\(method.rawValue, privacy: .public) types=\(typeCount) bytes=\(bytes) secret=\(secret, privacy: .public)"
+                "保存 \(action, privacy: .public) kind=\(kind.rawValue, privacy: .public) method=\(method.rawValue, privacy: .public) types=\(typeCount) bytes=\(size, privacy: .public) secret=\(secret, privacy: .public)"
             )
             history?.historyDidChange()
             if flags.contains(.secretKnownFormat) { scheduleSecretSweep() }
