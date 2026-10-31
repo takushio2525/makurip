@@ -103,7 +103,7 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 | ⌘Y のコード: Swift（ライト）・TypeScript（ダーク）・Python（ライト・コピー元のページ付き）・シェル（ダーク） | `images/compare-peek-light.png`・`images/compare-peek-code-ts-dark.png`・`images/compare-peek-code-py-light.png`・`images/compare-peek-code-sh-dark.png` |
 | ⌘Y のコマンド（プロンプトを薄く・外す注記・コピー元のページ） | `images/compare-peek-cmd-light.png`・`images/compare-peek-cmd-dark.png` |
 | 候補窓の言語名（「Python 7行」） | `images/compare-candidate-long.png` |
-| 言語不明・1 文字・全角と絵文字・とても長い 1 行・3000 行・PS1 と出力と続き行・コピー元のページ付きの文章・コードの中の検索（試作に無い） | `images/edge-code-cards.png`・`images/edge-peek-code-unknown.png`・`images/edge-peek-code-one-char.png`・`images/edge-peek-code-cjk.png`・`images/edge-peek-code-long-line.png`・`images/edge-peek-code-3000-lines.png`・`images/edge-peek-cmd-ps1.png`・`images/edge-peek-text-source.png`・`images/edge-search-in-code.png` |
+| 言語不明・1 文字・全角と絵文字・とても長い 1 行・3000 行・PS1 と出力と続き行・コピー元のページ付きの文章・コードの中の検索（試作に無い） | `images/edge-code-cards.png`・`images/edge-code-cards-long-line.png`・`images/edge-peek-code-unknown.png`・`images/edge-peek-code-one-char.png`・`images/edge-peek-code-cjk.png`・`images/edge-peek-code-long-line.png`・`images/edge-peek-code-3000-lines.png`・`images/edge-peek-cmd-ps1.png`・`images/edge-peek-text-source.png`・`images/edge-search-in-code.png` |
 
 ### 見比べた結果
 
@@ -113,6 +113,9 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 - **端末のコピーの出力の行**: 出力の行（`Build complete!` など）までコマンドとして色が付いていた。プロンプトのある文字列では、コマンドの行（プロンプトの行と続きの行）だけを色付けするようにした（`edge-peek-cmd-ps1.png`）
 - **一覧の下の方のカードを選んだ状態**: 選んだカードが見える位置まで一覧が送られるよう、描いた後に選ぶようにした（比べ方の直し）
 - **3000 行の見出し**: プレビュー用に切った後の行数（603 行）を出していたのを、全文の行数にした。切ったことの注記も出す
+- **長い行のコードのカードがパネルの右へはみ出していた（#16）**: 折り返さない行の幅でカードが広がり、右の枠線と ⌘2 の札が切れていた
+  （`compare-peek-code-ts-dark.png` の TypeScript のカード）。カードの幅をパネルが渡した幅（352pt）に固定し、行はカードの内側で切るようにした。
+  `CardLayoutTests` が、長い 1 行・空白のない長い語を含む全種類のカードの幅を、選択中・非選択とライト・ダークで確かめる
 
 ### 意図して変えたところ・範囲外のもの
 

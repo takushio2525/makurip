@@ -108,8 +108,13 @@ struct SnapshotTests {
             $0.select(1)
         },
         Scenario(name: "edge-peek-code-cjk", peek: true, entries: SampleHistory.edgeEntries) { $0.select(2) },
-        Scenario(name: "edge-peek-code-long-line", dark: true, peek: true, entries: SampleHistory.edgeEntries) {
-            $0.select(3)
+        // 描いた後に選ぶ（とても長い 1 行のカードが一覧に写り、パネルの幅に収まるかも見られる。#16）
+        Scenario(
+            name: "edge-peek-code-long-line", dark: true, peek: true, entries: SampleHistory.edgeEntries,
+            selectAfterLayout: 3
+        ) { _ in },
+        Scenario(name: "edge-code-cards-long-line", entries: SampleHistory.edgeEntries, selectAfterLayout: 3) {
+            $0.setKind(.code)
         },
         Scenario(name: "edge-peek-code-3000-lines", peek: true, entries: SampleHistory.edgeEntries) {
             $0.select(4)
