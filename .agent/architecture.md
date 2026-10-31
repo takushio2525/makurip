@@ -12,9 +12,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
-| `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)` | MakuripCore |
-| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・ログイン時の起動（ServiceManagement）・起動引数・`--settings` の入口・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・定型文の窓（ふつうの窓）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)`・`SnippetEditorUIFactory.make(controller:environment:)` | MakuripCore |
+| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・起動引数・`--settings` の入口・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
 
 依存の向き: `Makurip` → `MakuripUI` → `MakuripCore`。逆向き（Core が UI・アプリを知る、UI がアプリを知る）は禁止。
@@ -81,6 +81,24 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 部品: `SettingsSchema`・`KeyRules`・`KeyComboText`・`AppSettings`・`SettingsFile`・`SettingsMigration`・`SettingsController`・`SettingsApplier`・`SettingsCLI`（Core）、
 `SettingsModel`・`SettingsView`・`SettingsWindowController`（UI）。
 
+### 定型文（フェーズ7・#7）
+
+1. 保存: データフォルダの `snippets.json`（`SnippetFile`）。履歴の DB とは別なので、上限・消去・削除・DB の作り直しでは消えない。
+   動いているアプリは `SnippetController` が設定と同じ仕組み（フォルダとファイルの DispatchSource）で見張り、変わったら一覧（`HistoryPresenting.snippetsDidChange`）と窓に知らせる
+2. 呼び出し: 一覧で ⌘S（`KeyAction.snippets`）→ `HistoryPanelModel.showsSnippets`。試作どおり種類のタブ・コピー方法・アプリの絞り込みは薄くして効かなくし、
+   検索（名前・略語・本文と「定型文」）・↑↓・↩・⇧↩・⌘↩・⌘1〜9・⌘Y はそのまま。⇧⌘P は履歴のピン留めだけの表示へ移る
+3. 貼る: UI が閉じてから `HistoryActions.pasteSnippet(id:mode:)` → `AppController` が `SnippetTemplate.expand` で置き換える。
+   `{{クリップボード}}`・`{{言語}}` があるときだけ、新しい 200 件のメタデータから `SnippetClipboard.candidates` を選び、先頭から 20 件まで平文を読む（読めたら止める）。
+   `SnippetPaste.snapshot`（文字の型だけ）を `PasteboardWriter.write` → `monitor.acknowledgeOwnWrite`（新しい履歴にしない）→ `Paster` で元のアプリへ ⌘V。履歴の `touch` はしない
+4. `{{カーソル}}`: 貼る前の入力欄を `FocusedText.probe` で読み、⌘V の後 0.6 秒まで、カーソルがちょうど貼った文字の後ろに来たかを見て（`SnippetPaste.cursorTarget`）、
+   来たらその位置から末尾までの長さだけ戻す（`FocusedText.select`）。読めない・長さが合わない（改行の変換・自動の字下げ）ときは動かさない
+5. 登録・編集: 定型文の窓（`SnippetEditorWindowController`。設定の窓と同じ作りのふつうの窓）。入口は一覧の ⇧⌘S（定型文の一覧では選んだものを編集、
+   履歴の一覧では選んだ項目の平文を本文にした新しい下書き。本体が `store.snapshot` から読む）・メニューの「定型文を編集…」。
+   値の検証と保存は `SnippetController` → `SnippetCollection.normalize` の 1 か所（AI の口 #6 も同じ関数を通す）
+
+部品: `Snippet`・`SnippetCollection`・`SnippetTemplate`・`SnippetDateFormat`・`SnippetClipboard`・`SnippetPaste`・`SnippetFile`・`SnippetController`（Core）、
+`SnippetViews`（カード・⌘Y・本文の TextKit の組み）・`SnippetEditorModel`・`SnippetEditorView`・`SnippetEditorWindowController`（UI）。
+
 ### 一覧（フェーズ2・`Sources/MakuripUI/`）
 
 | 部品 | 役割 |
@@ -119,7 +137,8 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | `SourceApp` | コピーした瞬間に前面にいたアプリ（バンドル ID・名前） |
 | `Limits` | 上限の既定値（件数 1000・合計 1 GB・型 1 つ 50 MB・1 件 100 MB・DB に入れる上限 64 KB）。件数と容量は設定で変わる |
 | `HotKey` | 仮想キーコード + 修飾キー（Carbon に登録する形。設定ではキーマップの `KeyCombo` を文字で持つ） |
-| `AppSettings` | 設定の値（呼び出しキーの動き・候補窓の並び・上限・アプリごとの扱い・キーマップ）。ファイルは `settings.json` |
+| `AppSettings` | 設定の値（呼び出しキーの動き・候補窓の並び・上限・アプリごとの扱い・定型文の日付の書き方・キーマップ）。ファイルは `settings.json` |
+| `Snippet` | 定型文 1 件（id・名前・略語・本文・時刻）。並びは `SnippetCollection`、ファイルは `snippets.json`（履歴の DB とは別） |
 
 後のフェーズでの載せ方:
 - ~~フェーズ2（絞り込み）: `kind`・`copyMethod`・`source` は列として持っている。日本語検索の正規化は `preview_text` を元に別の列か索引を足す（スキーマ版を上げる）~~
@@ -128,7 +147,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - フェーズ3（プレビュー・済）: DB は変えていない。言語は表示のときに一覧の平文から判定してメモリにキャッシュする（列を足すと判定を直すたびに作り直しが要るため）。コピー元のページは取り込み時の `sourceURL` をそのまま使う
 - フェーズ4（設定・済）: データフォルダの `settings.json`（DB は変えていない）。`ClipStore.limits` を変えられるようにし（`setLimits`）、ホットキーは設定が変わるたびに付け直す
 - フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない
-- フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す
+- フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す。
+  定型文の追加・編集を扱うなら `SnippetController`（動いているアプリ）か `SnippetFile` + `SnippetCollection`（別のプロセス）を使う（検証は同じ `normalize`）
+- フェーズ7（定型文・済）: DB は変えていない（スキーマ版 1 のまま）。`snippets.json` に持つ
 
 ## 技術選定（フェーズ1・比べた代替）
 
@@ -178,6 +199,16 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | 設定画面の形 | 試作どおりの 1 つの一覧（動き → 履歴 → アプリごと → 詳細 → キーのまとまり） | 標準の `Settings` シーン + タブ（SwiftUI の App ライフサイクルが要る・試作と違う）。試作に無い項目（上限・アプリ）は同じ行の形（切り替え・数・札）で足した |
 | 検証の場所 | Core の `SettingsSchema.applying` の 1 か所（画面・CLI・ファイルの読み込みが通る） | 画面と CLI で別々に確かめる（ずれる）。重なりの扱いだけ呼ぶ側が選ぶ（CLI は拒否・画面は試作どおり付け替え・ファイルはそのまま） |
 
+## 技術選定（フェーズ7・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| 定型文の保存先 | データフォルダの JSON ファイル（`snippets.json`）+ ファイルの監視 | 履歴の SQLite に表を足す（履歴の上限・消去・作り直しと同じ場所に置くと、消してはいけないものが近くなる・スキーマ版が上がる・人と AI が中を読みにくい）、UserDefaults（`--data-dir` で隔離できない・別のプロセスから書くとキャッシュと食い違う。設定と同じ理由）。数百件でも数十 KB で、全体を置き換えで書いて足りる。設定と同じ作りなので、AI の口（#6）が別のプロセスから書いても動いているアプリがすぐ読み直す |
+| 登録・編集の入口 | 専用の窓（設定の窓と同じ作り）+ 一覧の ⇧⌘S・メニュー | 一覧のパネルの中で編集する（パネルは前面を奪わず、↩ が貼り付け・フォーカスが外れたら閉じる作りなので、複数行の本文と日本語入力の変換を落ち着いて打てない）、設定の窓の行にする（試作の設定シートはキーで 1 行ずつ選ぶ 1 つの一覧で、複数行の入力欄が合わない）。試作に編集の画面はないので、見た目は設定シートにそろえた |
+| 本文の描画（カード・⌘Y） | TextKit（`NSLayoutManager`。段落の最小・最大の行の高さを CSS の line-height に固定、差し込みは `NSTextAttachment` の札） | SwiftUI の `Text` に `Text(Image)` で札を入れる（基準線より下に出る分と `baselineOffset` の分だけ行が高くなり、札のある行が試作より約 5pt 高い。CSS の inline-block は行の高さを変えない）。行数の切り方も CSS の line-clamp と同じにした（先頭の 3 行で切って末尾に「…」。空の行も 1 行） |
+| `{{クリップボード}}` の元 | 履歴のいちばん新しい文字（秘密っぽい項目は飛ばす。試作と同じ） | いまのペーストボードを読む（記録しなかったコピー＝パスワード管理アプリ・記録しないアプリ・一時停止中のものを定型文に混ぜて貼ってしまう） |
+| `{{カーソル}}` | 貼った後に AX で文字カーソルを戻す（確かめられるときだけ） | ← を文字数ぶん送る（改行・絵文字・自動整形で数がずれる。前面のアプリにキーを送る）、消すだけ（試作の見本の動き。名前の意味がなくなる） |
+
 ## 変更時の波及
 
 - DB スキーマを変える: `ClipStore.migrate()` に版を足し、`.agent/api.md` の「DB スキーマ」と `MetadataDump` を同時に直す
@@ -193,4 +224,6 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - 確定まで貼らないアプリを足す: `DeferredPasteApps`（バンドル ID は .app の Info.plist で確かめる）と `CandidateSettingsTests`
 - 検索を変える: `SearchTextTests` に例を足し、`.agent/conventions.md` の「検索」の限界を見直す。試作（`core.js`）と振る舞いを変えるときは理由を書く
 - 見た目を変える: `make ui-compare` で試作と並べて確かめ、`design/ui-compare/README.md` の「意図して変えたところ」を直す
+- 定型文の差し込みを足す: `SnippetPlaceholder`（名前・説明）と `SnippetTemplate.expand`・`AppController.snippetContext`。`SnippetTemplateTests` に壊れた記法の例を足し、`.agent/api.md` の「定型文」と定型文の窓の説明を直す
+- 定型文の検証を変える: `SnippetCollection.normalize` の 1 か所（窓・ファイルの読み込み・AI の口が同じ関数を通す）。`SnippetCollectionTests`・`SnippetFileTests`
 - 表示名・バンドル ID・版を変える: `Sources/Makurip/Info.plist` の 1 か所だけ

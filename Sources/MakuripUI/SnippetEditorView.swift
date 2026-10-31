@@ -177,10 +177,12 @@ private struct SnippetEditorForm: View {
                     .focused($focus, equals: .name)
                 }
                 field("略語", note: "検索で引ける語") {
-                    TextField("", text: $model.draft.abbreviation, prompt: Text(";date").foregroundStyle(palette.text3))
-                        .textFieldStyle(.plain)
-                        .font(CSSText.mono(12.5))
-                        .focused($focus, equals: .abbreviation)
+                    TextField(
+                        "", text: $model.draft.abbreviation, prompt: Text("例: ;date").foregroundStyle(palette.text3)
+                    )
+                    .textFieldStyle(.plain)
+                    .font(CSSText.mono(12.5))
+                    .focused($focus, equals: .abbreviation)
                 }
                 .frame(width: 150)
             }

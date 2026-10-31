@@ -2,17 +2,15 @@ import AppKit
 import MakuripCore
 import SwiftUI
 
-/// 定型文の差し込みの札（試作の .ph: 角丸・字は 0.9em・行の高さ 1.5・定型文の色の文字と 15% の地）。
-///
-/// SwiftUI の Text の中に角丸の札は描けないので、札を画像にして `Text(Image)` で文の中に置く（折り返し・行数の制限が効く）。
-/// 画像は描くときに作る（`NSImage` の描画ハンドラ）ので、画面の倍率に合う
+/// 定型文の差し込みの札（試作の .ph: 角丸 5・字は 0.9em・行の高さ 1.5・左右 6px の余白と 1px の間・定型文の色の文字と 15% の地）。
+/// 本文の中に `NSTextAttachment` の画像として置く。画像は描くときに作る（描画ハンドラ）ので、画面の倍率に合う
 @MainActor
 enum SnippetChip {
-    private static var cache: [String: (image: NSImage, baseline: CGFloat)] = [:]
+    private static var cache: [String: (image: NSImage, descent: CGFloat)] = [:]
 
-    /// 札の画像と、文の基準線から札の下端までの距離（`baselineOffset` に負で渡す）
+    /// 札の画像と、文の基準線から札の下端までの距離（CSS の inline-block と同じく、札の中の字の基準線を文の基準線にそろえる）
     static func image(_ placeholder: SnippetPlaceholder, fontSize: CGFloat, palette: PanelPalette) -> (
-        image: NSImage, baseline: CGFloat
+        image: NSImage, descent: CGFloat
     ) {
         let key = "\(placeholder.rawValue)-\(fontSize)-\(palette.isDark)"
         if let cached = cache[key] { return cached }
@@ -20,58 +18,198 @@ enum SnippetChip {
         let font = NSFont.systemFont(ofSize: size)
         let ink = NSColor(palette.snippet)
         let text = NSAttributedString(string: placeholder.rawValue, attributes: [.font: font, .foregroundColor: ink])
-        let textSize = text.size()
-        let height = (size * 1.5).rounded(.up)
-        // 左右の margin 1px と padding 6px
-        let width = ceil(textSize.width) + 12 + 2
-        let top = (height - textSize.height) / 2
+        let height = size * 1.5
+        let content = font.ascender - font.descender
+        // CSS の half-leading: 札の中の字は、行の高さの中で上下に同じだけ空ける
+        let baselineFromTop = (height - content) / 2 + font.ascender
+        let width = ceil(text.size().width) + 12 + 2
         let image = NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
             let chip = NSBezierPath(
                 roundedRect: NSRect(x: 1, y: 0, width: width - 2, height: height), xRadius: 5, yRadius: 5)
             ink.withAlphaComponent(0.15).setFill()
             chip.fill()
-            text.draw(at: NSPoint(x: 7, y: top))
+            text.draw(
+                with: NSRect(x: 7, y: baselineFromTop, width: width, height: height), options: [],
+                context: nil)
             return true
         }
-        let baseline = height - (top + font.ascender)
-        cache[key] = (image, baseline)
-        return (image, baseline)
+        let entry = (image, height - baselineFromTop)
+        cache[key] = entry
+        return entry
     }
 }
 
-/// 定型文の本文（差し込みは札にする。検索語には印）
-struct SnippetBodyText: View {
+/// 定型文の本文を TextKit で組む（差し込みは札・検索語には印）。
+///
+/// SwiftUI の Text に画像を入れると、基準線より下に出る分だけ行が高くなり、試作（CSS の line-height で行の高さが一定）と
+/// ずれるので、行の高さを段落の指定（最小 = 最大）で固定できる TextKit で組む。CSS と同じく、行の余りは字の上下に半分ずつ
+enum SnippetBodyLayout {
+    @MainActor
+    static func attributed(
+        _ body: String, query: SearchQuery, css: CSSText, color: Color, palette: PanelPalette
+    ) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: css.size)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = css.lineHeight
+        paragraph.maximumLineHeight = css.lineHeight
+        paragraph.lineBreakMode = .byWordWrapping
+        let natural = font.ascender - font.descender
+        // TextKit は行の余りを字の上に置くので、半分だけ持ち上げて CSS と同じく上下に分ける
+        let raise = max(0, css.lineHeight - natural) / 2
+        let base: [NSAttributedString.Key: Any] = [
+            .font: font, .foregroundColor: NSColor(color), .paragraphStyle: paragraph, .baselineOffset: raise,
+        ]
+        let result = NSMutableAttributedString()
+        for segment in SnippetTemplate.segments(body) {
+            switch segment {
+            case .text(let literal):
+                let piece = NSMutableAttributedString(string: literal, attributes: base)
+                for range in query.highlightRanges(in: literal) {
+                    piece.addAttribute(
+                        .backgroundColor, value: NSColor(palette.mark), range: NSRange(range, in: literal))
+                }
+                result.append(piece)
+            case .placeholder(let kind):
+                let chip = SnippetChip.image(kind, fontSize: css.size, palette: palette)
+                let attachment = NSTextAttachment()
+                attachment.image = chip.image
+                attachment.bounds = CGRect(
+                    x: 0, y: -chip.descent, width: chip.image.size.width, height: chip.image.size.height)
+                let piece = NSMutableAttributedString(attachment: attachment)
+                piece.addAttributes(base, range: NSRange(location: 0, length: piece.length))
+                result.append(piece)
+            }
+        }
+        return result
+    }
+}
+
+/// 定型文の本文（`maxLines` で切り、最後の行の末尾に「…」。0 は切らない）
+struct SnippetBodyText: NSViewRepresentable {
     /// 定型文の本文（`body` は View の名前なので `source` と呼ぶ）
     let source: String
     let query: SearchQuery
-    let fontSize: CGFloat
+    let css: CSSText
+    let color: Color
+    let maxLines: Int
     @Environment(\.palette) private var palette
 
-    init(_ source: String, query: SearchQuery, fontSize: CGFloat) {
+    init(_ source: String, query: SearchQuery, css: CSSText, color: Color, maxLines: Int = 0) {
         self.source = source
         self.query = query
-        self.fontSize = fontSize
+        self.css = css
+        self.color = color
+        self.maxLines = maxLines
     }
 
-    var body: some View {
-        Self.text(source, query: query, fontSize: fontSize, palette: palette)
+    func makeNSView(context: Context) -> SnippetTextNSView {
+        let view = SnippetTextNSView()
+        update(view)
+        return view
     }
 
-    /// 文字と札をつないだ 1 つの Text（`+` は macOS 26 で非推奨なので文字列の差し込みでつなぐ）
-    static func text(_ body: String, query: SearchQuery, fontSize: CGFloat, palette: PanelPalette) -> Text {
-        var result = Text(verbatim: "")
-        for segment in SnippetTemplate.segments(body) {
-            let piece: Text
-            switch segment {
-            case .text(let literal):
-                piece = Text(Highlight.attributed(literal, query: query, mark: palette.mark))
-            case .placeholder(let kind):
-                let chip = SnippetChip.image(kind, fontSize: fontSize, palette: palette)
-                piece = Text(Image(nsImage: chip.image)).baselineOffset(-chip.baseline)
-            }
-            result = Text("\(result)\(piece)")
+    func updateNSView(_ view: SnippetTextNSView, context: Context) {
+        update(view)
+    }
+
+    private func update(_ view: SnippetTextNSView) {
+        view.set(
+            SnippetBodyLayout.attributed(source, query: query, css: css, color: color, palette: palette),
+            maxLines: maxLines)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: SnippetTextNSView, context: Context) -> CGSize? {
+        let width = proposal.width ?? 330
+        return CGSize(width: width, height: nsView.height(forWidth: width))
+    }
+}
+
+/// TextKit で組んで描くだけの面（選択・編集はしない）。
+///
+/// 行数を切るときは CSS の line-clamp と同じにする: 先頭の `maxLines` 行だけを出し、続きがあれば最後の行の末尾に「…」。
+/// TextKit の行数の上限だけに任せると、最後の行に続きの文を詰めて出すので（空の行が飛ぶ）、自分で切ってから組む
+final class SnippetTextNSView: NSView {
+    private let storage = NSTextStorage()
+    private let manager = NSLayoutManager()
+    private let container = NSTextContainer(size: CGSize(width: 330, height: CGFloat.greatestFiniteMagnitude))
+    private var full = NSAttributedString()
+    private var maxLines = 0
+    /// いま組んである幅（幅が変わったら切り直す）
+    private var laidOutWidth: CGFloat = -1
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) は使わない") }
+
+    override var isFlipped: Bool { true }
+
+    func set(_ text: NSAttributedString, maxLines: Int) {
+        guard !full.isEqual(to: text) || self.maxLines != maxLines else { return }
+        full = text
+        self.maxLines = maxLines
+        laidOutWidth = -1
+        needsDisplay = true
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        layOut(width: width)
+        manager.ensureLayout(for: container)
+        return ceil(manager.usedRect(for: container).height)
+    }
+
+    override func layout() {
+        super.layout()
+        layOut(width: bounds.width)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        layOut(width: bounds.width)
+        let glyphs = manager.glyphRange(for: container)
+        manager.drawBackground(forGlyphRange: glyphs, at: .zero)
+        manager.drawGlyphs(forGlyphRange: glyphs, at: .zero)
+    }
+
+    private func layOut(width: CGFloat) {
+        guard width > 0, width != laidOutWidth else { return }
+        laidOutWidth = width
+        container.size = CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        container.maximumNumberOfLines = 0
+        container.lineBreakMode = .byWordWrapping
+        storage.setAttributedString(full)
+        guard maxLines > 0, let end = endOfLine(maxLines), end < storage.length else { return }
+        // 先頭の maxLines 行で切り、その行を終える改行を 1 つだけ除いて「…」を足す（空の行なら「…」だけの行になる。
+        // 長くて入らなければ TextKit が末尾を「…」で切る）
+        let clipped = NSMutableAttributedString(attributedString: full.attributedSubstring(from: NSRange(0..<end)))
+        if clipped.length > 0, (clipped.string as NSString).character(at: clipped.length - 1) == 0x0A {
+            clipped.deleteCharacters(in: NSRange(location: clipped.length - 1, length: 1))
         }
-        return result
+        let attributes = full.attributes(at: max(0, min(end, full.length - 1)), effectiveRange: nil)
+            .filter { $0.key != .attachment }
+        clipped.append(NSAttributedString(string: "…", attributes: attributes))
+        container.maximumNumberOfLines = maxLines
+        container.lineBreakMode = .byTruncatingTail
+        storage.setAttributedString(clipped)
+    }
+
+    /// `count` 行目の終わりの文字の位置（行がそれより少なければ nil）
+    private func endOfLine(_ count: Int) -> Int? {
+        manager.ensureLayout(for: container)
+        var lines = 0
+        var end: Int?
+        let glyphs = manager.glyphRange(for: container)
+        manager.enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, range, stop in
+            lines += 1
+            if lines == count {
+                end = self.manager.characterRange(forGlyphRange: range, actualGlyphRange: nil).upperBound
+                stop.pointee = true
+            }
+        }
+        return end
     }
 }
 
@@ -93,10 +231,7 @@ struct SnippetCardView: View {
                     .lineLimit(1)
                     .css(CSS.snippetName)
                     .foregroundStyle(palette.text)
-                SnippetBodyText(snippet.body, query: query, fontSize: CSS.snippetBody.size)
-                    .lineLimit(3)
-                    .css(CSS.snippetBody)
-                    .foregroundStyle(palette.text2)
+                SnippetBodyText(snippet.body, query: query, css: CSS.snippetBody, color: palette.text2, maxLines: 3)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 0) {
@@ -180,16 +315,15 @@ struct SnippetPeekContent: View {
             .frame(height: 46)
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 14) {
-                    SnippetBodyText(snippet.body, query: model.searchQuery, fontSize: CSS.previewSnippet.size)
-                        .css(CSS.previewSnippet)
-                        .foregroundStyle(palette.text)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.well))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(
-                                palette.wellLine, lineWidth: 0.5))
+                    SnippetBodyText(
+                        snippet.body, query: model.searchQuery, css: CSS.previewSnippet, color: palette.text
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.well))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(
+                            palette.wellLine, lineWidth: 0.5))
                     note
                 }
                 .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))

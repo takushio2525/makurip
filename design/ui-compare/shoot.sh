@@ -1,7 +1,7 @@
 #!/bin/bash
 # tako:run design/ui-compare/shoot.sh
 #
-# 試作（~/dev/makurip-design/ui の案 B・候補窓・設定シート）と SwiftUI のパネル・候補窓・設定画面を同じ状態で描き、横に並べた比較画像を作る。
+# 試作（~/dev/makurip-design/ui の案 B・候補窓・設定シート）と SwiftUI のパネル・候補窓・設定画面・定型文の窓を同じ状態で描き、横に並べた比較画像を作る。
 # 画面ロック中でも動く（試作はヘッドレス Chrome、SwiftUI はオフスクリーン描画）。窓は画面に出さない。
 #
 # 出力（git 管理外）: $OUT/compare/compare-<状態>.png（左が試作・右が SwiftUI。2 倍）・swift-*.png・open-speed.txt
@@ -73,6 +73,12 @@ shoot peek-code-py-light light custom "&kind=code&move=2&look=1"
 shoot peek-code-sh-dark dark custom "&kind=code&move=3&look=1"
 shoot peek-cmd-light light custom "&kind=command&move=1&look=1"
 shoot peek-cmd-dark dark custom "&kind=command&look=1"
+# フェーズ7: 定型文の一覧（⌘S）・⌘Y の定型文・検索（試作の b-snippets.png と同じく 2 件目を選ぶ）
+shoot snippets light snippets "&move=1"
+shoot snippets-dark dark snippets "&move=3"
+shoot peek-snippet-light light snippets "&look=1"
+shoot peek-snippet-dark dark snippets "&move=3&look=1"
+shoot snippets-search light snippets "&q=rebyu-"
 
 echo "== 試作の候補窓をヘッドレス Chrome で撮る"
 sed "s#@DESIGN@#$DESIGN#g" "$HERE/candidate-states.html" > "$OUT/work/candidate-states.html"
@@ -106,7 +112,7 @@ shoot_settings settings-keys-dark dark "&state=keys"
 
 echo "== SwiftUI のパネルをオフスクリーンで描き、試作と並べる"
 (cd "$ROOT" && MAKURIP_SNAPSHOT_DIR="$OUT/compare" MAKURIP_SNAPSHOT_ASSETS="$OUT/assets" \
-    MAKURIP_PROTO_SHOTS="$OUT/proto" swift test --filter "SnapshotTests|StoreSpeedTests|CandidateSnapshotTests|HighlightSpeedTests|SettingsSnapshotTests" 2>&1 |
+    MAKURIP_PROTO_SHOTS="$OUT/proto" swift test --filter "SnapshotTests|StoreSpeedTests|CandidateSnapshotTests|HighlightSpeedTests|SettingsSnapshotTests|SnippetEditorSnapshotTests" 2>&1 |
     grep -E "件:|件を読む|行（|✔ Test run|✘" || true)
 rm -rf "$OUT/work"
 echo "比較画像: $OUT/compare/"

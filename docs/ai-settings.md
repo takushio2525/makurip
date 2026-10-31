@@ -69,6 +69,9 @@ $MAKURIP --settings list
 | Mac を起動したら自動で立ち上げて | `launchAtLogin` | `true` | `set launchAtLogin true` |
 | 候補窓は Enter だけで確定 | `keys.candCommit` | `↩` | `set keys.candCommit ↩` |
 | 履歴の削除は ⌥⌫ にして | `keys.delete` | `⌥⌫` | `set keys.delete ⌥⌫` |
+| 定型文の日付をハイフン区切りにして | `snippetDateFormat`（日付の書き方） | `hyphen`（2026-10-31） | `set snippetDateFormat hyphen` |
+| 日付は「2026年10月31日」のように | `snippetDateFormat` | `japanese` | `set snippetDateFormat japanese` |
+| 定型文を開くキーを ⌘J にして | `keys.snippets`（定型文を表示） | `⌘J` | `set keys.snippets ⌘J` |
 
 補足:
 
@@ -132,7 +135,8 @@ $ Makurip --settings add candPasteTiming Slack=onCommit
 | `candPasteTiming` | 確定まで貼らないアプリ | バンドル ID → `immediate` / `onCommit` | なし（ターミナル・チャットは既定で `onCommit`） |
 | `candIdleTimeout` | 候補窓を自動で閉じるまで（詳細） | 数 2〜120（秒） | 10 |
 | `candReplaceMethod` | 差し替え方式の決め打ち（詳細・画面には出さない） | バンドル ID → `selectRange` / `undo` / `deferred` | なし |
-| `keys.<操作 ID>` | 各操作のキー（25 個） | キーの並び | 試作どおり |
+| `snippetDateFormat` | 日付の書き方（定型文の `{{日付}}`） | `slash`（2026/10/31）/ `hyphen`（2026-10-31）/ `japanese`（2026年10月31日） | `slash` |
+| `keys.<操作 ID>` | 各操作のキー（26 個。定型文の `keys.snippets`・`keys.editSnippet` を含む） | キーの並び | 試作どおり |
 
 設定にしないもの: パスワード等の印（ConcealedType）が付いたコピーを保存しない動き（プライバシーを守る振る舞いは、
 AI や他のアプリが設定ファイルを書き換えても弱められないようにしてある）・監視の間隔などの内部の定数。

@@ -133,6 +133,33 @@ enum SampleHistory {
 
     static let day: Double = 1440
 
+    /// 定型文のエッジケース（試作に無い状態）: 長い名前・空白のない長い 1 行・複数行・壊れた記法・同じ名前・差し込みだらけ
+    static let edgeSnippets: [Snippet] = [
+        (String(repeating: "とても長い名前の定型文", count: 6), ";long", "短い本文"),
+        (
+            "空白のない長い 1 行", "",
+            "https://example.com/" + String(repeating: "very-long-path-segment/", count: 12) + "{{日付}}"
+        ),
+        ("複数行（10 行）", ";lines", (1...10).map { "\($0) 行目の文" }.joined(separator: "\n")),
+        ("壊れた記法", ";broken", "{{日付 と {{名前}} と 日付}} は文字のまま。{{ 日付 }} は差し込み。{{{日付}}}"),
+        ("返信", ";re1", "了解しました。"),
+        ("返信", ";re2", "承知しました。"),
+        ("差し込みだらけ", ";all", String(repeating: "{{日付}}{{クリップボード}}{{言語}}{{カーソル}}", count: 6)),
+    ].enumerated().map { index, entry in
+        Snippet(
+            id: UUID(uuidString: String(format: "00000000-0000-0000-0001-%012d", index + 1))!, name: entry.0,
+            abbreviation: entry.1, body: entry.2, createdAt: now, updatedAt: now)
+    }
+
+    /// 数百件の定型文（名前と本文は番号だけの架空のもの）
+    static func manySnippets(count: Int) -> [Snippet] {
+        (0..<count).map {
+            Snippet(
+                id: UUID(), name: "定型文 \($0 + 1)", abbreviation: ";s\($0 + 1)", body: "本文 \($0 + 1)\n{{日付}}",
+                createdAt: now, updatedAt: now)
+        }
+    }
+
     /// 試作の定型文 6 件（`data.js` の snippets と同じ文面・順）
     static let snippets: [Snippet] = [
         ("あいさつ（社外）", ";aisatsu", "いつもお世話になっております。\n{{カーソル}}\nよろしくお願いいたします。"),

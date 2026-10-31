@@ -23,6 +23,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 | テスト | Swift Testing（`swift test`） | |
 | Lint / Format | `swift format`（ツールチェーン同梱） | 設定は `.swift-format` |
 | コードの色付け | 自前の簡易な字句解析（`Sources/MakuripCore/Syntax/`） | Highlightr・tree-sitter と比べて採らなかった（`.agent/architecture.md` の「技術選定（フェーズ3）」）。⌘Y のコードは NSTextView で描く |
+| 定型文 | データフォルダの `snippets.json` + ファイルの監視（`Sources/MakuripCore/Snippets/`） | 履歴の DB とは別（上限・消去で消えない）。検証は `SnippetCollection.normalize` の 1 か所。履歴の SQLite に表を足す案と比べた（`.agent/architecture.md` の「技術選定（フェーズ7）」） |
 | 設定 | データフォルダの `settings.json` + ファイルの監視（`Sources/MakuripCore/Settings/`） | スキーマ・検証は Core の 1 か所。画面・CLI（`--settings`）が同じ関数を通す。UserDefaults・分散通知と比べた（`.agent/architecture.md` の「技術選定（フェーズ4）」） |
 | キーの記録 | 自前（窓の `NSEvent` ローカル監視 → `SettingsModel.record`） | KeyboardShortcuts（sindresorhus）は記録欄の見た目が試作の「新しいキーを押す…」と違い、依存も増えるので採らなかった |
 
@@ -35,8 +36,8 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI）。AppKit は NSPasteboard だけ使う
-│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー）と候補窓と設定画面。Core にだけ依存する
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・定型文）。AppKit は NSPasteboard だけ使う
+│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー・定型文の一覧）と候補窓と設定画面と定型文の窓。Core にだけ依存する
 │   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・起動引数・--settings の入口）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
@@ -51,7 +52,7 @@ makurip/
 ```
 
 - `MakuripCore` に UI のコード（SwiftUI・NSWindow）を置かない。判定ロジックは純粋関数にしてここに置く
-- `MakuripUI` から `Makurip`（実行ファイル側）を参照しない。本体とのやりとりは `HistoryPresenting` / `HistoryActions` / `CandidatePresenting` / `SettingsPresenting`（+ `SettingsController`）だけ
+- `MakuripUI` から `Makurip`（実行ファイル側）を参照しない。本体とのやりとりは `HistoryPresenting` / `HistoryActions` / `CandidatePresenting` / `SettingsPresenting`（+ `SettingsController`）/ `SnippetEditorPresenting`（+ `SnippetController`）だけ
 - 設定項目を足すときは `SettingsSchema` の 1 か所に足す（ID・型・既定値・範囲・説明・頼みの例）。画面・CLI・ファイルはそこから引く
 
 ## コマンド
@@ -66,6 +67,7 @@ makurip/
 | 決まった場所へ入れる | `make install`（→ `~/Applications/Makurip.app`） |
 | 隔離 E2E（取り込み・永続化） | `make e2e`（一般ペーストボードに触らない） |
 | 隔離 E2E（設定） | `MAKURIP_APP=.app-build/Makurip.app make e2e-settings`（窓を出さない。ホットキーは使われていない組み合わせだけ） |
+| 隔離 E2E（定型文） | `MAKURIP_APP=.app-build/Makurip.app make e2e-snippets`（登録・置き換え・名前付きペーストボードへの書き戻し・履歴の消去で消えないこと。窓を出さず、キーも送らない） |
 | 設定の CLI | `Makurip [--data-dir DIR] --settings list\|get\|set\|add\|remove\|reset\|schema [--json]`（`docs/ai-settings.md`） |
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |

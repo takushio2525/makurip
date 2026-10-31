@@ -32,13 +32,17 @@
 | `simulateCopyShortcut` | ⌘C を見たときと同じ信号を入れる |
 | `setPasteTarget` | 貼り付けの宛先を pid で固定する |
 | `pause` / `resume` | 記録の一時停止 / 再開 |
+| `pasteSnippet` | 定型文を貼る（一覧の ↩ と同じ処理）。`userInfo["index"]` は 1 からの番号、`["mode"]` は `normal` / `plainText` / `copyOnly`（既定 `normal`）。番号の外は何もしない |
+| `clearHistory` | 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る） |
 | `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く（設定ファイルから読み直したときも自動で書く） |
 | `quit` | 終了する |
 
 `debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・
 `lastHotKeyRoute`（直近に押した呼び出しキーの振り分け）・`openKeyRoute`（いま呼び出しキーを押したらどうなるか。押さずに `HotKeyRouter.route` で計算した値: `startCandidate` / `pasteLatest` / `openList` / `closeList` / `expandCandidate`）・
 `storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
-`settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・`writtenAt`。
+`settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・
+`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない）・`writtenAt`。
+`historyUI` には `showsSnippets`・`snippetCount` もある。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
 
@@ -71,6 +75,7 @@
     func historyDidChange()
     var debugState: [String: String] { get }   // 既定は空
     func keymapDidChange(_ keymap: Keymap)        // 設定でキーが変わった（既定は何もしない）
+    func snippetsDidChange()                      // 定型文が変わった（開いていれば読み直す。既定は何もしない）
 }
 
 @MainActor public protocol HistoryActions: AnyObject {
@@ -83,8 +88,19 @@
     func representationInfos(itemID: UUID) -> [RepresentationInfo]          // サムネイル・プレビューで読む型を選ぶ
     func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data?  // 型 1 つのデータ（UI の中だけで使う）
     func openSettings()                           // 一覧の ⌘,（UI は先に閉じる）
+    func snippets() -> [Snippet]                  // 定型文（一覧の順）
+    func pasteSnippet(id: UUID, mode: PasteMode)  // 差し込みを置き換えて貼る（UI は先に閉じる）。履歴には足さない
+    func openSnippetEditor(_ request: SnippetEditRequest)  // 定型文の窓（.open / .edit(id) / .new(body:) / .fromHistory(itemID)）
+    func snippetDateFormat() -> SnippetDateFormat // {{日付}} の書き方（⌘Y の説明に使う）
 }
 // paste(itemID:) と historyItems・historyDidClose 以外は既定の実装（何もしない・空）がある
+
+@MainActor public protocol SnippetEditorPresenting: AnyObject {
+    var isVisible: Bool { get }
+    func show(_ request: SnippetEditRequest)      // メニューの「定型文を編集…」・一覧の ⇧⌘S
+    func close()
+}
+public struct SnippetEditorEnvironment { dateFormat: () -> SnippetDateFormat }
 
 @MainActor public protocol SettingsPresenting: AnyObject {
     var isVisible: Bool { get }
@@ -103,6 +119,7 @@ public struct SettingsEnvironment {               // 設定画面が本体に聞
 public enum HistoryUIFactory { @MainActor static func make(actions: HistoryActions, keymap: Keymap) -> HistoryPresenting }
 public enum CandidateUIFactory { @MainActor static func make(actions: HistoryActions, keymap: Keymap) -> CandidatePresenting }
 public enum SettingsUIFactory { @MainActor static func make(controller: SettingsController, environment: SettingsEnvironment) -> SettingsPresenting }
+public enum SnippetEditorUIFactory { @MainActor static func make(controller: SnippetController, environment: SnippetEditorEnvironment) -> SnippetEditorPresenting }
 ```
 
 `CandidatePresenting` にも `keymapDidChange(_:)`（既定は何もしない）がある。`CandidateCoordinator.keymap` を変えると窓にも伝わる。
@@ -125,10 +142,12 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 | `method` | コピー方法を切り替え（すべて → キー操作 → ボタンなど） | ⌘K | パネル |
 | `app` | コピー元アプリを選ぶ | ⌘E | パネル |
 | `pinned` / `pin` | ピン留めだけ表示 / ピン留めする・外す | ⇧⌘P / ⌘P | パネル |
+| `snippets` | 定型文を表示（もう一度で履歴に戻る） | ⌘S | パネル |
 | `look` | 大きくプレビュー | ⌘Y | パネル |
 | `source` | コピー元のページを開く | ⌘O | パネル |
 | `delete` | 履歴から削除 | ⌘⌫ | パネル |
 | `settings` | 設定を開く | ⌘, | パネル |
+| `editSnippet` | 定型文を編集（定型文の一覧）／選んだ履歴から登録（履歴の一覧）。試作に無い | ⇧⌘S | パネル |
 | `candUp` / `candDown` | 上の候補へ / 下の候補へ（ターミナル式では ↑ が古いほう） | ↑ / ↓ | 候補窓 |
 | `candCommit` | 確定（改行や送信はしない） | ⇥・↩ | 候補窓 |
 | `candCancel` | 取り消し（貼る前に戻す） | esc | 候補窓 |
@@ -136,7 +155,7 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 
 候補窓の範囲のキーは候補窓が出ている間だけ効くので、候補窓のキーどうしだけで重なりを見る（⌃⌘V が `open` と `candExpand` の両方にあるのはこのため）。
 候補窓の間に全体のキー（⌃⌘V・⌃⌥⌘V）が来たら、タップは素通しして Carbon のホットキーに任せ、`HotKeyRouter` が「広げる」に振り分ける。
-定型文（⌘S）・隠した内容の表示（⌥）は、それぞれ #7・#5 で足す。キーとして使える組み合わせの決まりは `KeyRules`（下の「設定」）。
+隠した内容の表示（⌥）は #5 で足す。定型文の一覧では `kindNext`・`kindPrev`・`method`・`app`・`pin`・`delete` は効かない（試作と同じ）。キーとして使える組み合わせの決まりは `KeyRules`（下の「設定」）。
 
 ## 候補窓（`Sources/MakuripCore/Candidate/`・#8）
 
@@ -206,6 +225,7 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 | `candPasteTiming` | バンドル ID → 選択肢 | なし | `immediate` / `onCommit`（既定の一覧は `builtIn`） |
 | `candIdleTimeout` | 数（詳細） | 10 | 2〜120 秒 |
 | `candReplaceMethod` | バンドル ID → 選択肢（詳細・画面に出さない） | なし | `selectRange` / `undo` / `deferred` |
+| `snippetDateFormat` | 選択肢 | `slash` | `slash`（2026/10/31）/ `hyphen`（2026-10-31）/ `japanese`（2026年10月31日）。定型文の `{{日付}}` |
 | `keys.<操作 ID>` | キーの並び | `KeyAction.defaultCombos` | `KeyRules` に通るもの。どこからでも効くキーは 1 つだけ。空の並びで未設定 |
 
 ### CLI（`Makurip [--data-dir DIR] --settings ...`）
@@ -242,6 +262,38 @@ AI 向けの手順と頼みの対応表は `docs/ai-settings.md`。
 UI 側（`Sources/MakuripUI/`）: `ClipContentLoader.language(for:)`（一覧の平文から 1 回だけ判定してキャッシュ）・`codeCardLines`・`commandCard`・`commandPreview`・
 `cachedCodeTokens` / `codeTokens`（長いものは裏で作る）・`CodeStyler`（AttributedString / NSAttributedString にする）・`CodeTextView`（⌘Y のコード）・
 `DisplayText.sourcePage(_:)`（コピー元のページの「ホスト・パス」。http・https でホストがあるときだけ・クエリは出さない）。
+
+## 定型文（`Sources/MakuripCore/Snippets/`・#7）
+
+| 型 | 役割 |
+|---|---|
+| `Snippet` / `SnippetDraft` | 1 件（id・名前・略語・本文・作った時刻・変えた時刻）/ 登録・編集で入れる値 |
+| `SnippetCollection` | 並び（= 一覧の順・⌘1〜9 の順）と `add`・`update`・`remove`・`move(id:to:)`・`move(id:by:)`。**検証は `normalize` の 1 か所**（本文が空・空白だけ・10 万文字超・名前 100 文字超・略語に空白・32 文字超は不可。名前が空なら本文の 1 行目）。上限 5000 件 |
+| `SnippetTemplate` | 差し込み（`SnippetPlaceholder`: `{{日付}}`・`{{クリップボード}}`・`{{言語}}`・`{{カーソル}}`）の読み取り（`segments`・`placeholderRanges`・`placeholders`）と置き換え（`expand(_:context:) -> Expansion`: 文字と、カーソルから末尾までの長さ） |
+| `SnippetDateFormat` | `{{日付}}` の書き方（西暦で固定。和暦の環境でも 2026） |
+| `SnippetClipboard` | `{{クリップボード}}` に使う履歴（新しい順で、文字として差し込める種類・`secretLikely` でないもの）と `{{言語}}`（コードは判定・コマンドはシェル・ほかは空） |
+| `SnippetPaste` | 書き戻す中身（文字の型 UTF-8 だけ）・`{{カーソル}}` へ動かす先（`cursorTarget`。貼る前後の入力欄を AX で読めて、カーソルがちょうど貼った文字の後ろにあるときだけ） |
+| `SnippetFile` | `<データフォルダ>/snippets.json` の読み書き（純粋関数の `decode`・`encode` と、置き換えで書く `save`。読めない項目・ファイルは `snippets.broken.json` に退避してから書き直す） |
+| `SnippetController` | 動いているアプリの定型文。ファイルの監視で読み直し、変わったら `observe` の相手に知らせる。窓からの `add`・`update`・`remove`・`move` もここ（AI の口 #6 も使える） |
+
+### 定型文のファイル
+
+```json
+{
+  "formatVersion" : 1,
+  "snippets" : [
+    { "abbr" : ";date", "body" : "{{日付}}", "createdAt" : "2026-10-31T06:30:00Z",
+      "id" : "…", "name" : "今日の日付", "updatedAt" : "2026-10-31T06:30:00Z" }
+  ]
+}
+```
+
+- `body` だけが必須（`name` が空なら本文の 1 行目、`id`・日時がなければ読んだときに作る。`id` が重なれば作り直す）
+- 履歴（`history.sqlite`）とは別のファイル。履歴の上限・消去・削除では消えない
+- 差し込みの記法: `{{名前}}`（中の前後の空白は無視）。知らない名前・閉じていない・中に改行・名前が 24 文字を超えるものは書いたままの文字
+
+UI 側（`Sources/MakuripUI/`）: `SnippetCardView`・`SnippetPeekContent`（パネルの定型文）・`SnippetBodyText`（本文を TextKit で組む。行の高さを CSS と同じに固定し、差し込みは札の画像）・
+`SnippetEditorModel` / `SnippetEditorView` / `SnippetEditorWindowController`（定型文の窓）。
 
 ## パネルの位置（`Sources/MakuripCore/Placement/`）
 

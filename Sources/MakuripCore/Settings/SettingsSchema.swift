@@ -273,7 +273,7 @@ public enum SettingsSchema {
         switch format {
         case .slash: "年/月/日（月と日は 2 桁）。"
         case .hyphen: "年-月-日（月と日は 2 桁）。"
-        case .japanese: "○年○月○日。"
+        case .japanese: "年・月・日を漢字で（月と日は 1 桁のときは 1 桁）。"
         }
     }
 

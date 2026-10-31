@@ -8,6 +8,8 @@
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP="${MAKURIP_APP:-$HOME/Applications/Makurip.app}"
+# open -a は相対パスを探せないので、リポジトリの根からの相対パス（.app-build/Makurip.app）は絶対パスにする
+[[ "$APP" == /* ]] || APP="$ROOT/$APP"
 EXE="$APP/Contents/MacOS/Makurip"
 PASS=0
 FAIL=0

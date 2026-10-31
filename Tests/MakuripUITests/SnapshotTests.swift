@@ -36,6 +36,8 @@ struct SnapshotTests {
         var entries: [SampleHistory.Entry]?
         /// 一度描いた後に選ぶ項目（↓ を押したのと同じ。選んだカードが見える位置まで一覧が送られるかを確かめる）
         var selectAfterLayout: Int?
+        /// 試作の 6 件の代わりに使う定型文（試作に同じ状態がないエッジケース）
+        var snippets: [Snippet]?
         let setUp: (HistoryPanelModel) -> Void
     }
 
@@ -127,6 +129,33 @@ struct SnapshotTests {
             $0.setKind(.code)
             $0.query = "item"
         },
+        // フェーズ7: 定型文の一覧（試作の b-snippets.png と同じく 2 件目を選ぶ）・⌘Y の定型文・検索
+        Scenario(name: "snippets") {
+            $0.toggleSnippets()
+            $0.select(1)
+        },
+        // 下の方のカードは、描いた後に選ぶ（選んだカードが見える位置まで一覧が送られる。履歴と同じ）
+        Scenario(name: "snippets-dark", dark: true, selectAfterLayout: 3) { $0.toggleSnippets() },
+        Scenario(name: "peek-snippet-light", peek: true) { $0.toggleSnippets() },
+        Scenario(name: "peek-snippet-dark", dark: true, peek: true, selectAfterLayout: 3) { $0.toggleSnippets() },
+        Scenario(name: "snippets-search") {
+            $0.toggleSnippets()
+            $0.query = "rebyu-"
+        },
+        // 定型文のエッジケース（試作に無い状態）: 0 件・長い名前と本文・複数行・壊れた記法・同じ名前・数百件
+        Scenario(name: "edge-snippets-empty", snippets: []) { $0.toggleSnippets() },
+        Scenario(name: "edge-snippets-empty-dark", dark: true, snippets: []) { $0.toggleSnippets() },
+        Scenario(name: "edge-snippets-long", peek: true, snippets: SampleHistory.edgeSnippets) {
+            $0.toggleSnippets()
+            $0.select(1)
+        },
+        Scenario(
+            name: "edge-snippets-long-dark", dark: true, peek: true, selectAfterLayout: 3,
+            snippets: SampleHistory.edgeSnippets
+        ) { $0.toggleSnippets() },
+        Scenario(
+            name: "edge-snippets-many", selectAfterLayout: 150, snippets: SampleHistory.manySnippets(count: 300)
+        ) { $0.toggleSnippets() },
     ]
 
     @Test("各状態を描き、試作と並べた比較画像を作る")
@@ -138,6 +167,7 @@ struct SnapshotTests {
                 scenario.empty
                 ? FakeHistory()
                 : SampleHistory.make(imageDirectory: assets, entries: scenario.entries ?? SampleHistory.entries)
+            if !scenario.empty { history.snippetList = scenario.snippets ?? SampleHistory.snippets }
             let model = HistoryPanelModel(actions: history)
             model.clock = { SampleHistory.now }
             model.open()
