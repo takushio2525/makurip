@@ -9,7 +9,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 
 - 目的: Windows のクリップボード履歴に相当するものを Mac で。種類・コピー方法・コピー元で絞り込めることが売り
 - 対象: 作者本人（開発・AI チャットでコピーを多用する人）
-- 状況: フェーズ2.5（候補窓 #8）まで。次はプレビューの色付け（#3）・設定（#4）（`.agent/roadmap.md`）
+- 状況: フェーズ3（開発向けのプレビュー #3）まで。次は設定（#4）（`.agent/roadmap.md`）
 
 ## 技術スタック
 
@@ -22,6 +22,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 | ビルド | SwiftPM + `scripts/build-app.sh` | .app の組み立てと署名をスクリプトで行う |
 | テスト | Swift Testing（`swift test`） | |
 | Lint / Format | `swift format`（ツールチェーン同梱） | 設定は `.swift-format` |
+| コードの色付け | 自前の簡易な字句解析（`Sources/MakuripCore/Syntax/`） | Highlightr・tree-sitter と比べて採らなかった（`.agent/architecture.md` の「技術選定（フェーズ3）」）。⌘Y のコードは NSTextView で描く |
 
 **外部ライブラリは 0**。入れる場合は採用理由と比べた代替を PR とこの表に書く。
 技術選定で比べた代替（XcodeGen・GRDB・SwiftData・KeyboardShortcuts など）は `.agent/architecture.md` の「技術選定」節。
@@ -32,7 +33,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ）。AppKit は NSPasteboard だけ使う
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト）。AppKit は NSPasteboard だけ使う
 │   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー）と候補窓。Core にだけ依存する
 │   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・起動引数）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない

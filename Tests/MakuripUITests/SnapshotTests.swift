@@ -32,6 +32,8 @@ struct SnapshotTests {
         var dark = false
         var empty = false
         var peek = false
+        /// 試作と同じ履歴の代わりに使う履歴（試作に同じ状態がないエッジケース）
+        var entries: [SampleHistory.Entry]?
         /// 一度描いた後に選ぶ項目（↓ を押したのと同じ。選んだカードが見える位置まで一覧が送られるかを確かめる）
         var selectAfterLayout: Int?
         let setUp: (HistoryPanelModel) -> Void
@@ -84,14 +86,53 @@ struct SnapshotTests {
             $0.togglePinnedOnly()
             $0.query = "npm"
         },
+        // フェーズ3: コードの色付けとコマンドのプロンプト・コピー元のページ（試作と同じ状態）
+        Scenario(name: "code-cards-light") { $0.setKind(.code) },
+        Scenario(name: "code-cards-dark", dark: true) { $0.setKind(.code) },
+        Scenario(name: "peek-code-ts-dark", dark: true, peek: true) {
+            $0.setKind(.code)
+            $0.select(1)
+        },
+        // 一覧の下の方のカードは、描いた後に選ぶ（試作と同じく、選んだカードが見える位置まで一覧が送られる）
+        Scenario(name: "peek-code-py-light", peek: true, selectAfterLayout: 2) { $0.setKind(.code) },
+        Scenario(name: "peek-code-sh-dark", dark: true, peek: true, selectAfterLayout: 3) { $0.setKind(.code) },
+        Scenario(name: "peek-cmd-light", peek: true) {
+            $0.setKind(.command)
+            $0.select(1)
+        },
+        Scenario(name: "peek-cmd-dark", dark: true, peek: true) { $0.setKind(.command) },
+        // フェーズ3 のエッジケース（試作に同じ状態がないもの）
+        Scenario(name: "edge-code-cards", entries: SampleHistory.edgeEntries) { $0.setKind(.code) },
+        Scenario(name: "edge-peek-code-unknown", peek: true, entries: SampleHistory.edgeEntries) { $0.select(0) },
+        Scenario(name: "edge-peek-code-one-char", dark: true, peek: true, entries: SampleHistory.edgeEntries) {
+            $0.select(1)
+        },
+        Scenario(name: "edge-peek-code-cjk", peek: true, entries: SampleHistory.edgeEntries) { $0.select(2) },
+        Scenario(name: "edge-peek-code-long-line", dark: true, peek: true, entries: SampleHistory.edgeEntries) {
+            $0.select(3)
+        },
+        Scenario(name: "edge-peek-code-3000-lines", peek: true, entries: SampleHistory.edgeEntries) {
+            $0.select(4)
+        },
+        Scenario(name: "edge-peek-cmd-ps1", dark: true, peek: true, entries: SampleHistory.edgeEntries) {
+            $0.select(5)
+        },
+        Scenario(name: "edge-peek-text-source", peek: true, entries: SampleHistory.edgeEntries) { $0.select(6) },
+        Scenario(name: "edge-search-in-code", peek: true) {
+            $0.setKind(.code)
+            $0.query = "item"
+        },
     ]
 
     @Test("各状態を描き、試作と並べた比較画像を作る")
-    func renderAll() throws {
+    func renderAll() async throws {
         _ = NSApplication.shared
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         for scenario in Self.scenarios {
-            let history = scenario.empty ? FakeHistory() : SampleHistory.make(imageDirectory: assets)
+            let history =
+                scenario.empty
+                ? FakeHistory()
+                : SampleHistory.make(imageDirectory: assets, entries: scenario.entries ?? SampleHistory.entries)
             let model = HistoryPanelModel(actions: history)
             model.clock = { SampleHistory.now }
             model.open()
@@ -101,6 +142,12 @@ struct SnapshotTests {
             for item in model.items where item.kind == .image {
                 _ = loader.loadThumbnailNow(for: item)
                 _ = loader.loadThumbnailNow(for: item, size: ClipContentLoader.previewPixelSize)
+            }
+            // 長いコードの色付けは裏で作るので、描く前に作り終えておく（静止画では「色なし → 色付き」の途中を撮れない）
+            if scenario.peek, let item = model.selected, item.kind == .code {
+                let detail = loader.detail(for: item)
+                _ = await loader.codeTokens(
+                    for: item, text: DisplayText.codeText(detail.fullText ?? item.previewText ?? ""))
             }
             let rep = render(
                 model: model, loader: loader, dark: scenario.dark, peek: scenario.peek,
@@ -255,6 +302,72 @@ struct SnapshotTests {
             at: NSPoint(x: cropWidth + gap + 16, y: cropHeight + 14), withAttributes: attributes)
         NSGraphicsContext.restoreGraphicsState()
         return out
+    }
+}
+
+/// コードの色付けの速さ（環境変数を付けたときだけ）。字句解析・AttributedString にするまで・⌘Y のプレビューを描くまでを分けて測る
+@MainActor
+@Suite("色付けの速さ", .serialized, .enabled(if: ProcessInfo.processInfo.environment["MAKURIP_SNAPSHOT_DIR"] != nil))
+struct HighlightSpeedTests {
+    @Test("数百〜数千行のコードの色付けとプレビューの描画にかかる時間")
+    func highlightSpeed() async throws {
+        _ = NSApplication.shared
+        func ms(_ start: Date) -> Double { Date().timeIntervalSince(start) * 1000 }
+        /// 3 回描いた中央値（ほかの仕事でマシンが混んでいると 1 回ごとの値がぶれるため）
+        func medianDraw(_ model: HistoryPanelModel, _ loader: ClipContentLoader) -> Double {
+            let snapshot = SnapshotTests()
+            let times = (0..<3).map { _ in
+                let start = Date()
+                _ = snapshot.render(model: model, loader: loader, dark: false, peek: true, settle: 0)
+                return ms(start)
+            }
+            return times.sorted()[1]
+        }
+        var lines: [String] = []
+        for count in [1, 100, 300, 500, 1000, 3000] {
+            let code = SampleHistory.longSwift(lines: count)
+            var start = Date()
+            let language = CodeLanguageDetector.detect(String(code.prefix(Limits.default.previewCharacterLimit)))
+            let detect = ms(start)
+            start = Date()
+            let tokens = SyntaxHighlighter.tokens(in: code, language: language)
+            let tokenize = ms(start)
+            start = Date()
+            _ = CodeStyler.appKit(
+                code, tokens: tokens, style: CodeStyler.AppKitStyle(palette: .light, css: CSS.previewCode),
+                query: .empty)
+            let style = ms(start)
+
+            // ⌘Y のプレビュー: 開いて最初の 1 枚を描くまで（短いものはその場で色付け、長いものは色なしで先に出る）
+            let entry = SampleHistory.Entry(
+                kind: .code, minutesAgo: 1, app: "xcode", method: .keyboard, body: .code(code))
+            let history = SampleHistory.make(entries: [entry])
+            let model = HistoryPanelModel(actions: history)
+            model.clock = { SampleHistory.now }
+            model.open()
+            model.setPreviewOpen(true)
+            let loader = ClipContentLoader(actions: history)
+            start = Date()
+            _ = SnapshotTests().render(model: model, loader: loader, dark: false, peek: true, settle: 0)
+            let firstDraw = ms(start)
+            // 裏の色付けが済んだ後の描き直し（キャッシュにある状態で）
+            // プレビューに出すのは先頭 2 万文字まで（ClipContentLoader.previewCharacterLimit）
+            let text = DisplayText.codeText(String(code.prefix(ClipContentLoader.previewCharacterLimit)))
+            if let item = model.selected {
+                _ = await loader.codeTokens(for: item, text: text)
+            }
+            let redraw = medianDraw(model, loader)
+            lines.append(
+                String(
+                    format:
+                        "%d 行（%d 文字・%d 区間）: 判定 %.2f ms / 字句解析 %.1f ms / 色付きの文字列 %.1f ms / パネルとプレビューの最初の描画 %.1f ms / 色付きで描き直し（3 回の中央値）%.1f ms（プレビューは先頭 %d 文字）",
+                    count, code.utf16.count, tokens.count, detect, tokenize, style, firstDraw, redraw,
+                    text.utf16.count))
+        }
+        let output = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MAKURIP_SNAPSHOT_DIR"]!)
+        try lines.joined(separator: "\n").write(
+            to: output.appendingPathComponent("highlight-speed.txt"), atomically: true, encoding: .utf8)
+        print(lines.joined(separator: "\n"))
     }
 }
 

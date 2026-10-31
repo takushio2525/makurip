@@ -69,9 +69,9 @@ struct CardBody: View {
         case .image:
             ImageCardBody(item: item, loader: loader)
         case .code:
-            CodeCardBody(text: item.previewText ?? "", query: query)
+            CodeCardBody(item: item, query: query, loader: loader)
         case .command:
-            Text(CommandText.attributed(item.previewText ?? "", query: query, palette: palette))
+            Text(loader.commandCard(for: item, palette: palette, query: query))
                 .lineLimit(3)
                 .css(CSS.cardMono)
                 .foregroundStyle(palette.text)
@@ -119,18 +119,18 @@ struct RichCardBody: View {
     }
 }
 
-/// コード: 先頭の 5 行を等幅で、折り返さずに右を切る（色付けはフェーズ3）
+/// コード: 先頭の 5 行を等幅で、折り返さずに右を切る。言語ごとに色を付ける（試作の .cb-code）
 struct CodeCardBody: View {
-    let text: String
+    let item: ClipItem
     let query: SearchQuery
+    let loader: ClipContentLoader
     @Environment(\.palette) private var palette
 
     var body: some View {
-        let lines = text.replacingOccurrences(of: "\t", with: "    ")
-            .split(separator: "\n", omittingEmptySubsequences: false).prefix(5)
+        let lines = loader.codeCardLines(for: item, palette: palette, query: query)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(Highlight.attributed(line.isEmpty ? " " : String(line), query: query, mark: palette.mark))
+                Text(line.characters.isEmpty ? AttributedString(" ") : line)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(height: CSS.cardMono.lineHeight, alignment: .leading)
@@ -355,25 +355,6 @@ enum Highlight {
         for range in query.highlightRanges(in: text) {
             guard let target = Range(range, in: result) else { continue }
             result[target].backgroundColor = mark
-        }
-        return result
-    }
-}
-
-/// コマンド: 行頭の「$ 」「% 」を薄く出す（貼るときに外すのはフェーズ3）
-enum CommandText {
-    static func attributed(_ text: String, query: SearchQuery, palette: PanelPalette) -> AttributedString {
-        var result = AttributedString()
-        for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            if index > 0 { result += AttributedString("\n") }
-            var body = String(line)
-            if body.hasPrefix("$ ") || body.hasPrefix("% ") {
-                var prompt = AttributedString(String(body.prefix(2)))
-                prompt.foregroundColor = palette.prompt
-                result += prompt
-                body = String(body.dropFirst(2))
-            }
-            result += Highlight.attributed(body, query: query, mark: palette.mark)
         }
         return result
     }

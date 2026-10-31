@@ -98,6 +98,13 @@ struct ClipDetail {
     var files: [FileEntry] = []
     var color: ColorInfo?
     var urlTitle: String?
+    /// コードの言語（判定できなければ nil）
+    var language: CodeLanguage?
+    /// コマンドの、貼るときに外すプロンプトの数（全文で数える）
+    var promptCount = 0
+    /// 途中で切ったときの、全文の行数と文字数（見出しの「603 行」が切った後の数にならないように）
+    var totalLineCount: Int?
+    var totalCharacterCount: Int?
 }
 
 /// 履歴の中身を、表示する分だけ遅れて読む。読んだ中身は UI の中だけで使い、ログ等に出さない。
@@ -109,6 +116,11 @@ final class ClipContentLoader {
     weak var actions: HistoryActions?
     private let thumbnails = NSCache<NSString, ThumbBox>()
     private var extras: [String: CardExtras] = [:]
+    private var languages: [String: CodeLanguage?] = [:]
+    private var cardCode: [String: [AttributedString]] = [:]
+    private var cardCommands: [String: AttributedString] = [:]
+    private var previewCommands: [String: AttributedString] = [:]
+    private var previewTokens: [String: [SyntaxToken]] = [:]
 
     /// 一覧のサムネイルの長辺（画素）。カードは幅 350pt・高さ 96pt なので 2 倍の画面で足りる大きさ
     static let cardPixelSize: CGFloat = 720
@@ -267,6 +279,7 @@ final class ClipContentLoader {
             if text.count > Self.previewCharacterLimit {
                 detail.fullText = String(text.prefix(Self.previewCharacterLimit))
                 detail.textTruncated = true
+                (detail.totalLineCount, detail.totalCharacterCount) = totalCounts(item, text: text)
             } else {
                 detail.fullText = text
             }
@@ -282,10 +295,128 @@ final class ClipContentLoader {
             detail.color = color(of: item)
         case .url:
             detail.urlTitle = string(item, type: "public.url-name")
+        case .code:
+            detail.language = language(for: item)
+        case .command:
+            detail.promptCount = ShellPrompt.analyze(detail.fullText ?? "").promptRanges.count
         default:
             break
         }
         return detail
+    }
+
+    private var counts: [String: (lines: Int, characters: Int)] = [:]
+
+    /// 長い文字列の行数と文字数（全文を数えるのは重いので 1 回だけ）
+    private func totalCounts(_ item: ClipItem, text: String) -> (Int, Int) {
+        let key = Self.contentKey(item)
+        if let cached = counts[key] { return (cached.lines, cached.characters) }
+        let lines = DisplayText.lineCount(text)
+        let characters = text.count
+        if counts.count > 100 { counts.removeAll(keepingCapacity: true) }
+        counts[key] = (lines, characters)
+        return (lines, characters)
+    }
+
+    // MARK: コードとコマンドの色付け
+
+    /// その場で色付けする長さの上限（UTF-16）。これより長いプレビューは裏で作り、できるまでは色なしで出す
+    static let syncStyleLimit = 8_000
+    /// 一覧のカードに出すコードの行数（試作の .cb-code は 5 行で切る）
+    static let cardCodeLines = 5
+
+    private static func contentKey(_ item: ClipItem) -> String {
+        "\(item.id.uuidString)-\(item.contentHash)"
+    }
+
+    /// コードの言語。一覧の平文（先頭 1000 文字）から 1 回だけ判定し、カードとプレビューで同じものを使う。コマンドはシェル
+    func language(for item: ClipItem) -> CodeLanguage? {
+        switch item.kind {
+        case .command: return .shell
+        case .code: break
+        default: return nil
+        }
+        let key = Self.contentKey(item)
+        if let cached = languages[key] { return cached }
+        let language = CodeLanguageDetector.detect(item.previewText ?? "")
+        languages[key] = .some(language)
+        if languages.count > 2000 { languages.removeAll(keepingCapacity: true) }
+        return language
+    }
+
+    /// カードのコード（先頭 5 行を 1 行ずつ）。検索語がないときはキャッシュする
+    func codeCardLines(for item: ClipItem, palette: PanelPalette, query: SearchQuery) -> [AttributedString] {
+        let style = CodeStyler.Style(palette: palette, size: CSS.cardMono.size)
+        let make = {
+            CodeStyler.codeLines(
+                DisplayText.codeText(item.previewText ?? ""), language: self.language(for: item), style: style,
+                query: query, maxLines: Self.cardCodeLines)
+        }
+        guard query.isEmpty else { return make() }
+        let key = Self.contentKey(item) + (palette.isDark ? "-dark" : "-light")
+        if let cached = cardCode[key] { return cached }
+        let lines = make()
+        cardCode[key] = lines
+        if cardCode.count > 600 { cardCode.removeAll(keepingCapacity: true) }
+        return lines
+    }
+
+    /// カードのコマンド（プロンプトを薄く）。検索語がないときはキャッシュする
+    func commandCard(for item: ClipItem, palette: PanelPalette, query: SearchQuery) -> AttributedString {
+        let style = CodeStyler.Style(palette: palette, size: CSS.cardMono.size)
+        let text = DisplayText.codeText(item.previewText ?? "")
+        guard query.isEmpty else { return CodeStyler.command(text, style: style, query: query) }
+        let key = Self.contentKey(item) + (palette.isDark ? "-dark" : "-light")
+        if let cached = cardCommands[key] { return cached }
+        let styled = CodeStyler.command(text, style: style, query: query)
+        cardCommands[key] = styled
+        if cardCommands.count > 600 { cardCommands.removeAll(keepingCapacity: true) }
+        return styled
+    }
+
+    /// プレビューのコマンド（12 行ほどまでなので、その場で色付けしてキャッシュする）
+    func commandPreview(for item: ClipItem, text: String, palette: PanelPalette, query: SearchQuery)
+        -> AttributedString
+    {
+        let key = Self.contentKey(item) + "-\(palette.isDark)-\(query.terms)"
+        if let cached = previewCommands[key] { return cached }
+        let styled = CodeStyler.command(
+            text, style: CodeStyler.Style(palette: palette, size: CSS.previewCommand.size), query: query)
+        if previewCommands.count >= 24 { previewCommands.removeAll(keepingCapacity: true) }
+        previewCommands[key] = styled
+        return styled
+    }
+
+    private func tokenKey(_ item: ClipItem, text: String) -> String {
+        Self.contentKey(item) + "-\(text.utf16.count)"
+    }
+
+    /// プレビューのコードの色付けの区間（配色によらないので区間だけを持つ）。キャッシュにあるか、短ければその場で作る。
+    /// 長くてまだなければ nil（`codeTokens` を待つ）
+    func cachedCodeTokens(for item: ClipItem, text: String) -> [SyntaxToken]? {
+        let key = tokenKey(item, text: text)
+        if let cached = previewTokens[key] { return cached }
+        guard text.utf16.count <= Self.syncStyleLimit else { return nil }
+        let tokens = SyntaxHighlighter.tokens(in: text, language: language(for: item))
+        storeTokens(tokens, key: key)
+        return tokens
+    }
+
+    /// 長いコードの色付けの区間を、メインスレッドの外で作る
+    func codeTokens(for item: ClipItem, text: String) async -> [SyntaxToken] {
+        let key = tokenKey(item, text: text)
+        if let cached = previewTokens[key] { return cached }
+        let language = language(for: item)
+        let tokens = await Task.detached(priority: .userInitiated) {
+            SyntaxHighlighter.tokens(in: text, language: language)
+        }.value
+        storeTokens(tokens, key: key)
+        return tokens
+    }
+
+    private func storeTokens(_ tokens: [SyntaxToken], key: String) {
+        if previewTokens.count >= 24 { previewTokens.removeAll(keepingCapacity: true) }
+        previewTokens[key] = tokens
     }
 
     private func string(_ item: ClipItem, type: String, itemIndex: Int = 0) -> String? {

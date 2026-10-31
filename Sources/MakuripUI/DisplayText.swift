@@ -57,21 +57,47 @@ enum DisplayText {
     }
 
     static func lineCount(_ text: String) -> Int {
-        text.split(separator: "\n", omittingEmptySubsequences: false).count
+        codeText(text).split(separator: "\n", omittingEmptySubsequences: false).count
+    }
+
+    /// コード・コマンドを出すときの文字列。改行を \n にそろえ（\r\n は Swift では 1 文字になり \n で分けられない）、
+    /// タブを空白 4 つにする
+    static func codeText(_ text: String) -> String {
+        // contains は Character で比べるので \r\n の中の \r を見つけない。バイトで探す
+        var result = text
+        if result.utf8.contains(13) {
+            result = result.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        }
+        if result.utf8.contains(9) { result = result.replacingOccurrences(of: "\t", with: "    ") }
+        return result
+    }
+
+    /// コピー元のページの表示（ホストと、その後ろのパス）。http・https でホストがあるときだけ
+    static func sourcePage(_ string: String?) -> (host: String, path: String)? {
+        guard let string, let components = URLComponents(string: string),
+            let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+            let host = components.host, !host.isEmpty
+        else { return nil }
+        // クエリ（? の後ろ）は出さない。トークンなどの秘密が入りうるため（--dump-metadata もホストだけ）
+        var path = components.percentEncodedPath
+        if path == "/" { path = "" }
+        return (host, path.removingPercentEncoding ?? path)
     }
 
     /// 内容の要点（プレビューの見出しと詳細に出す）。`detail` があれば全文で数える
     static func info(for item: ClipItem, detail: ClipDetail?) -> String {
         let text = detail?.fullText ?? item.previewText ?? ""
+        let characters = detail?.totalCharacterCount ?? text.count
+        let lines = "\(detail?.totalLineCount ?? lineCount(text)) 行"
         switch item.kind {
         case .text:
-            return "\(text.count) 文字"
+            return "\(characters) 文字"
         case .richText:
-            return "リッチテキスト · \(text.count) 文字"
+            return "リッチテキスト · \(characters) 文字"
         case .code:
-            return "\(lineCount(text)) 行"
+            return detail?.language.map { "\($0.displayName) · \(lines)" } ?? lines
         case .command:
-            return "\(lineCount(text)) 行"
+            return (detail?.promptCount ?? 0) > 0 ? lines + " · 貼るときに先頭の記号を外す" : lines
         case .image:
             guard let image = detail?.image else { return bytes(item.totalBytes) }
             return "\(Int(image.pixelSize.width)) × \(Int(image.pixelSize.height)) · \(image.format) · "

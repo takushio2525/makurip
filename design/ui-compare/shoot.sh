@@ -65,6 +65,14 @@ shoot empty-search-dark dark empty-search
 shoot empty-history light light "&empty=1"
 shoot pinned light pinned
 shoot picker light picker
+# フェーズ3: コードの色付け（4 言語）とコマンドのプロンプト・コピー元のページ
+shoot code-cards-light light custom "&kind=code"
+shoot code-cards-dark dark custom "&kind=code"
+shoot peek-code-ts-dark dark custom "&kind=code&move=1&look=1"
+shoot peek-code-py-light light custom "&kind=code&move=2&look=1"
+shoot peek-code-sh-dark dark custom "&kind=code&move=3&look=1"
+shoot peek-cmd-light light custom "&kind=command&move=1&look=1"
+shoot peek-cmd-dark dark custom "&kind=command&look=1"
 
 echo "== 試作の候補窓をヘッドレス Chrome で撮る"
 sed "s#@DESIGN@#$DESIGN#g" "$HERE/candidate-states.html" > "$OUT/work/candidate-states.html"
@@ -85,7 +93,7 @@ shoot_cand candidate-one light "&count=1"
 
 echo "== SwiftUI のパネルをオフスクリーンで描き、試作と並べる"
 (cd "$ROOT" && MAKURIP_SNAPSHOT_DIR="$OUT/compare" MAKURIP_SNAPSHOT_ASSETS="$OUT/assets" \
-    MAKURIP_PROTO_SHOTS="$OUT/proto" swift test --filter "SnapshotTests|StoreSpeedTests|CandidateSnapshotTests" 2>&1 |
-    grep -E "件:|件を読む|✔ Test run|✘" || true)
+    MAKURIP_PROTO_SHOTS="$OUT/proto" swift test --filter "SnapshotTests|StoreSpeedTests|CandidateSnapshotTests|HighlightSpeedTests" 2>&1 |
+    grep -E "件:|件を読む|行（|✔ Test run|✘" || true)
 rm -rf "$OUT/work"
 echo "比較画像: $OUT/compare/"

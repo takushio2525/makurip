@@ -54,9 +54,6 @@ public enum TextHeuristics {
 
     // MARK: コマンド
 
-    /// シェルのプロンプト記号（行頭の「$ 」「% 」「❯ 」）
-    static let promptPrefixes = ["$ ", "% ", "❯ ", "➜ "]
-
     /// よく使う CLI の名前（先頭の語がこれならコマンドらしい）
     static let knownCommands: Set<String> = [
         "git", "gh", "brew", "npm", "npx", "yarn", "pnpm", "bun", "deno", "node", "python", "python3", "pip",
@@ -73,6 +70,9 @@ public enum TextHeuristics {
         "nslookup", "traceroute", "ifconfig", "netstat", "lsof", "history", "alias", "set", "unset",
         "pio", "platformio", "arduino-cli", "esptool.py", "idf.py", "java", "javac", "mvn", "gradle",
         "./gradlew", "flutter", "dart", "expo", "eas", "ruff", "black", "mypy", "eslint", "prettier", "tsc",
+        // Linux の管理（root の「# 」のプロンプトで使われやすいもの。英単語と紛れないものだけ）
+        "apt", "apt-get", "yum", "dnf", "pacman", "systemctl", "journalctl", "ufw", "iptables", "crontab",
+        "useradd", "usermod",
     ]
 
     /// シェルのコマンド（1〜数行）らしいか
@@ -80,10 +80,12 @@ public enum TextHeuristics {
         let lines = nonEmptyLines(text)
         guard !lines.isEmpty, lines.count <= 12 else { return false }
 
-        // 行頭がプロンプト記号の行があれば、ほぼ確実にコマンド（端末からのコピー）
-        if let first = lines.first, promptPrefixes.contains(where: { first.hasPrefix($0) }) {
+        // 1 行目がプロンプト（「$ 」「% 」「❯ 」・user@host:~$ など）で始まれば、ほぼ確実にコマンド（端末からのコピー）
+        if let first = lines.first, let length = ShellPrompt.explicitPromptLength(first), length < first.utf16.count {
             return true
         }
+        // root の「# コマンド」だけの並び（「# 見出し」や「# コメント」はコマンドに見えないので外れる）
+        if lines.allSatisfy(ShellPrompt.isRootCommandLine) { return true }
 
         var continuing = false
         for line in lines {
@@ -148,9 +150,16 @@ public enum TextHeuristics {
             return true
         }
 
+        // 形で決まるもの: HTML・XML（タグで始まりタグで閉じる）と YAML（key: の並び）。日本語の値が多くてもよい
+        if CodeLanguageDetector.markupLanguage(trimmed) != nil || CodeLanguageDetector.isYAML(trimmed) {
+            return true
+        }
+
         // 日本語の地の文が多いなら文章
         let cjkRatio = Double(trimmed.unicodeScalars.filter(isCJKScalar).count) / Double(trimmed.unicodeScalars.count)
         if cjkRatio > 0.3 { return false }
+
+        if isSQL(trimmed) { return true }
 
         let lines = nonEmptyLines(sample)
         let scores = lines.map(codeSignalCount)
@@ -162,6 +171,20 @@ public enum TextHeuristics {
         let indented = sample.split(separator: "\n").filter { $0.hasPrefix("  ") || $0.hasPrefix("\t") }.count
         let ratio = Double(codeLines) / Double(lines.count)
         return ratio >= 0.5 || (ratio >= 0.3 && indented >= 2)
+    }
+
+    /// SQL の文か。「Select from the menu」のような英文を外すため、キーワードが大文字か、行末が「;」のときだけ
+    static func isSQL(_ trimmed: String) -> Bool {
+        let head =
+            #"^(SELECT|INSERT INTO|UPDATE|DELETE FROM|CREATE (TABLE|INDEX|VIEW|UNIQUE INDEX|TRIGGER)|ALTER TABLE|DROP (TABLE|INDEX|VIEW)|WITH \w+ AS)\b"#
+        guard trimmed.range(of: head, options: [.regularExpression, .caseInsensitive]) != nil,
+            trimmed.range(
+                of: #"\b(FROM|INTO|SET|TABLE|INDEX|VIEW|WHERE|VALUES|AS)\b"#,
+                options: [.regularExpression, .caseInsensitive])
+                != nil,
+            !containsCJK(removingQuoted(trimmed))
+        else { return false }
+        return trimmed.hasSuffix(";") || trimmed.range(of: head, options: .regularExpression) != nil
     }
 
     /// 1 行の中の「コードらしさ」の手がかりの数

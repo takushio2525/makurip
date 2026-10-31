@@ -65,22 +65,14 @@ final class CandidateBridge: CandidateHost {
     }
 
     func writePasteboard(itemID: UUID) -> PastedContent? {
-        guard let store = app.store, let snapshot = try? store.snapshot(id: itemID),
+        guard let store = app.store, let stored = try? store.snapshot(id: itemID),
             let item = try? store.item(id: itemID)
         else { return nil }
+        // 一覧から貼るときと同じく、コマンドはプロンプトを外す。差し替えで選び直す長さも外した後の文字で数える
+        let (snapshot, content) = PastePipeline.candidatePaste(stored, kind: item.kind)
         let changeCount = PasteboardWriter.write(snapshot, to: app.pasteboard)
         app.monitor?.acknowledgeOwnWrite(changeCount: changeCount)
-        return PastedContent(textLength: Self.textLength(kind: item.kind, snapshot: snapshot))
-    }
-
-    /// 文字だけの中身なら、入力欄に貼ると増えるはずの長さ（UTF-16）。画像・ファイル・リッチテキストは nil
-    static func textLength(kind: ClipKind, snapshot: PasteboardSnapshot) -> Int? {
-        guard [.text, .code, .command, .url, .color].contains(kind), snapshot.items.count == 1,
-            let data = snapshot.items[0].representations.first(where: { $0.type == PasteboardTypes.utf8PlainText })?
-                .data,
-            let text = String(data: data, encoding: .utf8)
-        else { return nil }
-        return text.utf16.count
+        return content
     }
 
     func send(_ key: SyntheticKey, to target: CandidateTarget) {

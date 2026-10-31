@@ -12,7 +12,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・候補窓の流れと判断（`Candidate/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
 | `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:)`・`CandidateUIFactory.make(actions:keymap:)` | MakuripCore |
 | `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・起動引数・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
@@ -36,7 +36,8 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
    パネルは nonactivating なので Makurip は前面にならず、元のアプリが前面のままキーだけを受け取る
 3. キーはパネルの窓のローカル監視 → `HistoryPanelModel.handle`（キーマップで操作を引く。日本語入力の変換中は横取りしない）
 4. Enter（⇧Enter・⌘Enter・⌘1〜9）→ UI が自分を閉じてから `HistoryActions.paste(itemID:mode:)`
-5. `ClipStore.snapshot` で全項目・全型を読み（プレーンテキストのときは文字の型だけ）、`PasteboardWriter.write` でペーストボードへ戻す
+5. `ClipStore.snapshot` で全項目・全型を読み、`PastePipeline.prepare`（純粋関数）で書き戻す中身を決めて `PasteboardWriter.write` でペーストボードへ戻す。
+   プレーンテキストのときは文字の型だけ（プロンプトは外さない）。コマンドは文字の型（UTF-8・UTF-16）だけ行頭のプロンプトを外し（`ShellPrompt`）、RTF・HTML などほかの型と並びは元のまま。保存した履歴は変えない
 6. 書いたあとの changeCount を `monitor.acknowledgeOwnWrite` に渡す（新しい履歴にしない）。`store.touch` で先頭へ移す
 7. `Paster` が `previousApp` を前面に戻し、その pid 宛てに ⌘V を送る（アクセシビリティの許可が要る）。「コピーだけ」は送らずにフォーカスだけ返す
 
@@ -50,6 +51,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 3. 窓（`CandidatePanelController`）は出す前に文字カーソルを AX で取り、カーソルの右に、選んだ行をカーソルの行にそろえて出す。
    位置の手がかりはそのセッションの間は固定し、選択が変わるたびに `PanelPlacement.frame(... .beside(rowOffset:))` で置き直す
 4. 仮に貼る（`.selectRange` / `.undo` のとき）: 貼る前のペーストボードを丸ごとメモリに控え、最新を書いて pid 宛てに ⌘V。
+   書く中身は一覧と同じく `PastePipeline.candidatePaste`（コマンドはプロンプトを外す。差し替えで選び直す長さも外した後の文字で数える）。
    AX で文字カーソルが進んだことを確かめ、貼った範囲を測る
 5. ↑↓（タップ → `handle` → `perform`）: 選択だけをすぐ変え、文書への反映は 1 つずつ順に行う（`drain`。連打しても最後の選択に追いつく）。
    差し替えは、貼った範囲を AX で選び直してその上に ⌘V（文字だけの中身で長さが合うとき）→ だめなら ⌘Z で 1 段戻して ⌘V。
@@ -68,7 +70,18 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | `PanelController` | 窓（nonactivating な `KeyablePanel`）・キーのローカル監視・位置・⌘Y の子ウインドウ（`PeekPanel`）。メインメニューがないので検索欄の ⌘A/C/V/X/Z もここで送る |
 | `HistoryPanelModel` | 状態（絞り込み・選択・プレビュー・⌘E）と全操作。`handle(_:isComposing:)` がキーマップから操作を引く。単体テストはここを駆動する |
 | `HistoryPanelView` / `CardView` / `PeekView` | 試作（`~/dev/makurip-design/ui/shared/panel-b.*`・`base.css`）の寸法と色を写した SwiftUI。文字の行の高さは `CSSText` で CSS の line-height を再現 |
-| `ClipContentLoader` | サムネイル・全文・ファイル・色・リッチテキストを、見えたカードと選んだ 1 件だけ読む。画像の縮小はメインスレッドの外 |
+| `ClipContentLoader` | サムネイル・全文・ファイル・色・リッチテキストを、見えたカードと選んだ 1 件だけ読む。画像の縮小はメインスレッドの外。コードの言語・色付きのカード・プレビューの色付けの区間もここでキャッシュする |
+| `CodeStyler` / `CodeTextView` | コードとコマンドの色付け（フェーズ3）。カードと ⌘Y のコマンドは SwiftUI の Text（AttributedString）、⌘Y のコードは NSTextView（行番号は `LineNumberRuler`） |
+
+### コードの色付け（フェーズ3・#3）
+
+1. 言語: `ClipContentLoader.language(for:)` が一覧の平文（先頭 1000 文字）を `CodeLanguageDetector.detect` に渡し、項目ごとに 1 回だけ決める。
+   カード・⌘Y のプレビュー・候補窓の行（「Swift 17行」）が同じ言語を使う。コマンドはいつもシェル
+2. 区間: `SyntaxHighlighter.tokens`（純粋関数・自前の字句解析）が UTF-16 の区間と種類（キーワード・文字列・コメント・数・型・関数・属性・フラグ）を返す
+3. カード（コード 5 行・コマンド 3 行）: `CodeStyler` が NSMutableAttributedString に SwiftUI の属性の鍵で色を付け、一度に AttributedString へ変える。配色ごとにキャッシュ
+4. ⌘Y のコード: 区間を配色によらずキャッシュし、`CodeTextView`（NSTextView）に NSColor で塗って渡す。8000 文字（UTF-16）までその場で、
+   それより長いものは区間を裏のスレッドで作り、できるまでは色なしで出す。プレビューは先頭 2 万文字まで（`previewCharacterLimit`）
+5. コマンド: `ShellPrompt.analyze` で外すプロンプトの範囲を薄くし、プロンプトのある文字列ではコマンドの行（プロンプトの行と続きの行）だけを色付けする（出力の行は色なし）
 
 - 履歴は開くたびに全件のメタデータを読む（5000 件で 23 ms）。検索用の正規化（`HistoryFilter.haystack`）は開いた後に裏で作り、内容のハッシュが同じあいだ使い回す
 - 試作との見比べは `design/ui-compare/`（`make ui-compare`）
@@ -93,7 +106,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - ~~フェーズ2（絞り込み）: `kind`・`copyMethod`・`source` は列として持っている。日本語検索の正規化は `preview_text` を元に別の列か索引を足す（スキーマ版を上げる）~~
 - フェーズ2（済）: 絞り込みと日本語検索はメモリの中で行う（DB の列は足していない。スキーマ版 1 のまま）。全件を読んでも 5000 件で 23 ms、温まった後の検索が 15 ms で足りるため。1 万件を大きく超える上限にするなら、正規化した列と FTS を足す
 - フェーズ2.5（候補窓・済）: 位置は `PanelPlacement.frame(... side: .beside(rowOffset:))`、手がかりは `InsertionPointLocator`。DB は変えていない（仮に貼っている間は `touch` せず、確定したときだけ先頭へ移す。回している間の並びは始めた時点のものを固定して持つ）
-- フェーズ3（プレビュー）: `ClipStore.snapshot(id:)` で全データ、`representationInfos(id:)` で型の一覧が取れる
+- フェーズ3（プレビュー・済）: DB は変えていない。言語は表示のときに一覧の平文から判定してメモリにキャッシュする（列を足すと判定を直すたびに作り直しが要るため）。コピー元のページは取り込み時の `sourceURL` をそのまま使う
 - フェーズ4（設定）: `Limits` と `HotKey` を UserDefaults か設定ファイルに保存し、`ClipStore(directory:limits:)` と `HotKeyCenter.register` に渡す
 - フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない
 - フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す
@@ -127,10 +140,21 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | 変換中の判定 | AX の `AXTextInputMarkedRange`（WebKit は `AXTextInputMarkedTextMarkerRange`）→ 入力ソース（TIS）| 入力ソースだけ（日本語入力のかなモードのまま英数を打つ人では、いつも「変換中」になって候補窓が使えない）、日本語入力の候補窓が画面にあるか（未確定の文字はあっても候補窓が出ていないことが多い） |
 | 候補窓の窓 | キーの焦点を取らない nonactivating な NSPanel（`.popUpMenu`） | 一覧（案 B）の窓を使い回す（あちらは検索欄に打つので焦点を取る。焦点の扱いが逆なので分けた） |
 
+## 技術選定（フェーズ3・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| コードの色付け | 自前の簡易な字句解析（`SyntaxHighlighter`。C 系は設定付きの 1 つ、シェル・HTML/XML・CSS・JSON・YAML は個別）| Highlightr（highlight.js を JavaScriptCore で動かす。外部ライブラリが 1 つ増え、起動に JS の実行環境が要り、1 回の色付けが数十 ms かかる。配色は CSS の書き換えになる）、tree-sitter（SwiftTreeSitter + 言語ごとの文法パッケージ。正確だが依存と C のソースが言語の数だけ増え、ビルドと保守が重い）。クリップボードの断片は不完全なコードも多く、構文木より字句で十分。依存 0 のまま、試作の 9 色にそのまま対応でき、1 回なめるだけで 500 行 5 ms（デバッグビルド） |
+| 言語の判定 | 形で決まるもの（コードブロックの言語名・shebang・JSON・タグ・YAML）→ 言語ごとの手がかり（正規表現と重み）の点数 | 拡張子（クリップボードにはない）、機械学習の分類器（モデルが要る・説明しにくい）。点数なら紛らわしい例をテストで固定して調整できる |
+| ⌘Y のコードの描画 | NSTextView（TextKit）+ NSRulerView の行番号 | SwiftUI の Text（色の区間が多いと組むのが極端に遅い。色付きの 600 行で 2.5 秒、1000 行で 17 秒。区間が少ないカードとコマンドはこちら）、1 行ずつの Text を LazyVStack に並べる（速いが、行をまたいで選べず、横に送ると行番号も一緒に動く）。NSTextView なら 3000 行でもパネルとプレビューの描画が約 120 ms で一定 |
+| プロンプトを外す場所 | 貼るときに書き戻す中身だけ（`PastePipeline`）。保存した履歴と RTF・HTML は変えない | 取り込みのときに外して保存する（元に戻せない・⇧↩ で元のまま貼れない）、全型を書き換える（RTF の制御語や HTML のタグを壊しうる） |
+
 ## 変更時の波及
 
 - DB スキーマを変える: `ClipStore.migrate()` に版を足し、`.agent/api.md` の「DB スキーマ」と `MetadataDump` を同時に直す
 - 種類の判定を変える: `KindClassifierTests` に入力例を足し、`.agent/conventions.md` の「判定の限界」を見直す
+- 言語の判定・色付けを変える: `CodeLanguageDetectorTests`（各言語の代表例と紛らわしい組）・`SyntaxHighlighterTests`（区間が重ならない・サロゲートペアを割らない）に足し、`make ui-compare` で試作と並べる。言語を足すときは `CodeLanguage`（名前・コードブロックの別名）と `SyntaxHighlighter` の設定の両方
+- プロンプトの外し方を変える: `ShellPromptTests`（外さない例を必ず添える）と `PastePipelineTests`（名前付きペーストボードで書いて読み直す）。候補窓の流れは `CandidateCoordinatorTests`
 - UI を差し替える: `Sources/MakuripUI/` を置き換え、`HistoryUIFactory.make(actions:)` を同じ名前で用意する。E2E（`scripts/e2e/paste.sh`）は `debugState` の `rowCount` / `query` と `-MakuripPanelScreen` を使っているので、新しい UI でも同じ鍵を返すか、スクリプトを直す（案 B のパネルは同じ鍵を返す）
 - キーを足す・変える: `KeyAction`（ID・既定のキー・説明文）に足す。`KeymapTests` の「既定のキーに重なりがない」が守る。画面のヒントはキーマップから引くので直さなくてよい。候補窓のキー（範囲 `.candidate`）は候補窓のキーどうしだけで重なりを見る
 - 候補窓の閉じ方・横取りを変える: 閉じる経路を足したら `CandidateInterceptLifetimeTests.Path` に足す（全経路でタップ・窓・時計が残らないことを確かめる）。差し替えを変えたら `CandidateCoordinatorTests`（偽の入力欄で文書が元に戻るか）

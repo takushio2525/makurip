@@ -252,9 +252,9 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
 
     func paste(itemID: UUID, mode: PasteMode) {
         guard let store, let monitor, let stored = try? store.snapshot(id: itemID) else { return }
-        // 全項目・全型をペーストボードへ戻す（プレーンテキストのときは文字の型だけ）。
+        // 全項目・全型をペーストボードへ戻す（プレーンテキストのときは文字の型だけ。コマンドはプロンプトを外す）。
         // この変化は新しい履歴にせず、先頭へ移すだけにする
-        let snapshot = mode == .plainText ? (stored.plainTextOnly() ?? stored) : stored
+        let snapshot = PastePipeline.prepare(stored, kind: (try? store.item(id: itemID))?.kind, mode: mode)
         let changeCount = PasteboardWriter.write(snapshot, to: pasteboard)
         monitor.acknowledgeOwnWrite(changeCount: changeCount)
         try? store.touch(id: itemID)
