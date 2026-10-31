@@ -126,9 +126,12 @@ public final class SettingsController {
 
     // MARK: 変える（設定画面から）
 
-    /// 値を検証して入れ、ファイルに書く。外した操作（キーを付け替えたとき）を返す
+    /// 値を検証して入れ、ファイルに書く。外した操作（キーを付け替えたとき）を返す。
+    /// 書く前にファイルを読み直す（外の CLI・AI の口が書いてから監視が読み直すまでの間や、見張りが外れているときに、
+    /// 手元の古い値で外の変更を消さないため。キーの重なりも読み直した値で判定する）
     @discardableResult
     public func set(_ id: String, _ raw: JSONValue, keyConflicts: KeyConflictPolicy = .reject) throws -> [KeyAction] {
+        reload()
         let change = try SettingsSchema.applying(raw, to: id, in: settings, keyConflicts: keyConflicts).get()
         try write(change.settings)
         return change.movedFrom
@@ -142,8 +145,9 @@ public final class SettingsController {
         try set(id, value, keyConflicts: .allow)
     }
 
-    /// すべて既定に戻す（知らない項目は残す）
+    /// すべて既定に戻す（知らない項目は残す。残す分を最新にするため、書く前に読み直す）
     public func resetAll() throws {
+        reload()
         try write(.default)
     }
 

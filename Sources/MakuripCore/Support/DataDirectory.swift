@@ -12,7 +12,8 @@ public enum DataDirectory {
 
     /// 起動引数 `--data-dir` → 環境変数 `MAKURIP_DATA_DIR` → 既定、の順で決める。
     /// 戻り値の `isolated` は、既定以外（検証用に隔離したフォルダ）なら true。
-    /// 既定と同じ場所を明示したときは false（本物の履歴で検証用の遠隔操作を有効にしないため）
+    /// 既定と同じ場所を明示したときは false（本物の履歴で検証用の遠隔操作を有効にしないため）。
+    /// 同じ場所かは文字列でなく `sameLocation` で見る（大文字小文字違い・`/System/Volumes/Data` の別名でも同じと分かる）
     public static func resolve(argument: String?, environment: [String: String], bundleID: String)
         -> (url: URL, isolated: Bool)
     {
@@ -20,9 +21,46 @@ public enum DataDirectory {
         if let path = argument ?? environment["MAKURIP_DATA_DIR"], !path.isEmpty {
             let expanded = (path as NSString).expandingTildeInPath
             let url = URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
-            return (url, url.resolvingSymlinksInPath().path != fallback.resolvingSymlinksInPath().path)
+            return (url, !sameLocation(url, fallback))
         }
         return (fallback, false)
+    }
+
+    /// 2 つのパスが同じ場所を指すか。ファイルの同一性（ボリュームと inode。シンボリックリンク・firmlink・
+    /// 大文字小文字を区別しないボリュームの別名も同じになる）で比べる。
+    /// まだないフォルダは、いちばん近いある祖先の同一性と、そこから先の名前（大文字小文字・合成の違いを無視）で比べる
+    /// （大文字小文字を区別するボリュームでは「同じ」に倒れる。隔離とみなさない側なので安全）
+    public static func sameLocation(_ a: URL, _ b: URL) -> Bool {
+        if a.standardizedFileURL.resolvingSymlinksInPath().path == b.standardizedFileURL.resolvingSymlinksInPath().path
+        {
+            return true
+        }
+        guard let first = locationKey(a), let second = locationKey(b) else { return false }
+        return first == second
+    }
+
+    private struct LocationKey: Equatable {
+        var device: Int64
+        var inode: UInt64
+        /// ある祖先から先の、まだない部分の名前（小文字・合成済み）
+        var rest: [String]
+    }
+
+    private static func locationKey(_ url: URL) -> LocationKey? {
+        var current = url.standardizedFileURL
+        var rest: [String] = []
+        while true {
+            var info = stat()
+            if stat(current.path, &info) == 0 {
+                return LocationKey(
+                    device: Int64(info.st_dev), inode: UInt64(info.st_ino),
+                    rest: rest.reversed().map { $0.precomposedStringWithCanonicalMapping.lowercased() })
+            }
+            let parent = current.deletingLastPathComponent()
+            guard parent.path != current.path else { return nil }
+            rest.append(current.lastPathComponent)
+            current = parent
+        }
     }
 }
 

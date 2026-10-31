@@ -47,7 +47,7 @@ public enum AIAccess {
 
     /// オフのときに道具が返す文（AI がそのままユーザーに伝えられる形）
     public static let disabledMessage =
-        "Makurip の「AI の口」がオフです。ユーザーが Makurip の設定画面（メニューバーの Makurip → 設定…）の「AI の口」でオンにする必要があります。AI・CLI・MCP からはオンにできません。ユーザーにオンにするよう頼んでください（設定の道具 settings_* はオフでも使えます）。"
+        "Makurip の「AI の口」がオフです。ユーザーが Makurip の設定画面（メニューバーの Makurip → 設定…）の「AI の口」でオンにする必要があります。AI・CLI・MCP からはオンにできません。ユーザーにオンにするよう頼んでください（設定を読む道具 settings_schema・settings_list・settings_get はオフでも使えます）。"
 
     /// AI・CLI からオンにしようとしたときの文
     public static let enableRefusedMessage =

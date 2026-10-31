@@ -88,6 +88,10 @@ check "秘密で平文のあるものは、すべて伏せ字（•）を含む"
 check "秘密でないものは伏せ字にしない" "0" \
     "$(sql_count "SELECT COUNT(*) FROM clip WHERE instr(flags,'secretLikely')=0 AND instr(IFNULL(preview_text,''),'•')>0")"
 check "--dump-metadata に値が出ない" "0" "$(dump | grep -cE 'ghp_|sk-test-|sk-proj-|PRIVATE KEY|AKIA|token=' || true)"
+check "--dump-metadata に内容のハッシュがない（#23）" "0" "$(dump | jq '[.. | objects | keys[] | select(test("hash"; "i"))] | length')"
+check "--dump-metadata は秘密の項目の大きさを伏せる（#23）" "0" \
+    "$(dump | jq '[.items[] | select(.flags | index("secretLikely")) | select(.totalBytes != null or .size != "hidden" or ([.pasteboardItems[][].bytes] | any(. != null)))] | length')"
+check "秘密でない項目は大きさを出す" "0" "$(dump | jq '[.items[] | select((.flags | index("secretLikely")) | not) | select(.totalBytes == null)] | length')"
 check "状態の書き出しに値が出ない" "0" \
     "$(status_value '.' > /dev/null; grep -cE 'ghp_|sk-test-|sk-proj-|PRIVATE KEY|AKIA|token=' "$DATA/debug-status.json" || true)"
 

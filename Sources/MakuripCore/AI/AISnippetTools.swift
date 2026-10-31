@@ -4,7 +4,7 @@ import Foundation
 ///
 /// - 履歴と同じく、AI の口がオンのときだけ使える（定型文もユーザーのデータなので）
 /// - 一覧は名前・略語・形式の情報（長さ・行数・差し込み）だけで、**本文は返さない**。名前を付けずに登録したもの（名前が本文の
-///   1 行目）は名前も返さない。本文か名前が秘密っぽければ名前と略語を伏せ字にする
+///   1 行目）は名前も返さない。本文か名前が秘密っぽければ名前と略語を伏せ字にし、大きさ（文字数・行数）も返さない（履歴と同じ）
 /// - 動いている Makurip はファイルの変化を見て読み直す（知らせる必要はない）
 extension AITools {
     func addSnippet(_ args: Arguments) throws -> Output {
@@ -76,22 +76,26 @@ extension AITools {
     }
 
     /// 定型文 1 件の名前と形式の情報（本文は入れない）。
-    /// 名前を付けずに登録したものは名前が本文の 1 行目なので、名前も返さない（`nameFromBody`）
+    /// 名前を付けずに登録したものは名前が本文の 1 行目なので、名前も返さない（`nameFromBody`）。
+    /// 秘密っぽければ文字数・行数を返さず `size: "hidden"`（長さで候補を絞れるため。履歴の一覧と同じ）
     static func describe(_ snippet: Snippet) -> JSONValue {
         let secret =
             !SecretDetector.findings(in: snippet.body).isEmpty || !SecretDetector.findings(in: snippet.name).isEmpty
         let fromBody = snippet.name == SnippetCollection.derivedName(from: snippet.body)
-        let lines = snippet.body.split(separator: "\n", omittingEmptySubsequences: false).count
         var object: [String: JSONValue] = [
             "id": .string(snippet.id.uuidString),
             "nameFromBody": .bool(fromBody),
-            "characters": .int(snippet.body.count),
-            "lines": .int(lines),
             "placeholders": .array(SnippetTemplate.placeholders(in: snippet.body).map { .string($0.rawValue) }),
             "createdAt": .string(AIGateway.iso(snippet.createdAt)),
             "updatedAt": .string(AIGateway.iso(snippet.updatedAt)),
             "secretLikely": .bool(secret),
         ]
+        if secret {
+            object["size"] = .string("hidden")
+        } else {
+            object["characters"] = .int(snippet.body.count)
+            object["lines"] = .int(snippet.body.split(separator: "\n", omittingEmptySubsequences: false).count)
+        }
         if !fromBody {
             object["name"] = .string(secret ? SecretMask.masked(snippet.name).text : snippet.name)
         }
@@ -116,7 +120,7 @@ extension AITools {
         Tool(
             name: Name.listSnippets, title: "定型文の一覧",
             description:
-                "Makurip の定型文を一覧の順に、名前・略語・形式の情報（文字数・行数・差し込み・時刻）だけで返す。本文は返さない（名前を付けずに登録したものは、名前も本文の 1 行目なので返さない。nameFromBody: true）。秘密っぽい定型文は名前を伏せ字にする。AI の口がオンのときだけ使える。",
+                "Makurip の定型文を一覧の順に、名前・略語・形式の情報（文字数・行数・差し込み・時刻）だけで返す。本文は返さない（名前を付けずに登録したものは、名前も本文の 1 行目なので返さない。nameFromBody: true）。秘密っぽい定型文は名前を伏せ字にし、文字数・行数も返さない（size: hidden）。AI の口がオンのときだけ使える。",
             inputSchema: schema([
                 "limit": property("integer", "返す件数（既定 100）", extra: ["minimum": .int(1), "maximum": .int(5000)])
             ]), needsAccess: true, readOnly: true, destructive: false, logged: true),
