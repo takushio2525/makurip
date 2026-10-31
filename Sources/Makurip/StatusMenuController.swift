@@ -1,7 +1,7 @@
 import AppKit
 import MakuripCore
 
-/// メニューバーのアイコンとメニュー。アイコンは仮（SF Symbol）。本物は「メモをめくる」イメージでフェーズ2で差し替える
+/// メニューバーのアイコンとメニュー。アイコンは案 B「パラパラ」のテンプレート画像（Resources/Assets.xcassets の MenuBarIcon）
 @MainActor
 final class StatusMenuController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -12,9 +12,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.controller = controller
         super.init()
         if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: "list.clipboard", accessibilityDescription: AppIdentity.displayName)
-            image?.isTemplate = true
-            button.image = image
+            button.image = Self.makeStatusIcon()
             button.toolTip = AppIdentity.displayName
         }
         menu.delegate = self
@@ -25,6 +23,17 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         rebuild()
+    }
+
+    /// .app の Assets.car にある MenuBarIcon（16pt のテンプレート画像。@1x は画素にそろえた専用版）を使う。
+    /// .app に入れずに実行したとき（swift run など）は Assets.car がないので、SF Symbol で代える
+    private static func makeStatusIcon() -> NSImage? {
+        let image =
+            NSImage(named: "MenuBarIcon")
+            ?? NSImage(systemSymbolName: "list.clipboard", accessibilityDescription: nil)
+        image?.isTemplate = true
+        image?.accessibilityDescription = AppIdentity.displayName
+        return image
     }
 
     /// 許可がなく貼り付けられなかったことを、アイコンで短く知らせる
