@@ -387,3 +387,28 @@ struct SnippetSettingsTests {
         #expect(keymap.action(for: KeyStroke(keyCode: 1, modifiers: [.command, .shift]))?.action == .editSnippet)
     }
 }
+
+/// 差し込みの位置（定型文の窓の色付け）と、閉じない `{{` が多い長文の速さ
+@Suite("定型文の差し込みの位置")
+struct SnippetPlaceholderRangeTests {
+    @Test("書いたままの範囲を返す（空白入りも）。知らない名前は含めない")
+    func ranges() {
+        let body = "前{{ 日付 }}中{{名前}}{{カーソル}}"
+        let ranges = SnippetTemplate.placeholderRanges(in: body)
+        #expect(ranges.map(\.kind) == [.date, .cursor])
+        #expect(ranges.map { String(body[$0.range]) } == ["{{ 日付 }}", "{{カーソル}}"])
+        #expect(NSRange(ranges[0].range, in: body) == NSRange(location: 1, length: 8))
+    }
+
+    @Test("閉じない {{ が 5 万個あっても、すぐ終わる")
+    func unclosedFast() {
+        let body = String(repeating: "{{", count: 50_000) + "{{日付}}"
+        let start = Date()
+        let ranges = SnippetTemplate.placeholderRanges(in: body)
+        #expect(Date().timeIntervalSince(start) < 2)
+        #expect(ranges.map(\.kind) == [.date])
+        // 名前の後ろに長い文があって閉じないものも
+        let long = "{{" + String(repeating: "あ", count: 99_000)
+        #expect(SnippetTemplate.placeholderRanges(in: long).isEmpty)
+    }
+}

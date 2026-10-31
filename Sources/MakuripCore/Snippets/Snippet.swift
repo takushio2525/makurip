@@ -123,7 +123,7 @@ public struct SnippetCollection: Hashable, Sendable {
     }
 
     /// 本文の最初の空でない行（長ければ切って「…」）
-    static func derivedName(from body: String) -> String {
+    public static func derivedName(from body: String) -> String {
         let line =
             body.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }

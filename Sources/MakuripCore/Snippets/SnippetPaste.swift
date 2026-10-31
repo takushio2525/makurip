@@ -11,7 +11,12 @@ public enum SnippetClipboard {
 
     /// 新しい順の履歴から、差し込みに使う 1 件
     public static func source(in items: [ClipItem]) -> ClipItem? {
-        items.first { textualKinds.contains($0.kind) && !$0.flags.contains(.secretLikely) }
+        candidates(in: items).first
+    }
+
+    /// 差し込みに使える項目（新しい順）。先頭の文字が読めなければ（色の型だけ等）次を見るのに使う
+    public static func candidates(in items: [ClipItem]) -> [ClipItem] {
+        items.filter { textualKinds.contains($0.kind) && !$0.flags.contains(.secretLikely) }
     }
 
     /// `{{言語}}` の言語。コードは中身から判定し、コマンドはシェル。文章などは nil（空にする）

@@ -13,6 +13,11 @@ final class FakeHistory: HistoryActions {
     private(set) var pasted: [(UUID, PasteMode)] = []
     private(set) var closedCount = 0
     private(set) var dataReads = 0
+    /// 定型文（一覧の順）と、貼った定型文・定型文の窓への頼み
+    var snippetList: [Snippet] = []
+    var dateFormat = SnippetDateFormat.slash
+    private(set) var pastedSnippets: [(UUID, PasteMode)] = []
+    private(set) var editRequests: [SnippetEditRequest] = []
 
     init(items: [ClipItem] = [], payloads: [UUID: [(itemIndex: Int, type: String, data: Data)]] = [:]) {
         self.items = items
@@ -43,6 +48,11 @@ final class FakeHistory: HistoryActions {
         dataReads += 1
         return payloads[itemID]?.first { $0.itemIndex == itemIndex && $0.type == type }?.data
     }
+
+    func snippets() -> [Snippet] { snippetList }
+    func pasteSnippet(id: UUID, mode: PasteMode) { pastedSnippets.append((id, mode)) }
+    func openSnippetEditor(_ request: SnippetEditRequest) { editRequests.append(request) }
+    func snippetDateFormat() -> SnippetDateFormat { dateFormat }
 }
 
 /// 試作と同じ架空の履歴（2026-10-31 15:30 を「現在」とする）
@@ -122,6 +132,23 @@ enum SampleHistory {
     }
 
     static let day: Double = 1440
+
+    /// 試作の定型文 6 件（`data.js` の snippets と同じ文面・順）
+    static let snippets: [Snippet] = [
+        ("あいさつ（社外）", ";aisatsu", "いつもお世話になっております。\n{{カーソル}}\nよろしくお願いいたします。"),
+        ("今日の日付", ";date", "{{日付}}"),
+        (
+            "PR の説明テンプレート", ";pr",
+            "## 概要\n{{カーソル}}\n\n## 変更点\n- \n\n## 確認したこと\n- [ ] ビルドが通る\n- [ ] 動作を確かめた"
+        ),
+        ("コードブロックで囲む", ";code", "```{{言語}}\n{{クリップボード}}\n```"),
+        ("AI にレビューを頼む", ";rv", "次のコードをレビューしてください。バグ、読みやすさ、境界のケースの順に指摘してください。\n\n{{クリップボード}}"),
+        ("返信：了解しました", ";ok", "承知しました。対応して、終わり次第ご連絡します。"),
+    ].enumerated().map { index, entry in
+        Snippet(
+            id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index + 1))!, name: entry.0,
+            abbreviation: entry.1, body: entry.2, createdAt: now, updatedAt: now)
+    }
 
     static let entries: [Entry] = [
         Entry(

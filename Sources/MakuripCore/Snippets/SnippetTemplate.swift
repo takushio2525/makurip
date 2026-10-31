@@ -74,37 +74,54 @@ public enum SnippetTemplate {
     /// 本文を文字と差し込みに分ける（画面で差し込みを札にして出すのにも使う）
     public static func segments(_ body: String) -> [Segment] {
         var result: [Segment] = []
-        var literal = ""
-        var index = body.startIndex
-        func flush() {
-            if !literal.isEmpty { result.append(.text(literal)) }
-            literal = ""
+        var cursor = body.startIndex
+        for (range, kind) in placeholderRanges(in: body) {
+            if cursor < range.lowerBound { result.append(.text(String(body[cursor..<range.lowerBound]))) }
+            result.append(.placeholder(kind))
+            cursor = range.upperBound
         }
-        while index < body.endIndex {
-            if body[index...].hasPrefix("{{"), let placeholder = placeholder(at: index, in: body) {
-                flush()
-                result.append(.placeholder(placeholder.kind))
-                index = placeholder.end
-            } else {
-                literal.append(body[index])
-                index = body.index(after: index)
-            }
-        }
-        flush()
+        if cursor < body.endIndex { result.append(.text(String(body[cursor...]))) }
         return result
     }
+
+    /// 差し込みの位置（書いたままの `{{ 日付 }}` の範囲）と種類。定型文の窓で差し込みに色を付けるのに使う
+    public static func placeholderRanges(in body: String) -> [(range: Range<String.Index>, kind: SnippetPlaceholder)] {
+        var result: [(range: Range<String.Index>, kind: SnippetPlaceholder)] = []
+        var index = body.startIndex
+        while let open = body.range(of: "{{", range: index..<body.endIndex) {
+            if let found = placeholder(at: open.lowerBound, in: body) {
+                result.append((open.lowerBound..<found.end, found.kind))
+                index = found.end
+            } else {
+                index = body.index(after: open.lowerBound)
+            }
+        }
+        return result
+    }
+
+    /// 名前として見る長さ（これより先に `}}` がなければ差し込みではない。閉じない `{{` が多い長文でも速く終わるように）
+    static let maxNameLength = 24
 
     /// `start` から始まる `{{名前}}` が知っている差し込みなら、その種類と終わりの位置
     private static func placeholder(at start: String.Index, in body: String) -> (
         kind: SnippetPlaceholder, end: String.Index
     )? {
         let open = body.index(start, offsetBy: 2)
-        guard let close = body[open...].range(of: "}}") else { return nil }
-        let inner = body[open..<close.lowerBound]
-        guard !inner.contains(where: \.isNewline) else { return nil }
-        let name = inner.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "\u{3000}")))
-        guard let kind = SnippetPlaceholder(rawValue: name) else { return nil }
-        return (kind, close.upperBound)
+        var cursor = open
+        var length = 0
+        while cursor < body.endIndex, length <= maxNameLength {
+            let character = body[cursor]
+            if character.isNewline { return nil }
+            if character == "}", body[cursor...].hasPrefix("}}") {
+                let name = body[open..<cursor].trimmingCharacters(
+                    in: .whitespaces.union(CharacterSet(charactersIn: "\u{3000}")))
+                guard let kind = SnippetPlaceholder(rawValue: name) else { return nil }
+                return (kind, body.index(cursor, offsetBy: 2))
+            }
+            cursor = body.index(after: cursor)
+            length += 1
+        }
+        return nil
     }
 
     /// 本文に使われている差し込み（重なりなし・出てきた順）

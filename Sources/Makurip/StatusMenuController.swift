@@ -58,6 +58,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         Self.setKeyEquivalent(open, controller.keymap.primary(.openList))
         let settings = addItem("設定…", action: #selector(openSettings))
         Self.setKeyEquivalent(settings, controller.keymap.primary(.settings))
+        addItem("定型文を編集…", action: #selector(openSnippets))
 
         menu.addItem(.separator())
         addItem(controller.isPaused ? "記録を再開" : "記録を一時停止", action: #selector(togglePause))
@@ -94,6 +95,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         controller?.openSettings()
+    }
+
+    @objc private func openSnippets() {
+        controller?.openSnippetEditor(.open)
     }
 
     /// メニューの右に出すキー。1 文字で書けるキー（英字・数字・記号）だけ。それ以外はヒントに表記を出す

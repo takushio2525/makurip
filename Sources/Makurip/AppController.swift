@@ -27,6 +27,9 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     private(set) var keymap = Keymap.default
     private(set) var settings: SettingsController?
     private var settingsWindow: SettingsPresenting?
+    /// 定型文（データフォルダの snippets.json。履歴とは別）
+    private(set) var snippetStore: SnippetController?
+    private var snippetEditor: SnippetEditorPresenting?
     /// 設定のどこからでも効くキー（記録中は外し、終わったら付け直す）
     private var globalKeys: (open: HotKey?, openList: HotKey?) = (nil, nil)
     private var recordingKeys = false
@@ -86,6 +89,12 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         }
         keymap = settings.settings.keymap
 
+        let snippetStore = SnippetController(file: SnippetFile(directory: dataDirectory))
+        self.snippetStore = snippetStore
+        if !snippetStore.issues.isEmpty {
+            Log.app.error("定型文のファイルに読めない項目がある count=\(snippetStore.issues.count)")
+        }
+
         let store: ClipStore
         do {
             store = try ClipStore(directory: dataDirectory, limits: settings.settings.limits)
@@ -137,6 +146,12 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
             self.debugControl?.writeStatus()
         }
         settings.startWatching()
+        // 定型文の窓・ファイルの書き換え（AI の口・手）で変わったら、開いている一覧を読み直す
+        snippetStore.observe { [weak self] _ in
+            self?.history?.snippetsDidChange()
+            self?.debugControl?.writeStatus()
+        }
+        snippetStore.startWatching()
 
         if options.debugControl {
             if isolated {
@@ -156,6 +171,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         monitor?.stop()
         detector?.stop()
         settings?.stopWatching()
+        snippetStore?.stopWatching()
         hotKeys.unregister(.openHistory)
         hotKeys.unregister(.openList)
         for (center, observer) in environmentObservers { center.removeObserver(observer) }
@@ -372,6 +388,111 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     }
 
     var isSettingsVisible: Bool { settingsWindow?.isVisible ?? false }
+
+    // MARK: 定型文（#7）
+
+    func snippets() -> [Snippet] {
+        snippetStore?.snippets ?? []
+    }
+
+    func snippetDateFormat() -> SnippetDateFormat {
+        settings?.settings.snippetDateFormat ?? .default
+    }
+
+    /// 差し込みを置き換えて書き戻し、元いたアプリへ貼る。書き戻しは新しい履歴にしない（履歴の貼り付けと同じ）。
+    /// `{{カーソル}}` があれば、貼った後に文字カーソルをそこへ動かす（AX で確かめられるときだけ）
+    func pasteSnippet(id: UUID, mode: PasteMode) {
+        guard let monitor, let snippet = snippetStore?.collection.snippet(id: id) else { return }
+        let expansion = SnippetTemplate.expand(snippet.body, context: snippetContext(for: snippet.body))
+        let snapshot = SnippetPaste.snapshot(for: expansion.text)
+        let changeCount = PasteboardWriter.write(snapshot, to: pasteboard)
+        monitor.acknowledgeOwnWrite(changeCount: changeCount)
+        lastSnippetPaste = (expansion.text.utf16.count, expansion.cursorOffsetFromEnd)
+
+        if mode == .copyOnly {
+            lastPasteOutcome = "copied"
+            Log.paste.info("定型文をコピーだけ length=\(expansion.text.utf16.count)")
+            historyDidClose()
+            debugControl?.writeStatus()
+            return
+        }
+        let target = pasteTargetOverride.flatMap(NSRunningApplication.init(processIdentifier:)) ?? previousApp
+        Task { @MainActor in
+            // 貼る前の入力欄（一覧は前面を奪わないので、宛先のアプリの入力欄のまま）
+            let before = target.flatMap { FocusedText.probe(pid: $0.processIdentifier) }
+            let outcome = await paster.paste(into: target)
+            lastPasteOutcome = outcome.rawValue
+            var cursorMoved = false
+            if outcome == .pasted, let target, expansion.cursorOffsetFromEnd ?? 0 > 0 {
+                cursorMoved = await moveCursor(
+                    pid: target.processIdentifier, before: before, insertedLength: expansion.text.utf16.count,
+                    offsetFromEnd: expansion.cursorOffsetFromEnd)
+            }
+            Log.paste.info(
+                "定型文を貼り付け outcome=\(outcome.rawValue, privacy: .public) mode=\(mode.rawValue, privacy: .public) length=\(expansion.text.utf16.count) cursorMoved=\(cursorMoved)"
+            )
+            if outcome == .noPermission { statusMenu?.flashPermissionNeeded() }
+            debugControl?.writeStatus()
+        }
+    }
+
+    /// 直近に貼った定型文の長さと、カーソルの位置（検証の状態出力用。中身は持たない）
+    private(set) var lastSnippetPaste: (length: Int, cursorOffsetFromEnd: Int?)?
+
+    /// 差し込みに使う値。{{クリップボード}}・{{言語}} があるときだけ履歴を読む（秘密っぽい項目と、文字でない項目は飛ばす）
+    private func snippetContext(for body: String) -> SnippetTemplate.Context {
+        var context = SnippetTemplate.Context(now: Date(), dateFormat: snippetDateFormat())
+        let used = SnippetTemplate.placeholders(in: body)
+        guard used.contains(.clipboard) || used.contains(.language), let store,
+            let items = try? store.items(limit: 200)
+        else { return context }
+        for item in SnippetClipboard.candidates(in: items).prefix(20) {
+            guard let snapshot = try? store.snapshot(id: item.id), let text = KindClassifier.plainText(of: snapshot)
+            else { continue }
+            context.clipboardText = text
+            context.language = SnippetClipboard.language(of: text, kind: item.kind)
+            break
+        }
+        return context
+    }
+
+    /// 貼った文字の後ろに文字カーソルが来るのを待ってから、{{カーソル}} の位置へ動かす（最大 0.6 秒。合わなければ動かさない）
+    private func moveCursor(pid: pid_t, before: TextProbe?, insertedLength: Int, offsetFromEnd: Int?) async -> Bool {
+        guard let before else { return false }
+        for _ in 0..<12 {
+            try? await Task.sleep(for: .milliseconds(50))
+            let after = FocusedText.probe(pid: pid)
+            if let range = SnippetPaste.cursorTarget(
+                before: before, after: after, insertedLength: insertedLength, offsetFromEnd: offsetFromEnd)
+            {
+                return FocusedText.select(range, pid: pid)
+            }
+            // まだ貼られていない（カーソルが動いていない）ときだけ待ち続ける
+            if let after, after.selection != before.selection { return false }
+        }
+        return false
+    }
+
+    /// 定型文の窓を開く。履歴から作るときは、その項目の文字を本文の下書きにする
+    func openSnippetEditor(_ request: SnippetEditRequest) {
+        guard let snippetStore else { return }
+        if history?.isVisible == true { history?.hide() }
+        if snippetEditor == nil {
+            snippetEditor = SnippetEditorUIFactory.make(
+                controller: snippetStore,
+                environment: SnippetEditorEnvironment(dateFormat: { [weak self] in
+                    self?.snippetDateFormat() ?? .default
+                }))
+        }
+        var resolved = request
+        if case .fromHistory(let itemID) = request {
+            let text = (try? store?.snapshot(id: itemID)).flatMap { $0 }.flatMap(KindClassifier.plainText(of:))
+            resolved = .new(body: text ?? "")
+        }
+        snippetEditor?.show(resolved)
+    }
+
+    var isSnippetEditorVisible: Bool { snippetEditor?.isVisible ?? false }
 
     // MARK: SettingsApplying（設定ファイルが変わったら、変わった部分だけ当て直す）
 
