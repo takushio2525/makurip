@@ -18,7 +18,12 @@
   .peek-panel { left: 422px !important; top: 40px !important; height: 528px !important; }
 </style>
 <script src="file://@DESIGN@/shared/data.js"></script>
-<script>window.MK_DATA.items = window.MK_DATA.items.filter((i) => !i.secret);</script>
+<script>
+  // 秘密の 2 件は #5 の見比べ（secrets=1）のときだけ残す（ほかの状態の並びを変えないため）
+  if (new URLSearchParams(location.search).get('secrets') !== '1') {
+    window.MK_DATA.items = window.MK_DATA.items.filter((i) => !i.secret);
+  }
+</script>
 <script src="file://@DESIGN@/shared/core.js"></script>
 <script src="file://@DESIGN@/shared/panel-b.js"></script>
 </head>
@@ -51,6 +56,8 @@
   const MV = +(Mk.params.get('move') || 0);
   if (MV) A.move(MV);
   if (Mk.params.get('look') === '1') A.setLook(true);
+  // ⌥ を押している間と同じ（隠した内容を表示。#5）
+  if (Mk.params.get('reveal') === '1') A.setReveal(true);
 </script>
 <script>
 if (Mk.params.get('measure') === '1') {

@@ -17,10 +17,10 @@
 </style>
 <script src="file://@DESIGN@/shared/data.js"></script>
 <script>
-  // Swift 側の架空の履歴と同じにする（秘密の 2 件は #5 の範囲なので除く）。count で件数を絞る
+  // Swift 側の架空の履歴と同じにする（秘密の 2 件は secrets=1 のときだけ残す。#5）。count で件数を絞る
   (function () {
     const p = new URLSearchParams(location.search);
-    let items = window.MK_DATA.items.filter((i) => !i.secret);
+    let items = p.get('secrets') === '1' ? window.MK_DATA.items : window.MK_DATA.items.filter((i) => !i.secret);
     if (p.has('count')) items = items.slice(0, +p.get('count'));
     window.MK_DATA.items = items;
   })();
@@ -38,6 +38,7 @@
   Mk.cand.start();
   const target = +(Mk.params.get('idx') || 0);
   for (let i = 1; i <= target; i++) Mk.cand.go(i);
+  if (Mk.params.get('reveal') === '1') Mk.cand.setReveal(true);
 </script>
 </body>
 </html>

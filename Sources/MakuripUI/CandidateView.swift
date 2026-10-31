@@ -259,9 +259,9 @@ struct CandidateRowView: View {
         HStack(spacing: 8) {
             CandidateTile(item: item, selected: selected, thumb: image, color: extras.color)
             HStack(spacing: 5) {
-                // 試作の .secret-inline: 鍵の印を本文の頭に（選んでいる行では白）
+                // 試作の .secret-inline: 鍵の印を本文の頭に（選んでいる行では白。表示中も鍵のまま）
                 if secret {
-                    Image(systemName: revealed ? "eye" : "lock")
+                    Image(systemName: "lock")
                         .font(.system(size: 10.5))
                         .foregroundStyle(selected ? Color.white : palette.secret)
                 }

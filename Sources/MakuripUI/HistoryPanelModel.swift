@@ -313,7 +313,10 @@ final class HistoryPanelModel {
 
     func openSource() {
         guard let item = selected else { return }
-        let text = item.kind == .url ? item.previewText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        // 秘密の URL（`?token=…` のリンク）の一覧用の平文は伏せ字なので使わない（コピー元のページだけを開く）
+        let text =
+            item.kind == .url && !item.isSecretLikely
+            ? item.previewText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         guard let url = (item.sourceURL ?? text).flatMap(URL.init(string:)), url.scheme?.hasPrefix("http") == true
         else {
             shakeCount += 1

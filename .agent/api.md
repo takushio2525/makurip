@@ -35,9 +35,10 @@
 | `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く（設定ファイルから読み直したときも自動で書く） |
 | `quit` | 終了する |
 
-`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・
+`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`selectedSecret`・`revealing`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`revealed`・`selectedSecret`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・
 `lastHotKeyRoute`（直近に押した呼び出しキーの振り分け）・`openKeyRoute`（いま呼び出しキーを押したらどうなるか。押さずに `HotKeyRouter.route` で計算した値: `startCandidate` / `pasteLatest` / `openList` / `closeList` / `expandCandidate`）・
 `storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
+`secrets`（`count` 秘密の件数・`knownFormat` 自動消去の対象の件数・`autoDeleted` 起動してから自動で消した件数・`retentionSeconds`・`nextSweepAt` 次に消す時刻。中身は出さない）・
 `settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・`writtenAt`。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
@@ -59,6 +60,7 @@
 ```
 
 新しい順（`lastUsedAt` の降順）。`sourceURLHost` はホスト名だけ（クエリに秘密が入りうるため）。
+`flags` に `secretLikely`（秘密っぽい）・`secretKnownFormat`（確度が高い。自動消去の対象）が入る（#5）。`schemaVersion` は 2。
 
 ## UI との約束（`Sources/MakuripCore/Support/HistoryPresenting.swift`）
 
@@ -111,7 +113,8 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 
 全操作は `KeyAction`（ID・既定のキー・説明文・まとまり・範囲）から定義する。ID は試作（`core.js` の `Mk.ACTIONS`）と同じ。
 設定スキーマは操作ごとに `keys.<ID>` の項目を作り、設定画面・CLI・MCP（#6）がこの ID と説明文をそのまま使う。重なりは `Keymap.conflicts()` で見つける（全体のキーとパネルのキーは同じ範囲として見る）。
-キーは物理キーの位置（仮想キーコード）で持つ（`KeyCombo`。`.digits` は 1〜9 の範囲）。
+キーは物理キーの位置（仮想キーコード）で持つ（`KeyCombo`。`.digits` は 1〜9 の範囲、`.hold` は修飾キー 1 つを押している間。
+`.hold` はキーを押しても操作として引かず、`Keymap.isHeld(_:modifiers:)` で修飾キーの状態から見る。文字では `⌥`・`alt` と書く）。
 
 | ID | 操作 | 既定のキー | 範囲 |
 |---|---|---|---|
@@ -126,6 +129,7 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 | `app` | コピー元アプリを選ぶ | ⌘E | パネル |
 | `pinned` / `pin` | ピン留めだけ表示 / ピン留めする・外す | ⇧⌘P / ⌘P | パネル |
 | `look` | 大きくプレビュー | ⌘Y | パネル |
+| `reveal` | 隠した内容を表示（押している間）。一覧・プレビュー・候補窓で効く | ⌥（押している間） | パネル |
 | `source` | コピー元のページを開く | ⌘O | パネル |
 | `delete` | 履歴から削除 | ⌘⌫ | パネル |
 | `settings` | 設定を開く | ⌘, | パネル |
@@ -136,7 +140,7 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 
 候補窓の範囲のキーは候補窓が出ている間だけ効くので、候補窓のキーどうしだけで重なりを見る（⌃⌘V が `open` と `candExpand` の両方にあるのはこのため）。
 候補窓の間に全体のキー（⌃⌘V・⌃⌥⌘V）が来たら、タップは素通しして Carbon のホットキーに任せ、`HotKeyRouter` が「広げる」に振り分ける。
-定型文（⌘S）・隠した内容の表示（⌥）は、それぞれ #7・#5 で足す。キーとして使える組み合わせの決まりは `KeyRules`（下の「設定」）。
+定型文（⌘S）は #7 で足す。隠した内容の表示（⌥）は #5 で足した。キーとして使える組み合わせの決まりは `KeyRules`（下の「設定」）。
 
 ## 候補窓（`Sources/MakuripCore/Candidate/`・#8）
 
@@ -202,11 +206,12 @@ public enum SettingsUIFactory { @MainActor static func make(controller: Settings
 | `launchAtLogin` | オン・オフ | false | 変えたときだけ `SMAppService.mainApp` に登録・解除（隔離中はしない） |
 | `maxItems` | 整数 | 1000 | 10〜20000 件 |
 | `maxTotalMB` | 整数 | 1024 | 100〜20480 MB（「2GB」とも書ける） |
+| `secretAutoDeleteMinutes` | 整数 | 10 | 1〜1440 分（「1時間」とも書ける）。確度の高い秘密を、最後に使ってからこの時間で消す。「消さない」はない（ピン留めで残す） |
 | `excludedApps` | バンドル ID の並び | なし | 前面にあるときのコピーはデータを読まずに捨てる（`SkipReason.excludedApp`） |
 | `candPasteTiming` | バンドル ID → 選択肢 | なし | `immediate` / `onCommit`（既定の一覧は `builtIn`） |
 | `candIdleTimeout` | 数（詳細） | 10 | 2〜120 秒 |
 | `candReplaceMethod` | バンドル ID → 選択肢（詳細・画面に出さない） | なし | `selectRange` / `undo` / `deferred` |
-| `keys.<操作 ID>` | キーの並び | `KeyAction.defaultCombos` | `KeyRules` に通るもの。どこからでも効くキーは 1 つだけ。空の並びで未設定 |
+| `keys.<操作 ID>` | キーの並び | `KeyAction.defaultCombos` | `KeyRules` に通るもの。どこからでも効くキーは 1 つだけ。空の並びで未設定。`keys.reveal` は修飾キー 1 つだけ |
 
 ### CLI（`Makurip [--data-dir DIR] --settings ...`）
 
@@ -266,7 +271,25 @@ UI 側（`Sources/MakuripUI/`）: `ClipContentLoader.language(for:)`（一覧の
 | `limits` / `setLimits(_:)` | いまの上限 / 上限を変える（下げたら超えた古い履歴をその場で消す。設定から） |
 | `enforceLimits()` / `removeOrphanBlobs()` | 上限の当て直し・保存途中で落ちた残りの掃除（起動時に呼ぶ） |
 
-## DB スキーマ（版 1・`PRAGMA user_version = 1`）
+## 秘密（`Sources/MakuripCore/Secret/`・#5）
+
+どれも純粋関数（`SecretRescan` だけストアを読み書きする）。判定の一覧と限界は `.agent/conventions.md` の「秘密の判定」。
+
+| 型 | 役割 |
+|---|---|
+| `SecretDetector.findings(in:)` | 文字列の中の秘密（`SecretFinding`: `kind`・UTF-16 の `location`/`length`・見せてよい接頭辞と末尾の長さ）。重ならない・位置の順。`version` は判定の版 |
+| `SecretKind` | 当たった形式（`anthropicKey`・`githubToken`・`privateKey`・`authorizationHeader`・`passwordAssignment`・`randomToken` など）。`confidence`（`.high` / `.medium`）と画面の理由（`reason`。「API キーの形式」） |
+| `SecretScanner.assess(_:)` | スナップショット（全項目の平文・ファイルと URL の文字列・平文がなければ RTF/HTML）の判定。`SecretAssessment`（確度・形式・付ける印 `flags`） |
+| `SecretMask.masked(_:)` / `apply(_:to:)` | 伏せ字にした文字列（`sk-test-••••••••••••••••0000`） |
+| `PreviewText.make(…, maskSecrets:)` | 一覧用の平文。秘密なら全文を伏せてから先頭を切る |
+| `SecretExpiry` | 自動消去の決まり（`isEligible`・`deadline`・`expired`・`nextDeadline`。既定 `defaultMinutes` = 10） |
+| `SecretRescan.runIfNeeded(store:)` | 判定の版が上がったとき、既存の履歴に 1 回だけ当て直す（`meta` の `secretScanVersion`） |
+
+`ClipItem.isSecretLikely`・`PastePipeline.prepare(…, secret:)`（ConcealedType の印を足す）・`CandidateViewState.revealed`・
+`KeyTapEvent.flagsChanged`（候補窓の間の修飾キー。食べずに素通し）。ストアは `items(flagged:)`・`addFlags(_:maskedPreview:id:)`・
+`snapshot(id:types:)`・`delete(ids:)`・`scrubDeletedData()`（WAL の切り詰め）・`metaValue` / `setMetaValue` を足した。
+
+## DB スキーマ（版 2・`PRAGMA user_version = 2`）
 
 ```sql
 CREATE TABLE clip (
@@ -286,6 +309,7 @@ CREATE TABLE clip (
   item_count INTEGER NOT NULL
 );
 CREATE INDEX clip_last_used ON clip(last_used_at DESC);
+-- preview_text は、秘密（flags に secretLikely）なら伏せ字にしたもの（#5）
 
 CREATE TABLE representation (
   clip_id TEXT NOT NULL REFERENCES clip(id) ON DELETE CASCADE,
@@ -297,6 +321,11 @@ CREATE TABLE representation (
   blob_file TEXT,                      -- それより大きいものは blobs/ からの相対パス
   PRIMARY KEY (clip_id, item_index, position)
 );
+
+-- 版 2（#5）: 小さな覚え書き。key = 'secretScanVersion'（既存の履歴に当て直した判定の版）
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ```
+
+`PRAGMA secure_delete = ON`（消した行をファイルの上でも 0 で上書きする）。秘密を消したあとは `wal_checkpoint(TRUNCATE)` で WAL を空にする。
 
 データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・`settings.json`（+ 壊れていたときの `settings.broken.json`）・（検証時のみ）`debug-status.json`。

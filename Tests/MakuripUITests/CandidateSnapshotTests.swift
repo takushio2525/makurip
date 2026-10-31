@@ -28,6 +28,9 @@ struct CandidateSnapshotTests {
         var note: CandidateNote?
         /// 履歴の件数（nil はすべて）
         var count: Int?
+        /// 秘密の 2 件を含む履歴（#5）と、隠した内容を表示しているか（⌥ を押している間）
+        var secrets = false
+        var revealed = false
     }
 
     /// 名前は design/ui-compare/shoot.sh の試作側と同じ（試作に無いものは swift-*.png だけ作る）
@@ -42,14 +45,24 @@ struct CandidateSnapshotTests {
         Scenario(name: "candidate-one", count: 1),
         Scenario(name: "candidate-deferred-dark", dark: true, index: 1, note: .deferredApp),
         Scenario(name: "candidate-composing", index: 6, note: .composing),
+        // フェーズ5: 秘密の項目（5 件目の API キー）を選んだところ。伏せ字と注記、⌥ で表示
+        Scenario(name: "candidate-secret-light", index: 4, secrets: true),
+        Scenario(name: "candidate-secret-dark", dark: true, index: 4, secrets: true),
+        Scenario(name: "candidate-secret-reveal-light", index: 4, secrets: true, revealed: true),
+        Scenario(name: "candidate-secret-reveal-dark", dark: true, index: 4, secrets: true, revealed: true),
+        // 試作に無いもの: 確定まで貼らないアプリで秘密を選んだとき（秘密の注記を優先）・秘密の export（コマンド）
+        Scenario(name: "candidate-secret-deferred", index: 4, note: .deferredApp, secrets: true),
+        Scenario(name: "candidate-secret-cmd-dark", dark: true, index: 17, secrets: true),
     ]
 
     @Test("各状態を描き、試作と並べた比較画像を作る")
     func renderAll() throws {
         _ = NSApplication.shared
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        let history = SampleHistory.make(imageDirectory: assets)
+        let plain = SampleHistory.make(imageDirectory: assets)
+        let withSecrets = SampleHistory.make(imageDirectory: assets, entries: SampleHistory.secretEntries)
         for scenario in Self.scenarios {
+            let history = scenario.secrets ? withSecrets : plain
             let items = scenario.count.map { Array(history.items.prefix($0)) } ?? history.items
             let model = CandidateViewModel(keymap: .default)
             let loader = ClipContentLoader(actions: history)
@@ -61,7 +74,7 @@ struct CandidateSnapshotTests {
                 model.update(
                     CandidateViewState(
                         sessionID: 1, items: items, selectedIndex: index, order: scenario.order, note: scenario.note,
-                        target: nil))
+                        target: nil, revealed: scenario.revealed))
             }
             let rep = render(model: model, loader: loader, dark: scenario.dark)
             try rep.representation(using: .png, properties: [:])!

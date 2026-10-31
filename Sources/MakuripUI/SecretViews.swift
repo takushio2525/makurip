@@ -137,10 +137,22 @@ struct SecretPreviewBody: View {
         }
     }
 
+    /// 試作の .secret-note（「〜なので隠しています。⌥ を押している間だけ表示します。」の 1 行と「貼り付けると…」）。
+    /// 理由が長くて 1 行に入らないときは、⌥ の文を次の行に送る
     private func note(reason: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(reason)なので隠しています。")
-            RevealHint(combo: model.keymap.primary(.reveal), suffix: "を押している間だけ表示します。")
+        let combo = model.keymap.primary(.reveal)
+        return VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    Text("\(reason)なので隠しています。")
+                    RevealHint(combo: combo, suffix: "を押している間だけ表示します。")
+                }
+                .fixedSize()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(reason)なので隠しています。")
+                    RevealHint(combo: combo, suffix: "を押している間だけ表示します。")
+                }
+            }
             Text("貼り付けると元の文字列が入ります。")
         }
         .font(.system(size: 12))

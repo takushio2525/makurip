@@ -48,6 +48,7 @@ $MAKURIP --settings list
 | どこからでも効くキー（`keys.open`・`keys.openList`） | ⌃・⌥・⌘ のどれかが要る（⇧ だけは不可）。⌘ だけ（⌘C など）は不可。macOS の操作（⌃space・⌘⇧4 など）は不可。1 つだけ。F1〜F20 は修飾キーなしでよい |
 | 一覧・候補窓のキー | 文字を打つキー（英字・数字・記号・space）は ⌘・⌃・⌥ と一緒に。一覧では検索欄の ⌘A・⌘C・⌘V・⌘X・⌘Z は不可 |
 | 番号の操作（`keys.quick`） | 「修飾キー + 1〜9」（`⌘1–9`）だけ |
+| 隠した内容の表示（`keys.reveal`） | 修飾キー 1 つだけ（`⌥`・`⌘`・`⌃`・`⇧`。`alt`・`cmd` とも書ける）。押している間だけ効く。ほかの操作には修飾キーだけのキーは使えない |
 | 重なり | 同じ範囲（どこからでも効くキーと一覧のキーは同じ範囲として見る。候補窓は候補窓どうし）で同じキーは拒否。`--take-over` で付け替え |
 
 ## 頼みと項目の対応表
@@ -69,6 +70,8 @@ $MAKURIP --settings list
 | Mac を起動したら自動で立ち上げて | `launchAtLogin` | `true` | `set launchAtLogin true` |
 | 候補窓は Enter だけで確定 | `keys.candCommit` | `↩` | `set keys.candCommit ↩` |
 | 履歴の削除は ⌥⌫ にして | `keys.delete` | `⌥⌫` | `set keys.delete ⌥⌫` |
+| API キーは 1 時間で消して | `secretAutoDeleteMinutes`（秘密を自動で消すまで） | `60`（`1時間` とも書ける） | `set secretAutoDeleteMinutes 1時間` |
+| 隠した内容は ⌘ を押している間に見せて | `keys.reveal`（隠した内容を表示） | `⌘`（修飾キー 1 つ） | `set keys.reveal ⌘` |
 
 補足:
 
@@ -77,6 +80,9 @@ $MAKURIP --settings list
 - 「呼び出しを ⌥V にして」は呼び出しキーだけを変える。候補窓の「一覧に広げる」（`keys.candExpand`、既定 ⌃⌘V）は別の項目なので、
   揃えたいときは `set keys.candExpand ⌥V` も行う
 - ⌥V は、どのアプリでも ⌥V で打つ文字（「√」など）の代わりに Makurip を呼ぶようになる。ユーザーが頼んだのでそのまま入れる
+- 「コピーした API キーを消さないで」「秘密の判定を止めて」には当たる項目がない（プライバシーを守る振る舞いは設定にしない）。
+  時間は最長 1440 分（1 日）まで延ばせる。ずっと残したい項目は、一覧でピン留め（⌘P）してもらう（ピン留めした秘密は消さない）
+- 秘密の中身は、AI にも CLI にも出さない（`--dump-metadata` に出るのは `secretLikely` などの印だけ）
 
 ### CLI に通した結果（2026-10-31・隔離したフォルダ・アプリは動かしていない）
 
@@ -104,6 +110,15 @@ $ Makurip --settings list | grep '^\*'
 どれも終了コード 0。動いているインスタンスにすぐ効くことは `scripts/e2e/settings.sh`（`make e2e-settings`）で確かめている
 （⌃⌘V の動き・呼び出しキー・件数の上限。状態の書き出しと `--dump-metadata` で見る）。
 
+#5 で足した項目（隔離したフォルダで通した結果）:
+
+```
+$ Makurip --settings set secretAutoDeleteMinutes 1時間
+secretAutoDeleteMinutes（秘密を自動で消すまで）を「60 分」にしました。…
+$ Makurip --settings set keys.reveal cmd
+keys.reveal（隠した内容を表示（押している間））を「⌘」にしました。…
+```
+
 ### 拒否の例
 
 ```
@@ -113,6 +128,10 @@ $ Makurip --settings set keys.method ⌘E
 変えられない（keys.method）: ⌘E は「コピー元アプリを選ぶ」（keys.app）と重なる。そちらを先に変えるか、--take-over を付けて付け替える
 $ Makurip --settings set maxItems 5
 変えられない（maxItems）: 値は 10〜20000 の整数（単位は 件。いま: 5）
+$ Makurip --settings set secretAutoDeleteMinutes 0
+変えられない（secretAutoDeleteMinutes）: 値は 1〜1440 の整数（単位は 分。いま: 0）
+$ Makurip --settings set keys.reveal ⌘C
+変えられない（keys.reveal）: ⌘C: 押している間だけ効く操作は、修飾キー 1 つ（⌥・⌘・⌃・⇧）で割り当てる（例: ⌥）
 $ Makurip --settings add candPasteTiming Slack=onCommit
 変えられない（candPasteTiming）: 「Slack」はバンドル ID の形ではない。バンドル ID（例: com.tinyspeck.slackmacgap）で書く。アプリ名から調べるには osascript -e 'id of app "アプリ名"'
 ```
@@ -128,6 +147,7 @@ $ Makurip --settings add candPasteTiming Slack=onCommit
 | `launchAtLogin` | ログイン時に起動 | true / false | false |
 | `maxItems` | 保存する件数の上限 | 整数 10〜20000（件） | 1000 |
 | `maxTotalMB` | 容量の上限 | 整数 100〜20480（MB） | 1024 |
+| `secretAutoDeleteMinutes` | 秘密を自動で消すまで | 整数 1〜1440（分） | 10 |
 | `excludedApps` | 記録しないアプリ | バンドル ID の並び | なし |
 | `candPasteTiming` | 確定まで貼らないアプリ | バンドル ID → `immediate` / `onCommit` | なし（ターミナル・チャットは既定で `onCommit`） |
 | `candIdleTimeout` | 候補窓を自動で閉じるまで（詳細） | 数 2〜120（秒） | 10 |
