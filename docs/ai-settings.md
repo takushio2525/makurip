@@ -156,7 +156,7 @@ $ Makurip --settings add candPasteTiming Slack=onCommit
 | `candIdleTimeout` | 候補窓を自動で閉じるまで（詳細） | 数 2〜120（秒） | 10 |
 | `candReplaceMethod` | 差し替え方式の決め打ち（詳細・画面には出さない） | バンドル ID → `selectRange` / `undo` / `deferred` | なし |
 | `snippetDateFormat` | 日付の書き方（定型文の `{{日付}}`） | `slash`（2026/10/31）/ `hyphen`（2026-10-31）/ `japanese`（2026年10月31日） | `slash` |
-| `keys.<操作 ID>` | 各操作のキー（26 個。定型文の `keys.snippets`・`keys.editSnippet` を含む） | キーの並び | 試作どおり |
+| `keys.<操作 ID>` | 各操作のキー（27 個。秘密の `keys.reveal`、定型文の `keys.snippets`・`keys.editSnippet` を含む） | キーの並び | 試作どおり |
 
 設定にしないもの: パスワード等の印（ConcealedType）が付いたコピーを保存しない動き（プライバシーを守る振る舞いは、
 AI や他のアプリが設定ファイルを書き換えても弱められないようにしてある）・監視の間隔などの内部の定数。
