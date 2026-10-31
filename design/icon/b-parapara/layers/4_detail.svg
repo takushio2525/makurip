@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 手前の付箋ののり部分と文字行 -->
+  <g transform="translate(337 800) rotate(2)">
+    <path d="M0,-406 A34,34 0 0 1 34,-440 H406 A34,34 0 0 1 440,-406 V-350 H0 Z" fill="#FFE377"/>
+    <rect x="60" y="-270" width="320" height="32" rx="16" fill="#EAC45A"/>
+    <rect x="60" y="-200" width="210" height="32" rx="16" fill="#EAC45A"/>
+  </g>
+</svg>

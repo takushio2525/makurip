@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- メニューバー用テンプレート画像の 16px（@1x）専用版。menubar.svg と同じ配置を 1px の格子にそろえ、 -->
+  <!-- 角は 1px 落として丸みを出す。アンチエイリアスを切っているので、出力は不透明度 0 か 100% だけになる -->
+  <!-- 奥の付箋（1px の L 字） -->
+  <path d="M3,2 H10 V3 H3 V10 H2 V3 H3 Z" fill="#000000"/>
+  <!-- 中ほどの付箋（1px の L 字） -->
+  <path d="M5,4 H12 V5 H5 V12 H4 V5 H5 Z" fill="#000000"/>
+  <!-- 手前の付箋（9x9、角を 1px 落とす）と、抜いた文字行 -->
+  <path d="M7,6 H14 V7 H15 V14 H14 V15 H7 V14 H6 V7 H7 Z M8,9 H13 V10 H8 Z M8,11 H11 V12 H8 Z" fill="#000000" fill-rule="evenodd"/>
+</svg>

@@ -11,6 +11,10 @@
 	<string>Makurip</string>
 	<key>CFBundleExecutable</key>
 	<string>Makurip</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.takushio2525.makurip</string>
 	<key>CFBundleInfoDictionaryVersion</key>

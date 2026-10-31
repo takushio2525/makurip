@@ -38,6 +38,8 @@ makurip/
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E）
+├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
+├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
 ├── Config/            ← signing.local.env.example（雛形だけコミット。実ファイルは git 管理外）
 └── .agent/            ← AI 向け詳細仕様と作業メモ
 ```
