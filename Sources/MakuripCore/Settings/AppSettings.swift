@@ -20,6 +20,8 @@ public struct AppSettings: Hashable, Sendable {
     public var replaceMethod: [String: ReplaceMethod]
     /// 候補窓を何も押さないまま閉じるまでの秒数
     public var idleTimeout: Double
+    /// 定型文の {{日付}} の書き方
+    public var snippetDateFormat: SnippetDateFormat
     public var keymap: Keymap
 
     public init() {
@@ -33,6 +35,7 @@ public struct AppSettings: Hashable, Sendable {
         pasteTiming = candidate.pasteTiming
         replaceMethod = candidate.replaceMethod
         idleTimeout = candidate.idleTimeout
+        snippetDateFormat = .default
         keymap = .default
     }
 

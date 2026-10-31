@@ -11,7 +11,10 @@ struct PeekView: View {
 
     var body: some View {
         Group {
-            if let item = model.selected {
+            if let snippet = model.selectedSnippet {
+                SnippetPeekContent(snippet: snippet, model: model)
+                    .id(snippet.id)
+            } else if let item = model.selected {
                 PeekContent(item: item, model: model, loader: loader)
                     .id(item.id)
             } else {

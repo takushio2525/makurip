@@ -140,3 +140,17 @@ enum DisplayText {
         }
     }
 }
+
+// MARK: 定型文
+
+extension DisplayText {
+    /// ⌘Y の見出しの要点（試作の Mk.infoText: 「定型文 · 略語 ;date」。略語がなければ「定型文」）
+    static func snippetInfo(_ snippet: Snippet) -> String {
+        snippet.abbreviation.isEmpty ? "定型文" : "定型文 · 略語 \(snippet.abbreviation)"
+    }
+
+    /// 差し込みが置き換わることの説明（試作の .pv-note の文。日付は今日の日付を設定の書き方で）
+    static func snippetNote(now: Date, format: SnippetDateFormat) -> String {
+        "色の付いた部分は貼り付けるときに置き換わります（日付 → \(format.format(now))、クリップボード → 最新のテキスト）。"
+    }
+}

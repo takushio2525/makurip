@@ -61,6 +61,14 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
             openSettings: { [weak self] in
                 self?.hide()
                 self?.actions?.openSettings()
+            },
+            pasteSnippet: { [weak self] id, mode in
+                self?.hide()
+                self?.actions?.pasteSnippet(id: id, mode: mode)
+            },
+            editSnippet: { [weak self] request in
+                self?.hide()
+                self?.actions?.openSnippetEditor(request)
             }
         )
     }
@@ -110,6 +118,10 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
 
     func keymapDidChange(_ keymap: Keymap) {
         model.keymap = keymap
+    }
+
+    func snippetsDidChange() {
+        if panel.isVisible { model.reloadSnippets() }
     }
 
     // ほかをクリックしてキーウィンドウでなくなったら閉じる（フォーカスは奪い返さない）
