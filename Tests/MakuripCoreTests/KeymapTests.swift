@@ -22,14 +22,52 @@ struct KeymapTests {
         #expect(Set(KeyAction.allCases.map(\.rawValue)).count == KeyAction.allCases.count)
     }
 
-    @Test("ID は試作（core.js の Mk.ACTIONS）と同じ")
+    @Test("ID と並びは試作（core.js の Mk.ACTIONS）と同じ")
     func prototypeIDs() {
         let ids = KeyAction.allCases.map(\.rawValue)
         #expect(
             ids == [
-                "open", "close", "prev", "next", "paste", "pastePlain", "copyOnly", "quick", "kindNext", "kindPrev",
-                "method", "app", "pinned", "pin", "look", "source", "delete",
+                "open", "openList", "close", "prev", "next", "paste", "pastePlain", "copyOnly", "quick", "kindNext",
+                "kindPrev", "method", "app", "pinned", "pin", "look", "source", "delete", "candUp", "candDown",
+                "candCommit", "candCancel", "candExpand",
             ])
+    }
+
+    @Test("候補窓のキーは候補窓の範囲で引く（↑↓・Tab と Enter で確定・esc・⌃⌘V で広げる）")
+    func candidateKeys() {
+        let map = Keymap.default
+        func action(_ code: UInt16, _ modifiers: HotKey.Modifiers = []) -> KeyAction? {
+            map.action(for: KeyStroke(keyCode: code, modifiers: modifiers), scope: .candidate)?.action
+        }
+        #expect(action(KeyCodes.upArrow) == .candidateUp)
+        #expect(action(KeyCodes.downArrow) == .candidateDown)
+        #expect(action(KeyCodes.tab) == .candidateCommit)
+        #expect(action(KeyCodes.returnKey) == .candidateCommit)
+        #expect(action(KeyCodes.keypadEnter) == .candidateCommit)
+        #expect(action(KeyCodes.escape) == .candidateCancel)
+        #expect(action(9, [.control, .command]) == .candidateExpand)
+        #expect(action(0) == nil)  // 文字のキーは候補窓のキーではない（確定して素通し）
+        #expect(action(KeyCodes.upArrow, .shift) == nil)
+        // 一覧を開くキーは全体の範囲
+        #expect(
+            map.action(for: KeyStroke(keyCode: 9, modifiers: [.control, .option, .command]), scope: .global)?.action
+                == .openList)
+        // パネルの範囲では候補窓のキーを引かない
+        #expect(map.action(for: KeyStroke(keyCode: KeyCodes.upArrow))?.action == .previous)
+    }
+
+    @Test("候補窓のキーは候補窓のキーどうしだけ比べる（⌃⌘V が「呼び出す」と「広げる」の両方にあっても重なりではない）")
+    func candidateScopeConflicts() {
+        #expect(Keymap.default.conflicts().isEmpty)
+        var map = Keymap.default
+        map.set([KeyCombo(.code(KeyCodes.escape))], for: .candidateCommit)  // 確定と取り消しが同じ esc
+        let conflicts = map.conflicts()
+        #expect(conflicts.count == 1)
+        #expect(Set([conflicts[0].first, conflicts[0].second]) == [.candidateCommit, .candidateCancel])
+
+        var openList = Keymap.default
+        openList.set([KeyCombo(.code(9), [.control, .command])], for: .openList)  // 呼び出す と 一覧を開く が同じ
+        #expect(openList.conflicts().count == 1)
     }
 
     @Test("押したキーから操作を引く")
@@ -109,6 +147,9 @@ struct KeymapTests {
         #expect(map.primary(.pinnedOnly)?.displayString == "⇧⌘P")
         #expect(map.primary(.delete)?.displayString == "⌘⌫")
         #expect(map.primary(.openHistory)?.displayString == "⌃⌘V")
+        #expect(map.primary(.openList)?.displayString == "⌃⌥⌘V")
+        #expect(map.primary(.openList)?.hotKey == .defaultOpenList)
+        #expect(map.primary(.candidateExpand)?.displayString == "⌃⌘V")
         #expect(map.primary(.paste)?.isReturn == true)
         #expect(map.primary(.openHistory)?.hotKey == .defaultOpenHistory)
         #expect(map.primary(.quickPaste)?.hotKey == nil)

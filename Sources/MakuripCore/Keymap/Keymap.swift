@@ -121,10 +121,11 @@ public enum KeyCodes {
 /// キーで呼べる操作の一覧。**全操作はここから定義する**（ID・既定のキー・説明文）。
 ///
 /// フェーズ4で設定スキーマにそのまま載せ、設定画面・CLI・AI（MCP）が同じ ID と説明文で付け替えられるようにする。
-/// ID（rawValue）は試作（`makurip-design/ui/shared/core.js` の `Mk.ACTIONS`）と同じにしてある。
+/// ID（rawValue）と並びは試作（`makurip-design/ui/shared/core.js` の `Mk.ACTIONS`）と同じにしてある。
 /// 定型文・秘密の表示・設定を開く操作は、それぞれのフェーズ（#7・#5・#4）で足す。
 public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case openHistory = "open"
+    case openList
     case close
     case previous = "prev"
     case next
@@ -141,6 +142,11 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case preview = "look"
     case openSource = "source"
     case delete
+    case candidateUp = "candUp"
+    case candidateDown = "candDown"
+    case candidateCommit = "candCommit"
+    case candidateCancel = "candCancel"
+    case candidateExpand = "candExpand"
 
     /// どこで効くキーか
     public enum Scope: String, Sendable, Codable {
@@ -148,23 +154,33 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case global
         /// 一覧（パネル）が開いている間だけ効く
         case panel
+        /// 候補窓が出ている間だけ効く（CGEventTap で横取りする）
+        case candidate
     }
 
-    public var scope: Scope { self == .openHistory ? .global : .panel }
+    public var scope: Scope {
+        switch self {
+        case .openHistory, .openList: .global
+        case .candidateUp, .candidateDown, .candidateCommit, .candidateCancel, .candidateExpand: .candidate
+        default: .panel
+        }
+    }
 
     /// 設定画面で並べるときのまとまり
     public var group: String {
         switch self {
-        case .openHistory, .close: "呼び出す"
+        case .openHistory, .openList, .close: "呼び出す"
         case .previous, .next, .paste, .pastePlain, .copyOnly, .quickPaste: "選ぶ・貼る"
         case .kindNext, .kindPrevious, .cycleMethod, .chooseApp, .pinnedOnly: "絞り込み"
         case .togglePin, .preview, .openSource, .delete: "項目の操作"
+        case .candidateUp, .candidateDown, .candidateCommit, .candidateCancel, .candidateExpand: "候補窓"
         }
     }
 
     public var label: String {
         switch self {
         case .openHistory: "履歴を呼び出す（どこからでも）"
+        case .openList: "一覧を開く（どこからでも）"
         case .close: "検索を消す／閉じる"
         case .previous: "前の項目"
         case .next: "次の項目"
@@ -181,13 +197,20 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .preview: "大きくプレビュー"
         case .openSource: "コピー元のページを開く"
         case .delete: "履歴から削除"
+        case .candidateUp: "上の候補へ"
+        case .candidateDown: "下の候補へ"
+        case .candidateCommit: "確定"
+        case .candidateCancel: "取り消し"
+        case .candidateExpand: "一覧に広げる"
         }
     }
 
     /// 設定画面と AI 向けの設定一覧に出す説明文
     public var summary: String {
         switch self {
-        case .openHistory: "どのアプリからでも履歴の一覧を開く。開いているときに押すと閉じる。"
+        case .openHistory:
+            "押したときの動きは「呼び出しキーの動き」（すぐ貼るだけ／すぐ貼って候補窓／一覧を開く）で選ぶ。一覧が開いているときに押すと閉じる。"
+        case .openList: "呼び出しキーの動きに関係なく、履歴の一覧（パネル）を開く。開いているときに押すと閉じる。"
         case .close: "検索語があれば消し、なければ一覧を閉じる。"
         case .previous: "一覧で 1 つ前の項目を選ぶ。"
         case .next: "一覧で 1 つ次の項目を選ぶ。"
@@ -204,6 +227,11 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .preview: "選んだ項目を大きく表示する（画像やコードの確認用）。"
         case .openSource: "コピーした元のページ（ブラウザや AI チャット）を開く。"
         case .delete: "選んだ項目を履歴から消す。"
+        case .candidateUp: "候補窓で 1 つ上の履歴に貼り替える。ターミナル式の並びでは 1 つ古い履歴になる。"
+        case .candidateDown: "候補窓で 1 つ下の履歴に貼り替える。ターミナル式の並びでは 1 つ新しい履歴になる。"
+        case .candidateCommit: "貼った中身を確定して候補窓を閉じる。改行や送信はしない。"
+        case .candidateCancel: "貼る前の状態に戻して候補窓を閉じる。"
+        case .candidateExpand: "仮に貼った中身を戻し、選んでいた項目を選んだ状態で一覧を開く。"
         }
     }
 
@@ -211,6 +239,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     public var defaultCombos: [KeyCombo] {
         switch self {
         case .openHistory: [KeyCombo(.defaultOpenHistory)]
+        case .openList: [KeyCombo(.defaultOpenList)]
         case .close: [KeyCombo(.code(KeyCodes.escape))]
         case .previous: [KeyCombo(.code(KeyCodes.upArrow)), KeyCombo(.code(35), .control)]  // ↑・⌃P
         case .next: [KeyCombo(.code(KeyCodes.downArrow)), KeyCombo(.code(45), .control)]  // ↓・⌃N
@@ -227,6 +256,12 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .preview: [KeyCombo(.code(16), .command)]  // ⌘Y
         case .openSource: [KeyCombo(.code(31), .command)]  // ⌘O
         case .delete: [KeyCombo(.code(KeyCodes.delete), .command)]  // ⌘⌫
+        case .candidateUp: [KeyCombo(.code(KeyCodes.upArrow))]
+        case .candidateDown: [KeyCombo(.code(KeyCodes.downArrow))]
+        case .candidateCommit: [KeyCombo(.code(KeyCodes.tab)), KeyCombo(.code(KeyCodes.returnKey))]
+        case .candidateCancel: [KeyCombo(.code(KeyCodes.escape))]
+        // 呼び出しキーをもう一度押すと広げる（試作と同じ。候補窓の範囲なので呼び出しキーとは重ならない扱い）
+        case .candidateExpand: [KeyCombo(.defaultOpenHistory)]
         }
     }
 }
@@ -267,16 +302,24 @@ public struct Keymap: Hashable, Sendable {
     }
 
     /// 重なっているキー（同じキーで 2 つ以上の操作が発火しうる組）。全体のキーとパネルのキーは同じ範囲として見る
-    /// （パネルを開いている間もどこからでも効くキーは届くため）
+    /// （パネルを開いている間もどこからでも効くキーは届くため）。
+    /// 候補窓のキーは候補窓が出ている間だけ効くので、候補窓のキーどうしだけを比べる（試作と同じ。
+    /// 既定で ⌃⌘V が「呼び出す」と「一覧に広げる」の両方に入っているのはこのため）
     public func conflicts() -> [KeyConflict] {
         var result: [KeyConflict] = []
         let entries = KeyAction.allCases.flatMap { action in combos(for: action).map { (action, $0) } }
         for (i, a) in entries.enumerated() {
-            for b in entries[(i + 1)...] where a.0 != b.0 && a.1.overlaps(b.1) {
+            for b in entries[(i + 1)...]
+            where a.0 != b.0 && Self.scopesInteract(a.0.scope, b.0.scope) && a.1.overlaps(b.1) {
                 result.append(KeyConflict(first: a.0, second: b.0, combo: a.1))
             }
         }
         return result
+    }
+
+    /// 2 つの範囲のキーが同時に効きうるか
+    static func scopesInteract(_ a: KeyAction.Scope, _ b: KeyAction.Scope) -> Bool {
+        (a == .candidate) == (b == .candidate)
     }
 }
 

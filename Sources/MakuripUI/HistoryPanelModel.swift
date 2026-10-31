@@ -107,8 +107,9 @@ final class HistoryPanelModel {
 
     // MARK: 開く・読み直す
 
-    /// 開くたびに絞り込みを外し、検索欄を空にして最新を選ぶ（試作と同じ）
-    func open() {
+    /// 開くたびに絞り込みを外し、検索欄を空にして最新を選ぶ（試作と同じ）。
+    /// 候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で開く（`itemID`）
+    func open(selecting itemID: UUID? = nil) {
         query = ""
         searchQuery = .empty
         kind = nil
@@ -120,6 +121,7 @@ final class HistoryPanelModel {
         pickerQuery = ""
         now = clock()
         reload(keepSelection: false)
+        if let itemID, let index = items.firstIndex(where: { $0.id == itemID }) { selectedIndex = index }
         focusRequest += 1
     }
 
@@ -189,8 +191,9 @@ final class HistoryPanelModel {
 
     func perform(_ action: KeyAction, digit: Int? = nil) {
         switch action {
-        case .openHistory:
-            break
+        case .openHistory, .openList, .candidateUp, .candidateDown, .candidateCommit, .candidateCancel,
+            .candidateExpand:
+            break  // パネルの範囲のキーではない（全体のキーと候補窓のキー）
         case .close:
             if !query.isEmpty {
                 query = ""

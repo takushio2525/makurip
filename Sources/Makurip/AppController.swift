@@ -3,9 +3,10 @@ import ApplicationServices
 import MakuripCore
 import MakuripUI
 
-/// アプリ本体。監視・保存・ホットキー・メニュー・一覧 UI・貼り付けをつなぐ。
+/// アプリ本体。監視・保存・ホットキー・メニュー・一覧 UI・候補窓・貼り付けをつなぐ。
 ///
 /// 一覧 UI とは `HistoryPresenting` / `HistoryActions` だけでやりとりする（フェーズ2で UI を差し替えても、ここは変えない）。
+/// 候補窓は `CandidateCoordinator` に任せ、前面のアプリへの操作は `CandidateBridge` を通す。
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
     let options: LaunchOptions
@@ -21,7 +22,11 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
     private(set) var detector: CopyShortcutDetector?
     let hotKeys = HotKeyCenter()
     private let paster = Paster()
+    let keymap = Keymap.default
     private(set) var history: HistoryPresenting?
+    private(set) var candidate: CandidateCoordinator?
+    private let keyTap = KeyEventTap()
+    private var environmentObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private var statusMenu: StatusMenuController?
     private var debugControl: DebugControl?
 
@@ -84,13 +89,21 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
         self.monitor = monitor
 
         history = HistoryUIFactory.make(actions: self)
+        let candidate = CandidateCoordinator(
+            host: CandidateBridge(app: self), presenter: CandidateUIFactory.make(actions: self, keymap: keymap),
+            tap: keyTap, scheduler: MainScheduler(), keymap: keymap, settings: .load(from: .standard))
+        candidate.onEvent = { event in Self.log(event) }
+        self.candidate = candidate
+        observeEnvironment()
         statusMenu = StatusMenuController(controller: self)
 
         detector.start()
         monitor.start()
         // 呼び出しキーはキーマップ（全操作の ID・既定キー・説明の一覧）から引く。フェーズ4で付け替えられる
-        let openKey = Keymap.default.primary(.openHistory)?.hotKey ?? .defaultOpenHistory
-        hotKeys.register(openKey, for: .openHistory) { [weak self] in self?.toggleHistory() }
+        let openKey = keymap.primary(.openHistory)?.hotKey ?? .defaultOpenHistory
+        hotKeys.register(openKey, for: .openHistory) { [weak self] in self?.hotKeyPressed(.open) }
+        let listKey = keymap.primary(.openList)?.hotKey ?? .defaultOpenList
+        hotKeys.register(listKey, for: .openList) { [weak self] in self?.hotKeyPressed(.openList) }
 
         if options.debugControl {
             if isolated {
@@ -105,12 +118,40 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // 横取りを残さない（落ちたときは OS がタップを消す）
+        candidate?.shutdown()
         monitor?.stop()
         detector?.stop()
         hotKeys.unregister(.openHistory)
+        hotKeys.unregister(.openList)
+        for (center, observer) in environmentObservers { center.removeObserver(observer) }
     }
 
     // MARK: 操作（メニュー・ホットキー・検証用の遠隔操作から呼ぶ）
+
+    /// ⌃⌘V・⌃⌥⌘V。動き（すぐ貼るだけ／すぐ貼って候補窓／一覧を開く）は設定の `hotkeyMode`（`.agent/api.md`）
+    func hotKeyPressed(_ key: HotKeyRouter.Key) {
+        guard let candidate, let history else { return }
+        // 設定画面（#4）ができるまでは UserDefaults を押すたびに読む（defaults write ですぐ切り替えられる）
+        candidate.settings = CandidateSettings.load(from: .standard)
+        let route = HotKeyRouter.route(
+            key, mode: candidate.settings.hotKeyMode, candidateActive: candidate.isActive,
+            listVisible: history.isVisible)
+        switch route {
+        case .expandCandidate:
+            candidate.expand()
+        case .closeList:
+            history.hide()
+            historyDidClose()
+        case .openList:
+            openList(selecting: nil)
+        case .startCandidate:
+            candidate.start()
+        case .pasteLatest:
+            // 許可がない・履歴がないときは一覧を開く（許可の案内と空の案内が出る）
+            if !candidate.pasteLatest() { openList(selecting: nil) }
+        }
+    }
 
     func toggleHistory() {
         guard let history else { return }
@@ -119,11 +160,68 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
             historyDidClose()
             return
         }
+        openList(selecting: nil)
+    }
+
+    /// 一覧を開く。候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で
+    func openList(selecting itemID: UUID?) {
+        guard let history, !history.isVisible else { return }
         let front = NSWorkspace.shared.frontmostApplication
         if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             previousApp = front
         }
-        history.show()
+        history.show(selecting: itemID)
+    }
+
+    /// 候補窓を閉じるきっかけ（前面のアプリの切り替え・スペース・スリープ・画面の構成）を見張る
+    private func observeEnvironment() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let activated = workspace.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let pid = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .processIdentifier
+            MainActor.assumeIsolated { self?.candidate?.frontmostAppDidChange(pid: pid) }
+        }
+        environmentObservers.append((workspace, activated))
+        let workspaceNames: [Notification.Name] = [
+            NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification,
+        ]
+        for name in workspaceNames {
+            let observer = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.candidate?.environmentDidChange() }
+            }
+            environmentObservers.append((workspace, observer))
+        }
+        let screens = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.candidate?.environmentDidChange() }
+        }
+        environmentObservers.append((NotificationCenter.default, screens))
+    }
+
+    /// 候補窓の出来事をログに残す（メタデータだけ）
+    private static func log(_ event: CandidateCoordinator.Event) {
+        switch event {
+        case .started(let method, let composing, let count):
+            Log.paste.info(
+                "候補窓 開始 method=\(method.rawValue, privacy: .public) composing=\(composing.rawValue, privacy: .public) items=\(count)"
+            )
+        case .fellBackToList(let reason):
+            Log.paste.info("候補窓を出せないので一覧を開く reason=\(reason, privacy: .public)")
+        case .pasted(let method, let changed):
+            Log.paste.info("候補窓 仮に貼った method=\(method.rawValue, privacy: .public) changed=\(changed)")
+        case .methodFailed(let method, let bundleID):
+            Log.paste.error(
+                "候補窓 差し替えの方式が効かない method=\(method.rawValue, privacy: .public) app=\(bundleID ?? "-", privacy: .public)"
+            )
+        case .ended(let reason, let method, let kept):
+            Log.paste.info(
+                "候補窓 終了 reason=\(reason.rawValue, privacy: .public) method=\(method.rawValue, privacy: .public) kept=\(kept)"
+            )
+        }
     }
 
     var isPaused: Bool { monitor?.isPaused ?? false }

@@ -9,7 +9,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 
 - 目的: Windows のクリップボード履歴に相当するものを Mac で。種類・コピー方法・コピー元で絞り込めることが売り
 - 対象: 作者本人（開発・AI チャットでコピーを多用する人）
-- 状況: フェーズ2（本番 UI・絞り込み・日本語検索）まで。次は候補窓（#8）・プレビューの色付け（#3）・設定（#4）（`.agent/roadmap.md`）
+- 状況: フェーズ2.5（候補窓 #8）まで。次はプレビューの色付け（#3）・設定（#4）（`.agent/roadmap.md`）
 
 ## 技術スタック
 
@@ -32,9 +32,9 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置）。AppKit は NSPasteboard だけ使う
-│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー）。Core にだけ依存する
-│   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・起動引数）。Info.plist もここ
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ）。AppKit は NSPasteboard だけ使う
+│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー）と候補窓。Core にだけ依存する
+│   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・起動引数）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
@@ -47,7 +47,7 @@ makurip/
 ```
 
 - `MakuripCore` に UI のコード（SwiftUI・NSWindow）を置かない。判定ロジックは純粋関数にしてここに置く
-- `MakuripUI` から `Makurip`（実行ファイル側）を参照しない。本体とのやりとりは `HistoryPresenting` / `HistoryActions` だけ
+- `MakuripUI` から `Makurip`（実行ファイル側）を参照しない。本体とのやりとりは `HistoryPresenting` / `HistoryActions` / `CandidatePresenting` だけ
 
 ## コマンド
 
@@ -72,6 +72,7 @@ makurip/
 - 開発・検証は `--data-dir` で隔離したフォルダを使い、終わったら消す。既定のデータフォルダ（`~/Library/Application Support/com.takushio2525.makurip/`）を検証に使わない
 - `--debug-control`（E2E 用の遠隔操作）は `--data-dir` を指定したときしか効かない作りにしてある。この制約を外さない
 - 自動テストで前面のアプリにキーを送らない（`CGEvent.post(tap:)` 禁止）。送るときは `postToPid` で宛先を固定する
+- 候補窓のキーの横取り（CGEventTap）を残さない。閉じる経路を足すときは `CandidateInterceptLifetimeTests` に足す（`.agent/conventions.md` の「候補窓」）
 - 一般ペーストボードを E2E で使うときは `MakuripDevTool pb-stash` で退避し、終わったら `pb-unstash` で戻す
 - 検証で起動した開発用インスタンスは必ず終了する（記録係を 2 つ常駐させない）
 - UI に絵文字を使わない
