@@ -185,6 +185,24 @@ struct ClipStoreTests {
         #expect(json.contains(PasteboardTypes.utf8PlainText))
     }
 
+    @Test("データフォルダの決め方: 引数 → 環境変数 → 既定。既定と同じ場所を明示しても隔離扱いにしない")
+    func resolveDataDirectory() {
+        let bundleID = "com.example.makurip-tests"
+        let fallback = DataDirectory.defaultURL(bundleID: bundleID)
+        let byArgument = DataDirectory.resolve(argument: "/tmp/makurip-a", environment: [:], bundleID: bundleID)
+        #expect(byArgument.url.path == "/tmp/makurip-a")
+        #expect(byArgument.isolated)
+        let byEnvironment = DataDirectory.resolve(
+            argument: nil, environment: ["MAKURIP_DATA_DIR": "/tmp/makurip-b"], bundleID: bundleID)
+        #expect(byEnvironment.url.path == "/tmp/makurip-b")
+        #expect(byEnvironment.isolated)
+        let byDefault = DataDirectory.resolve(argument: nil, environment: [:], bundleID: bundleID)
+        #expect(byDefault.url.path == fallback.path)
+        #expect(!byDefault.isolated)
+        let explicitDefault = DataDirectory.resolve(argument: fallback.path + "/", environment: [:], bundleID: bundleID)
+        #expect(!explicitDefault.isolated)
+    }
+
     @Test("同じデータフォルダのロックは 1 つしか取れない")
     func instanceLock() throws {
         let dir = TemporaryDirectory()

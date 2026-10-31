@@ -11,15 +11,18 @@ public enum DataDirectory {
     }
 
     /// 起動引数 `--data-dir` → 環境変数 `MAKURIP_DATA_DIR` → 既定、の順で決める。
-    /// 戻り値の `isolated` は、既定以外（検証用に隔離したフォルダ）なら true
+    /// 戻り値の `isolated` は、既定以外（検証用に隔離したフォルダ）なら true。
+    /// 既定と同じ場所を明示したときは false（本物の履歴で検証用の遠隔操作を有効にしないため）
     public static func resolve(argument: String?, environment: [String: String], bundleID: String)
         -> (url: URL, isolated: Bool)
     {
+        let fallback = defaultURL(bundleID: bundleID).standardizedFileURL
         if let path = argument ?? environment["MAKURIP_DATA_DIR"], !path.isEmpty {
             let expanded = (path as NSString).expandingTildeInPath
-            return (URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL, true)
+            let url = URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
+            return (url, url.resolvingSymlinksInPath().path != fallback.resolvingSymlinksInPath().path)
         }
-        return (defaultURL(bundleID: bundleID), false)
+        return (fallback, false)
     }
 }
 
