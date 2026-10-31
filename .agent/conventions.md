@@ -188,3 +188,77 @@ UI に出す文言は日本語。絵文字は使わない。
 - **UserDefaults からの引き継ぎ**: 読むのは永続ドメインだけ。アプリごとの辞書は壊れた組だけを捨てる。既定のデータフォルダで、設定ファイルがないときの 1 回だけ
 - **CLI と既定のデータフォルダ**: `--data-dir` を付けない CLI は本物の設定を書き換える（動いている Makurip にすぐ効く）。検証では必ず `--data-dir` を付ける
 
+
+### 秘密の判定（`SecretDetector` / `SecretScanner` / `SecretMask` / `SecretExpiry`・#5）
+
+判定は**形式だけ**（文字列の形と、名前・ヘッダーなどの文脈）で、アプリの中だけで行う。結果は印（`secretLikely`・`secretKnownFormat`）と、
+種類と位置（`SecretFinding`）だけで、中身はどこにも送らない。ログ・`--dump-metadata`・状態の書き出しに出すのは件数と確度だけ。
+
+**見つけるもの**（確度「高」= `secretKnownFormat` も付ける。自動消去の対象）
+
+| 種類 | 形（接頭辞は見せる。本体は伏せる） |
+|---|---|
+| Anthropic | `sk-ant-<語><数字>-` + 20 文字以上 |
+| OpenAI | `sk-`（`proj-`・`svcacct-`・`test-` など小文字の語 1 つ）+ 20 文字以上（本体がランダムなときだけ） |
+| GitHub | `ghp_`・`gho_`・`ghu_`・`ghs_`・`ghr_` + 36 文字、`github_pat_` + 22 文字以上 |
+| GitLab | `glpat-` など + 20 文字以上 |
+| Slack | `xoxb-` などのトークン・`xapp-`（本体がランダムなときだけ）、`https://hooks.slack.com/services/…` |
+| Discord | `https://discord.com/api/webhooks/<数字>/<トークン>` |
+| AWS | `AKIA`・`ASIA` などのアクセスキー ID（大文字・数字 16 文字） |
+| Google | `AIza` + 35 文字、`GOCSPX-` + 28 文字、`ya29.` のアクセストークン |
+| Stripe | `sk_live_`・`sk_test_`・`rk_…`・`whsec_`（`pk_` は公開してよい鍵なので拾わない） |
+| npm・Hugging Face・SendGrid | `npm_` + 36 文字・`hf_` + 30 文字以上（大文字と小文字が入り混じるとき）・`SG.` + 22 + `.` + 43 |
+| JWT | `eyJ…` `.` `eyJ…` `.` 署名（3 つの部分） |
+| 秘密鍵 | `-----BEGIN … PRIVATE KEY-----`（RSA・EC・OPENSSH・PGP など。公開鍵・証明書は拾わない） |
+| 認証ヘッダー | `Authorization: Bearer/Basic/Token …`（curl の `-H` の中も）、ラベルなしの `Bearer …`・`X-API-Key:`・`PRIVATE-TOKEN:`（値がランダムなときだけ） |
+| URL の中のパスワード | `postgres://user:<ここ>@host` などの接続文字列 |
+| 代入 | `.env`・シェル（`export NAME=…`）・INI・TOML・YAML・JSON・コードの文字列・URL のクエリ・CLI の `--password=` で、名前の最後の語が password・passwd・pwd・pass・secret・token・apikey・credentials か、`<api/access/secret/private/client など>_key`（`SECRET_KEY_BASE` のように最後の語が base・value なら前の語で見る） |
+
+**確度「中」**（`secretLikely` だけ。マスクするが自動では消さない）: 文字列全体が 1 語で、20〜512 文字、大文字と小文字と数字が入り混じり、
+ランダムらしいもの（文字の種類の切り替わりが 3 割以上・同じ大きさの英字が 5 文字以上続く部分が 35% 以下・エントロピーが十分）
+
+**拾わないもの**（`SecretDetectorTests` の陰性の例）: UUID（区切りあり・なし）・16 進だけのもの（git のハッシュ・SHA-256）・ULID・
+Base64 の画像（PNG・GIF・JPEG・PDF などの頭）や文章を符号化したもの・`data:` URL・URL・パス・メールアドレス・識別子（`base64EncodedStringWithOptions2`）・
+版の文字列、名前が付随情報（`TOKEN_LIMIT`・`MAX_TOKENS`・`PASSWORD_MIN_LENGTH`・`API_KEY_PATH`）・ページ送り（`nextPageToken`）・公開の鍵（`PUBLIC_KEY`・`NEXT_PUBLIC_*`）、
+値がプレースホルダ（`your-api-key`・`<token>`・`${TOKEN}`・`$(…)`・`xxxx`・`changeme`）・参照（`os.environ[…]`・`process.env.X`・`getToken()`・`settings.SECRET`）・
+型の名前（`String`）・画面の文言（空白・日本語を含む値）
+
+**見逃すもの**（限界）
+
+- 形式のない短いパスワード・合言葉（名前の付いた代入でなければ拾えない。`hunter2` だけをコピーしても秘密と分からない）
+- 空白を含むパスワード（代入の値に空白があると、文章と見分けられないので拾わない）・日本語の名前（`パスワード: …`）
+- 小文字と数字だけ・大文字と数字だけのランダムな文字列（base36・base32 の TOTP の種など）、16 進だけのトークン（Twilio など）、英字だけの値（Hugging Face 以外）
+- 文章の中に混ざった、形式のないランダムな語（確度「中」は文字列全体が 1 語のときだけ）
+- 先頭 512 KB（UTF-16）より後ろにある秘密（数 MB のログで取り込みを遅くしないため。`SecretDetector.scanLimit`）
+- 画像の中の文字（スクリーンショットに写ったキー。OCR はしない）・ファイルの中身（名前とパスだけを見る）
+- 平文がある項目の RTF・HTML だけにある秘密（平文がないときだけ RTF・HTML の中身を見る）。2 つ目以降の項目の平文は見る
+
+**誤判定するもの**（限界）
+
+- 公開してよい値でも形式が同じもの: Supabase の anon key などの JWT・Firebase の Web API キー（`AIza…`）・AWS のアクセスキー ID だけ・
+  ドキュメントの例示用の値（AWS の `AKIA…EXAMPLE` も形どおりなので拾う）
+- 開発用の決まったパスワード（`POSTGRES_PASSWORD=postgres`）・パスワード再設定やログインのリンク（`?token=…`）も確度「高」で、時間が来ると消える
+- ランダムに見える ID（Google ドライブのファイル ID だけをコピーしたもの・nanoid など）は確度「中」でマスクされる（消えはしない。⌥ で見える）
+
+**伏せ字の作り方**（`SecretMask`）: 決まった形の接頭辞（`sk-ant-api03-`・`ghp_`・`AKIA`・秘密鍵の BEGIN と END の行）と、隠す部分が 16 文字以上残るときだけ
+末尾 4 文字を見せる。パスワード・URL の中のパスワード・秘密鍵は末尾も見せない。伏せ字の数は 8 か 16 にそろえ、元の長さを出さない。
+一覧用の平文（`preview_text`）は取り込みのときに**全文で伏せてから**先頭 1000 文字に切る（切れ目で秘密の一部がのぞかない）。
+接頭辞の分からない値（試作の `tok-test-…`）は接頭辞を見せない（試作との差。`design/ui-compare/README.md`）
+
+**表示**: 隠した内容は、表示のキー（既定 ⌥・`keys.reveal`）を押している間と、⌘Y の「押している間だけ表示」を押している間だけ出す。
+一覧を閉じたとき・候補窓を閉じたときに隠した状態へ戻し、読んだ本当の中身（`ClipContentLoader.secret`）もメモリから捨てる。
+一覧では、⌥ を押している間は見えている秘密の項目がすべて表示になる（試作どおり）。検索は中身では引けず、見えている接頭辞と「秘密」「ひみつ」で引ける
+
+**候補窓**: 秘密は仮に貼らない（↑↓ で秘密に来たら、仮に貼ってあるものを戻す）。確定（⇥・↩・ダブルクリック）したときに初めて貼る。
+ほかのキー・窓の外のクリック・無操作で閉じたときは、秘密は貼らずに貼る前へ戻す（はっきり確定したときだけ貼る）
+
+**貼るとき**: 秘密は ConcealedType の印を足してペーストボードに書く（ほかのクリップボード履歴アプリに記録させない）。印の分、型が 1 つ増える
+
+**自動消去**: 確度「高」だけ。最後に使ってから（取り込み直し・Makurip からの貼り付けで延びる）`secretAutoDeleteMinutes`（既定 10 分・1〜1440 分）で消す。
+「消さない」設定はない（プライバシーを守る振る舞いは設定にしない方針）。残したいものはピン留めする（ピン留めは消さない。外すと、時間を過ぎていれば次の見回りで消える）。
+時刻で掛けるタイマーなので、スリープ中に時間が来たものは起きたときに消える。Makurip が止まっていた間に時間が来たものは、次に起動したときに消える。
+消したあとは SQLite の `secure_delete` と WAL の切り詰め（`wal_checkpoint(TRUNCATE)`）で、ファイルに中身を残さない（`blobs/` の大きいファイルは消すだけ。FileVault に任せる）。
+システムのクリップボードそのものは消さない（履歴から消すだけ）
+
+**既存の履歴への当て直し**: 判定の版（`SecretDetector.version`）が `meta` の `secretScanVersion` より新しいとき、起動時に裏のスレッドで 1 回だけ全件に当て直す
+（文字の型だけを読み、画像は読まない）。印は足すだけで外さない。当て直しが終わるまでの短い間は、前の版で保存した秘密が伏せ字になっていない

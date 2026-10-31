@@ -17,6 +17,7 @@ public enum KeyTapInput: Sendable, Equatable {
         case .keyDown: return .event(.keyDown(stroke(event)))
         case .keyUp: return .event(.keyUp(keyCode: UInt16(event.getIntegerValueField(.keyboardEventKeycode))))
         case .leftMouseDown, .rightMouseDown, .otherMouseDown: return .event(.mouseDown(event.location))
+        case .flagsChanged: return .event(.flagsChanged(stroke(event).modifiers))
         default: return .ignored
         }
     }

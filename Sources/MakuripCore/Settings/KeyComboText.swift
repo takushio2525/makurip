@@ -6,6 +6,7 @@ import Foundation
 /// - 修飾キーの言葉: `ctrl`/`control`・`opt`/`option`/`alt`・`shift`・`cmd`/`command` を `+` でつなぐ（`ctrl+cmd+v`）
 /// - キーの別名: `return`/`enter`・`tab`・`escape`・`space`・`delete`/`backspace`・`up`/`down`/`left`/`right`・`f1`〜`f20`・`1-9`
 /// - 全角の英数字（NFKC で半角にする）・小文字の英字
+/// - 修飾キー 1 つだけ（`⌥`・`alt`・`option`）は「押している間だけ効くキー」（`KeyCombo.Key.hold`。隠した内容の表示に使う）
 public enum KeyComboText {
     public enum ParseError: Error, Equatable, Sendable {
         case empty
@@ -48,9 +49,19 @@ public enum KeyComboText {
             break
         }
         let name = rest.trimmingCharacters(in: .whitespaces)
+        if name.isEmpty, holdable(modifiers) { return .success(KeyCombo(.hold, modifiers)) }
+        if modifiers.isEmpty, let modifier = wordModifiers.first(where: { $0.0 == name.lowercased() })?.1 {
+            return .success(KeyCombo(.hold, modifier))
+        }
         guard !name.isEmpty else { return .failure(modifiers.isEmpty ? .empty : .missingKey) }
         guard let key = key(named: name) else { return .failure(.unknownKey(name)) }
         return .success(KeyCombo(key, modifiers))
+    }
+
+    /// 押している間だけ効くキーにできるのは、修飾キー 1 つだけ
+    public static func holdable(_ modifiers: HotKey.Modifiers) -> Bool {
+        [HotKey.Modifiers.control, .option, .shift, .command].filter { modifiers.contains($0) }.count == 1
+            && modifiers.subtracting([.control, .option, .shift, .command]).isEmpty
     }
 
     static let symbolModifiers: [Character: HotKey.Modifiers] = [

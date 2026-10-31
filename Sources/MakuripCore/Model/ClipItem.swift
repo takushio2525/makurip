@@ -81,6 +81,9 @@ public struct ClipItem: Identifiable, Sendable, Hashable {
         self.totalBytes = totalBytes
         self.pasteboardItemCount = pasteboardItemCount
     }
+
+    /// 秘密っぽい（一覧・候補窓ではマスクし、`previewText` も伏せ字で入っている）
+    public var isSecretLikely: Bool { flags.contains(.secretLikely) }
 }
 
 /// 保存済みの型 1 つの情報（中身なし）。メタデータの書き出しと、後のプレビューの出し分けに使う

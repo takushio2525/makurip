@@ -73,6 +73,8 @@ public enum CandidateLayout {
     public static let emptyHeight: CGFloat = 50
     /// 注記（`.cd-note { margin: 6px 2px 0; padding: 7px 9px }` + 1 行。11.5px × 1.5）
     public static let noteHeight: CGFloat = 6 + 7 + 17.25 + 7
+    /// 秘密の注記（同じ形で 2 行。「隠した項目は、確定したときだけ貼ります。⌥ を押している間は中身を表示します。」）
+    public static let secretNoteHeight: CGFloat = 6 + 7 + 17.25 * 2 + 7
     /// 下段のキーのヒント（`.cd-foot { margin-top: 6px; padding: 7px 4px 1px; border-top: .5px }` + キー 18px）
     public static let footerHeight: CGFloat = 6 + 0.5 + 7 + 18 + 1
 
@@ -99,7 +101,12 @@ public enum CandidateLayout {
 
     /// 窓の高さ（8 行で 291.5。試作の実測と同じ）
     public static func windowHeight(rowCount: Int, hasNote: Bool) -> CGFloat {
-        padding * 2 + listHeight(rowCount: rowCount) + (hasNote ? noteHeight : 0) + footerHeight
+        windowHeight(rowCount: rowCount, noteHeight: hasNote ? noteHeight : 0)
+    }
+
+    /// 注記の高さを渡す形（秘密の注記は 2 行）
+    public static func windowHeight(rowCount: Int, noteHeight: CGFloat) -> CGFloat {
+        padding * 2 + listHeight(rowCount: rowCount) + noteHeight + footerHeight
     }
 
     /// 窓の上端から、見えている行のうち `visibleRow` 番目の中心までの距離

@@ -24,7 +24,7 @@ public final class ClipStore: @unchecked Sendable {
         }
     }
 
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
     public static let databaseFileName = "history.sqlite"
     public static let blobDirectoryName = "blobs"
 
@@ -50,7 +50,9 @@ public final class ClipStore: @unchecked Sendable {
             at: directory.appendingPathComponent(Self.blobDirectoryName, isDirectory: true),
             withIntermediateDirectories: true)
         database = try SQLiteDatabase(path: directory.appendingPathComponent(Self.databaseFileName).path)
-        try database.execute("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;")
+        // secure_delete: 消した行のデータをファイルの上でも 0 で上書きする（自動で消した秘密が DB のすき間に残らないように）
+        try database.execute(
+            "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA secure_delete=ON;")
         try migrate()
     }
 
@@ -88,6 +90,14 @@ public final class ClipStore: @unchecked Sendable {
                   PRIMARY KEY (clip_id, item_index, position)
                 );
                 PRAGMA user_version = 1;
+                """)
+        }
+        if version < 2 {
+            // 版 2: 小さな覚え書きの表（秘密の判定を既存の履歴に当て直した版など。`SecretRescan`）
+            try database.execute(
+                """
+                CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                PRAGMA user_version = 2;
                 """)
         }
     }
@@ -135,8 +145,34 @@ public final class ClipStore: @unchecked Sendable {
         }
     }
 
+    /// 印を足し、一覧用の平文を伏せ字のものに置き換える（秘密の判定を既存の履歴に当て直すとき）。
+    /// 読んで足して書くまでをロックの中で行う（同時に取り込んだ印を消さないように）
+    public func addFlags(_ flags: Set<ClipFlag>, maskedPreview: String?, id: UUID) throws {
+        try withLock {
+            let current = try database.prepare("SELECT flags FROM clip WHERE id = ?")
+            try current.bind(.text(id.uuidString))
+            guard try current.step() else { return }
+            let merged = Self.decodeFlags(current.text(0)).union(flags)
+            try database.prepare("UPDATE clip SET flags = ?, preview_text = ? WHERE id = ?")
+                .bind(.text(Self.encodeFlags(merged)), maskedPreview.map(SQLiteValue.text), .text(id.uuidString)).run()
+        }
+    }
+
     public func delete(id: UUID) throws {
         try withLock { try deleteLocked([id]) }
+    }
+
+    /// まとめて消す（秘密の自動消去）。消したデータが WAL に残らないよう、続けて `scrubDeletedData` を呼ぶ
+    public func delete(ids: [UUID]) throws {
+        try withLock { try deleteLocked(ids) }
+    }
+
+    /// 消した行のデータを WAL からも追い出す（チェックポイントして WAL を空にする）。秘密を消したあとに呼ぶ。
+    /// 読み手がいて空にできないときは、次の機会に回す（失敗しても履歴は壊れない）
+    public func scrubDeletedData() {
+        lock.lock()
+        defer { lock.unlock() }
+        try? database.execute("PRAGMA wal_checkpoint(TRUNCATE);")
     }
 
     /// ピン留め以外を全部消す。消した件数を返す
@@ -179,7 +215,41 @@ public final class ClipStore: @unchecked Sendable {
         }
     }
 
+    // MARK: 覚え書き（meta）
+
+    public func metaValue(_ key: String) throws -> String? {
+        try withLock {
+            let statement = try database.prepare("SELECT value FROM meta WHERE key = ?")
+            try statement.bind(.text(key))
+            return try statement.step() ? statement.text(0) : nil
+        }
+    }
+
+    public func setMetaValue(_ value: String, for key: String) throws {
+        try withLock {
+            try database.prepare(
+                "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+            )
+            .bind(.text(key), .text(value)).run()
+        }
+    }
+
     // MARK: 読む
+
+    /// 印の付いた履歴（新しい順）。秘密の自動消去で、全件を読まずに済ませるため
+    public func items(flagged flag: ClipFlag) throws -> [ClipItem] {
+        try withLock {
+            let statement = try database.prepare(
+                "SELECT \(Self.itemColumns) FROM clip WHERE instr(flags, ?) > 0 ORDER BY last_used_at DESC")
+            try statement.bind(.text("\"" + flag.rawValue + "\""))
+            var result: [ClipItem] = []
+            while try statement.step() {
+                let item = Self.item(from: statement)
+                if item.flags.contains(flag) { result.append(item) }
+            }
+            return result
+        }
+    }
 
     /// 新しい順（最後に使った順）
     public func items(limit: Int? = nil) throws -> [ClipItem] {
@@ -208,8 +278,8 @@ public final class ClipStore: @unchecked Sendable {
         }
     }
 
-    /// 保存した全項目・全型のデータ（貼り直し用）
-    public func snapshot(id: UUID) throws -> PasteboardSnapshot? {
+    /// 保存した全項目・全型のデータ（貼り直し用）。`types` を渡すとその型だけを読む（秘密の判定の当て直しで、画像を読まないため）
+    public func snapshot(id: UUID, types: Set<String>? = nil) throws -> PasteboardSnapshot? {
         try withLock {
             let statement = try database.prepare(
                 """
@@ -223,6 +293,7 @@ public final class ClipStore: @unchecked Sendable {
                 found = true
                 let itemIndex = statement.int(0)
                 let type = statement.text(1) ?? ""
+                if let types, !types.contains(type) { continue }
                 let data: Data
                 if let file = statement.text(3) {
                     data = try Data(contentsOf: blobRoot.appendingPathComponent(file))
@@ -293,17 +364,20 @@ public final class ClipStore: @unchecked Sendable {
         let current = try database.prepare("SELECT flags FROM clip WHERE id = ?")
         try current.bind(.text(id.uuidString))
         let oldFlags = try current.step() ? Self.decodeFlags(current.text(0)) : []
+        // 秘密なら一覧用の平文も伏せ字のものに置き換える（判定を入れる前の版で保存した同じ中身を、もう一度コピーしたとき）
+        let maskPreview = clip.flags.contains(.secretLikely)
         try database.prepare(
             """
             UPDATE clip SET last_used_at = ?, copy_count = copy_count + 1, copy_method = ?,
-              source_bundle_id = ?, source_name = ?, source_url = COALESCE(?, source_url), flags = ?
+              source_bundle_id = ?, source_name = ?, source_url = COALESCE(?, source_url), flags = ?,
+              preview_text = CASE WHEN ? THEN ? ELSE preview_text END
             WHERE id = ?
             """
         ).bind(
             .double(clip.capturedAt.timeIntervalSince1970), .text(clip.copyMethod.rawValue),
             clip.source?.bundleID.map(SQLiteValue.text), clip.source?.name.map(SQLiteValue.text),
             clip.sourceURL.map(SQLiteValue.text), .text(Self.encodeFlags(oldFlags.union(clip.flags))),
-            .text(id.uuidString)
+            .int(maskPreview ? 1 : 0), clip.previewText.map(SQLiteValue.text), .text(id.uuidString)
         ).run()
     }
 

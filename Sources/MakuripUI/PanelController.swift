@@ -100,6 +100,10 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
     func hide() {
         removeKeyMonitor()
         model.quickModifierHeld = false
+        // 隠した内容は必ず隠した状態へ戻し、読んだ秘密の中身もメモリから捨てる
+        model.revealHeld = false
+        model.revealPressed = false
+        loader.purgeSecrets()
         setPeekVisible(false)
         panel.orderOut(nil)
     }
@@ -224,6 +228,7 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
         if event.type == .flagsChanged {
             let quick = model.keymap.primary(.quickPaste)?.modifiers ?? .command
             model.quickModifierHeld = !quick.isEmpty && press.modifiers.isSuperset(of: quick)
+            model.revealHeld = model.keymap.isHeld(.reveal, modifiers: press.modifiers)
             return false
         }
         let composing = (panel.firstResponder as? NSTextView)?.hasMarkedText() ?? false

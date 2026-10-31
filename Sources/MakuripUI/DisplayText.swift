@@ -60,6 +60,17 @@ enum DisplayText {
         codeText(text).split(separator: "\n", omittingEmptySubsequences: false).count
     }
 
+    /// 先頭の `count` 行（カードに出す分だけ。長い文字列の全体を Text に渡さないため）
+    static func leadingLines(_ text: String, count: Int) -> String {
+        text.split(separator: "\n", maxSplits: count, omittingEmptySubsequences: false).prefix(count)
+            .joined(separator: "\n")
+    }
+
+    /// 秘密の項目の内容の要点（試作の「API キーの形式 · 36 文字」）
+    static func secretInfo(reason: String, characters: Int) -> String {
+        "\(reason) · \(characters) 文字"
+    }
+
     /// コード・コマンドを出すときの文字列。改行を \n にそろえ（\r\n は Swift では 1 文字になり \n で分けられない）、
     /// タブを空白 4 つにする
     static func codeText(_ text: String) -> String {

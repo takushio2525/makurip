@@ -10,6 +10,10 @@ import Foundation
 /// 前面のアプリの切り替え・窓が閉じられた・画面や操作の環境が変わった・タップが止められた・終了）はすべて `end` を通り、
 /// `end` は**その場で**タップを止めて窓を閉じる。文書の後始末（仮に貼ったものを戻す等）はその後で、タップなしで行う。
 /// 異常終了したときは、タップはプロセスと一緒に OS が消す（`.agent/conventions.md` の「候補窓」）
+///
+/// **秘密っぽい項目（`ClipItem.isSecretLikely`）は仮に貼らない**。↑↓ でたどる途中で秘密に来たら、仮に貼ってあるものを戻し、
+/// 確定（⇥・↩・ダブルクリック）したときに初めて貼る（相手のアプリの取り消しの履歴・自動保存・共同編集の相手に残さないため。試作どおり）。
+/// ほかのキー・窓の外のクリック・無操作で閉じたときは、秘密は貼らない（はっきり確定したときだけ貼る）
 @MainActor
 public final class CandidateCoordinator {
     public enum EndReason: String, CaseIterable, Sendable {
@@ -85,6 +89,8 @@ public final class CandidateCoordinator {
     public private(set) var method = ReplaceMethod.deferred
     public private(set) var note: CandidateNote?
     public private(set) var lastEndReason: EndReason?
+    /// 隠した内容（秘密）を表示しているか（表示のキーを押している間）
+    public private(set) var revealed = false
     private var target: CandidateTarget?
     private var composingAtStart = ComposingState.idle
     private var stack: [Applied] = []
@@ -129,6 +135,8 @@ public final class CandidateCoordinator {
         state["tentative"] = String(!stack.isEmpty)
         state["note"] = note?.rawValue ?? ""
         state["lastEnd"] = lastEndReason?.rawValue ?? ""
+        state["revealed"] = String(revealed)
+        state["selectedSecret"] = String(session.selected?.isSecretLikely ?? false)
         return state
     }
 
@@ -160,6 +168,7 @@ public final class CandidateCoordinator {
         documentUntrusted = false
         finish = nil
         consumedKeyCodes = []
+        revealed = false
 
         guard tap.start({ [weak self] event in self?.handle(event) ?? .pass }) else {
             return fallBackToList("tapUnavailable")
@@ -238,11 +247,15 @@ public final class CandidateCoordinator {
         selectionChanged()
     }
 
-    /// Tab・Enter（ダブルクリックも）
+    /// Tab・Enter（ダブルクリックも）。秘密は仮に貼っていないので、ここで初めて貼る
     public func commit(_ reason: EndReason = .commitKey) {
         guard isActive else { return }
-        let finish: Finish =
-            method == .deferred ? (session.selected == nil ? .discard : .pasteSelected) : .keep(applyLatest: true)
+        let finish: Finish
+        if let selected = session.selected, method == .deferred || selected.isSecretLikely {
+            finish = .pasteSelected
+        } else {
+            finish = method == .deferred ? .discard : .keep(applyLatest: true)
+        }
         end(reason, finish: finish)
     }
 
@@ -272,8 +285,11 @@ public final class CandidateCoordinator {
         end(.shutdown, finish: implicitFinish(applyLatest: false))
     }
 
+    /// 確定のキー以外で閉じたとき。秘密を選んでいたら、はっきり確定していないので貼らず、仮に貼ったものも戻す
     private func implicitFinish(applyLatest: Bool) -> Finish {
-        method == .deferred ? .discard : .keep(applyLatest: applyLatest)
+        if method == .deferred { return .discard }
+        if applyLatest, session.selected?.isSecretLikely == true { return .revert(openList: false, selecting: nil) }
+        return .keep(applyLatest: applyLatest)
     }
 
     private func selectionChanged() {
@@ -301,6 +317,14 @@ public final class CandidateCoordinator {
             return .pass
         case .keyUp(let keyCode):
             return consumedKeyCodes.remove(keyCode) != nil ? .consume : .pass
+        case .flagsChanged(let modifiers):
+            // 修飾キーは食べない（⌥ などを前面のアプリにも届ける）。表示のキーを押している間だけ秘密を表示する
+            let held = keymap.isHeld(.reveal, modifiers: modifiers)
+            if held != revealed {
+                revealed = held
+                present()
+            }
+            return .pass
         case .keyDown(let press):
             // 変換中に始めたときは、変換が終わるまで何も横取りしない（確定の Enter や候補選びの ↑↓ は日本語入力のもの）
             if composingAtStart == .composing, let target, host.composingState(of: target) == .composing {
@@ -346,7 +370,7 @@ public final class CandidateCoordinator {
         presenter.present(
             CandidateViewState(
                 sessionID: sessionID, items: session.items, selectedIndex: session.index, order: session.order,
-                note: note, target: target))
+                note: note, target: target, revealed: revealed))
     }
 
     // MARK: 閉じる（すべての経路がここを通る）
@@ -354,6 +378,7 @@ public final class CandidateCoordinator {
     private func end(_ reason: EndReason, finish: Finish) {
         guard isActive else { return }
         isActive = false
+        revealed = false
         // 横取りを先に外す。後始末（文書を戻す等）はタップなしで行う
         tap.stop()
         idleTimer?.cancel()
@@ -419,10 +444,15 @@ public final class CandidateCoordinator {
             // 戻し終えてから開く（一覧が窓の焦点を取ると、送ったキーが相手の入力欄に届かなくなるため）
             if openList { host.openList(selecting: selecting) }
         case .pasteSelected:
-            if let target, let item = session.selected, host.writePasteboard(itemID: item.id) != nil {
+            // 秘密を確定したとき、前に仮に貼ったもの（秘密に移ってすぐ確定して、まだ戻していない分）を先に戻す
+            if !stack.isEmpty, !documentUntrusted { await removeAll() }
+            if let target, stack.isEmpty, let item = session.selected, host.writePasteboard(itemID: item.id) != nil {
                 host.send(.paste, to: target)
                 host.markUsed(itemID: item.id)
+                host.discardPasteboardStash()
                 kept = true
+            } else {
+                host.restorePasteboard()
             }
         case .discard:
             break
@@ -437,10 +467,14 @@ public final class CandidateCoordinator {
         documentUntrusted = false
     }
 
-    /// 選んでいる項目を文書に仮に貼る（貼ってあるものがあれば差し替える）
+    /// 選んでいる項目を文書に仮に貼る（貼ってあるものがあれば差し替える）。秘密は貼らず、仮に貼ってあるものを戻すだけ
     private func apply(_ index: Int) async {
         guard let target, session.items.indices.contains(index) else { return }
         attempted = index
+        if session.items[index].isSecretLikely {
+            if !stack.isEmpty { await removeAll() }
+            return
+        }
         while let top = stack.last, top.index != index {
             if method == .selectRange,
                 ReplacePlanner.canReselect(measured: top.range, expectedLength: top.content.textLength),

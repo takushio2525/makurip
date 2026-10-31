@@ -75,6 +75,8 @@ public enum KeyTapEvent: Sendable, Equatable {
     case keyUp(keyCode: UInt16)
     /// 画面の点（CoreGraphics の座標。主画面の左上が原点）
     case mouseDown(CGPoint)
+    /// 修飾キーの押し離し（いま押されている修飾キー）。食べずに素通しする（隠した内容の表示に使う）
+    case flagsChanged(HotKey.Modifiers)
     /// システムがタップを止めた（応答が遅い・ユーザーの操作で無効）。付け直さずに候補窓を閉じる
     case disabled
 }
@@ -141,10 +143,12 @@ public struct CandidateViewState: Equatable, Sendable {
     public var order: CandidateOrder
     public var note: CandidateNote?
     public var target: CandidateTarget?
+    /// 隠した内容（秘密）を表示しているか（表示のキーを押している間だけ true）
+    public var revealed: Bool
 
     public init(
         sessionID: Int, items: [ClipItem], selectedIndex: Int, order: CandidateOrder, note: CandidateNote?,
-        target: CandidateTarget?
+        target: CandidateTarget?, revealed: Bool = false
     ) {
         self.sessionID = sessionID
         self.items = items
@@ -152,7 +156,10 @@ public struct CandidateViewState: Equatable, Sendable {
         self.order = order
         self.note = note
         self.target = target
+        self.revealed = revealed
     }
+
+    public var selectedItem: ClipItem? { items.indices.contains(selectedIndex) ? items[selectedIndex] : nil }
 }
 
 public enum CandidatePresenterEvent: Sendable, Equatable {

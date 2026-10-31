@@ -12,12 +12,19 @@ struct CardView: View {
     let quickHeld: Bool
     let quickCombo: KeyCombo?
     let loader: ClipContentLoader
+    /// 隠した内容（秘密）を表示しているか（表示のキーを押している間）
+    var revealing = false
+    var keymap = Keymap.default
     @Environment(\.palette) private var palette
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
         VStack(alignment: .leading, spacing: 7) {
-            CardBody(item: item, query: query, loader: loader)
+            if SecretDisplay.masks(item) {
+                SecretCardBody(item: item, revealing: revealing, keymap: keymap, loader: loader)
+            } else {
+                CardBody(item: item, query: query, loader: loader)
+            }
             HStack(spacing: 0) {
                 MetaLine(item: item, now: now)
                 Spacer(minLength: 6)
@@ -310,9 +317,10 @@ struct MetaLine: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // 秘密は種類の名前を秘密の色で出す（試作の .kname[data-kind=secret]）
             Text(item.kind.label)
                 .fontWeight(.semibold)
-                .foregroundStyle(palette.kind(item.kind))
+                .foregroundStyle(item.isSecretLikely ? palette.secret : palette.kind(item.kind))
                 .fixedSize()
             if let source = item.source {
                 MetaDot()

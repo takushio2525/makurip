@@ -12,7 +12,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
 | `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)` | MakuripCore |
 | `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・ログイン時の起動（ServiceManagement）・起動引数・`--settings` の入口・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
@@ -26,7 +26,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 1. `PasteboardMonitor` が 0.25 秒おきに `changeCount` を見る（⌘C を見たら 0.05〜0.8 秒後にも追加で見る）
 2. 変化があれば型の並びを控え、0.08 秒待って並びが落ち着いたのを確かめる（書き込みの途中で読むと項目が欠けるため）
 3. `PasteboardReader.read` — 型名だけで除外の印（ConcealedType 等）を判定し、印があればデータを読まずに捨てる。なければ全項目・全型のデータを読む（型 1 つの上限を超えたものはここで落とす）
-4. `CapturePipeline.process`（純粋関数）— 空・除外・サイズ上限 → 種類（`KindClassifier`）・コピー方法（`CopyMethodClassifier`）・コピー元ページ（`SourceURLExtractor`）・一覧用の平文（`PreviewText`）・同一判定のハッシュ（`ContentHasher`）
+4. `CapturePipeline.process`（純粋関数）— 空・除外・サイズ上限 → 種類（`KindClassifier`）・コピー方法（`CopyMethodClassifier`）・コピー元ページ（`SourceURLExtractor`）・秘密（`SecretScanner`。印を付ける）・一覧用の平文（`PreviewText`。秘密なら伏せ字）・同一判定のハッシュ（`ContentHasher`）
 5. `ClipStore.save` — 同じハッシュがあれば先頭へ移す（回数 +1・コピー元とコピー方法を新しい方に）。なければ挿入（64 KB を超える型は `blobs/` のファイルへ）。最後に件数・容量の上限を当てて古い順に消す
 
 ### 呼び出しと貼り付け
@@ -81,6 +81,20 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 部品: `SettingsSchema`・`KeyRules`・`KeyComboText`・`AppSettings`・`SettingsFile`・`SettingsMigration`・`SettingsController`・`SettingsApplier`・`SettingsCLI`（Core）、
 `SettingsModel`・`SettingsView`・`SettingsWindowController`（UI）。
 
+### 秘密（フェーズ5・#5）
+
+1. 取り込み: `SecretScanner.assess` が全項目の平文（平文がなければ RTF・HTML の中身）・ファイルと URL の文字列を `SecretDetector` に通す。
+   見つかれば `secretLikely`（確度「高」なら `secretKnownFormat` も）を付け、`PreviewText` が**全文を伏せ字にしてから**先頭 1000 文字に切って `preview_text` に入れる。
+   なので一覧・検索・候補窓・メニューなど `previewText` を使うところは、何もしなくても伏せ字になる（本当の中身は `representation` にだけある）
+2. 起動: `SecretRescan` が、判定の版（`SecretDetector.version`）が `meta` の版より新しければ、裏のスレッドで既存の履歴に 1 回だけ当て直す（文字の型だけ読む）
+3. 表示: 一覧・⌘Y・候補窓は、秘密なら伏せ字の箱（`SecretCardBody`・`SecretPreviewBody`・行の鍵）で出す。表示のキー（`keys.reveal`。既定 ⌥）を押している間だけ、
+   `ClipContentLoader.secret` が `representation` から本当の中身を読んで出す。閉じたら隠した状態へ戻し、読んだ中身を捨てる。
+   一覧はパネルの窓のローカル監視（`flagsChanged`）、候補窓は横取りのタップ（`KeyTapEvent.flagsChanged`。食べずに素通し）で修飾キーを見る
+4. 候補窓: `CandidateCoordinator` は秘密を仮に貼らない（選んだら仮に貼ってあるものを戻す）。確定したときに `.pasteSelected` で初めて貼る。ほかのキー・クリック・無操作で閉じたら貼らずに戻す
+5. 貼る: `PastePipeline.prepare(…, secret: true)` が ConcealedType の印を足して書く（ほかのクリップボード履歴アプリに残さない）
+6. 自動消去: `AppController.scheduleSecretSweep` が `items(flagged: .secretKnownFormat)` から時間の来たもの（`SecretExpiry`）を消し、次に消す時刻に 1 回きりのタイマーを掛け直す。
+   起動・秘密の取り込み・設定の変更（`SettingsApplying.applySecretRetention`）・タイマーのたびに呼ぶ。消したら `scrubDeletedData` で WAL を空にする
+
 ### 一覧（フェーズ2・`Sources/MakuripUI/`）
 
 | 部品 | 役割 |
@@ -115,7 +129,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | `ClipItem` | 保存済みの 1 件のメタデータ（データ本体は含まない） |
 | `ClipKind` | テキスト / リッチテキスト / 画像 / ファイル / URL / 色 / コード / コマンド / その他 |
 | `CopyMethod` | キー操作（⌘C/⌘X）/ それ以外 / 不明 |
-| `ClipFlag` | 開いた集合の印。`truncated`（上限で型を落とした）・`secretLikely`（フェーズ5）・`addedByAI`（フェーズ6） |
+| `ClipFlag` | 開いた集合の印。`truncated`（上限で型を落とした）・`secretLikely`（秘密っぽい。フェーズ5）・`secretKnownFormat`（確度が高い秘密。自動消去の対象。フェーズ5）・`addedByAI`（フェーズ6） |
 | `SourceApp` | コピーした瞬間に前面にいたアプリ（バンドル ID・名前） |
 | `Limits` | 上限の既定値（件数 1000・合計 1 GB・型 1 つ 50 MB・1 件 100 MB・DB に入れる上限 64 KB）。件数と容量は設定で変わる |
 | `HotKey` | 仮想キーコード + 修飾キー（Carbon に登録する形。設定ではキーマップの `KeyCombo` を文字で持つ） |
@@ -127,7 +141,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 - フェーズ2.5（候補窓・済）: 位置は `PanelPlacement.frame(... side: .beside(rowOffset:))`、手がかりは `InsertionPointLocator`。DB は変えていない（仮に貼っている間は `touch` せず、確定したときだけ先頭へ移す。回している間の並びは始めた時点のものを固定して持つ）
 - フェーズ3（プレビュー・済）: DB は変えていない。言語は表示のときに一覧の平文から判定してメモリにキャッシュする（列を足すと判定を直すたびに作り直しが要るため）。コピー元のページは取り込み時の `sourceURL` をそのまま使う
 - フェーズ4（設定・済）: データフォルダの `settings.json`（DB は変えていない）。`ClipStore.limits` を変えられるようにし（`setLimits`）、ホットキーは設定が変わるたびに付け直す
-- フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない
+- ~~フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない~~
+- フェーズ5（秘密・済）: 判定は取り込みの中（`CapturePipeline`）で行い、`CapturedClip.flags` に `secretLikely`・`secretKnownFormat` を入れて保存する。
+  `preview_text` は伏せ字で持つ。既存の履歴は `SecretRescan` が `ClipStore.addFlags(_:maskedPreview:id:)` で 1 回だけ当て直す。DB は版 2（`meta` 表）
 - フェーズ6（AI の口）: 追加は `CapturedClip` を組み立てて `ClipStore.save`（`addedByAI` の印）。AI へは `MetadataDump` 相当の形式情報だけを返す
 
 ## 技術選定（フェーズ1・比べた代替）
@@ -178,6 +194,17 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 | 設定画面の形 | 試作どおりの 1 つの一覧（動き → 履歴 → アプリごと → 詳細 → キーのまとまり） | 標準の `Settings` シーン + タブ（SwiftUI の App ライフサイクルが要る・試作と違う）。試作に無い項目（上限・アプリ）は同じ行の形（切り替え・数・札）で足した |
 | 検証の場所 | Core の `SettingsSchema.applying` の 1 か所（画面・CLI・ファイルの読み込みが通る） | 画面と CLI で別々に確かめる（ずれる）。重なりの扱いだけ呼ぶ側が選ぶ（CLI は拒否・画面は試作どおり付け替え・ファイルはそのまま） |
 
+## 技術選定（フェーズ5・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| 秘密の判定 | 自前（既知の接頭辞の正規表現・文脈（名前・ヘッダー）・ランダムさの点数）。確度を「高」「中」に分ける | gitleaks・trufflehog の規則を取り込む（数百の規則とエントロピーの閾値。Go の実行ファイルか規則の TOML を持ち込むことになり、依存が増え、クリップボードの短い断片には誤判定が多い）、エントロピーだけ（UUID・ハッシュ・Base64 の画像を拾う）、機械学習の分類器（モデルが要る・説明しにくい）。自前なら陽性・陰性の例をテストで固定して調整でき、外部ライブラリ 0 のまま |
+| 伏せ字の持ち方 | 取り込みのときに `preview_text` を伏せ字にして保存する | 表示のときに毎回伏せる（伏せ忘れた画面・検索・後のフェーズの口から中身が漏れうる）。保存の時点で伏せておけば、`previewText` を使うどこからも中身が出ない。本当の中身は `representation` にあり、⌥ のときだけ読む |
+| 自動で消すもの | 確度「高」だけ。ピン留めは消さない | 判定したものをすべて消す（ID やファイル名をランダムな文字列と誤判定すると、勝手に消えて困る）、消さずにマスクだけ（AI の口（#6）やディスクに長く残る） |
+| 時間の数え方 | 最後に使ってから（既定 10 分）。時刻で掛ける 1 回きりのタイマー | 取り込んでから（使っている途中で消える）、一定間隔の見回り（消える時刻がぶれる・無駄に起きる） |
+| 当て直しの印 | DB の `meta` 表（版 2）に判定の版 | 毎回起動時に全件を判定（2 万件では起動が遅くなる）、設定ファイルに書く（設定は人と AI が書き換える場所で、内部の状態を置かない） |
+| 候補窓の ⌥ | 横取りのタップに `flagsChanged` を足し、食べずに素通し | 窓の側で `NSEvent` のグローバル監視（タップと別の経路で修飾キーを見ることになり、閉じたときの後始末が 2 か所になる） |
+
 ## 変更時の波及
 
 - DB スキーマを変える: `ClipStore.migrate()` に版を足し、`.agent/api.md` の「DB スキーマ」と `MetadataDump` を同時に直す
@@ -191,6 +218,10 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
   反映が要るなら `SettingsApplying` に口を足す。`SettingsSchemaTests`（全項目の説明・既定・例が検証に通る）が守る。`docs/ai-settings.md` の一覧と `.agent/api.md` の「設定」も直す
 - 候補窓の閉じ方・横取りを変える: 閉じる経路を足したら `CandidateInterceptLifetimeTests.Path` に足す（全経路でタップ・窓・時計が残らないことを確かめる）。差し替えを変えたら `CandidateCoordinatorTests`（偽の入力欄で文書が元に戻るか）
 - 確定まで貼らないアプリを足す: `DeferredPasteApps`（バンドル ID は .app の Info.plist で確かめる）と `CandidateSettingsTests`
+- 秘密の判定を変える: `SecretDetectorTests` に陽性と陰性の例を足し（本物の形式どおりの値は直書きせず、`FakeSecret` で実行時に作る）、
+  `SecretDetector.version` を上げる（既存の履歴に 1 回だけ当て直す）。`.agent/conventions.md` の「秘密の判定」の一覧と限界を直す。
+  隔離 E2E は `scripts/e2e/secrets.sh`（`make e2e-secrets`）
+- 秘密の表示・候補窓の扱いを変える: `SecretDisplayTests`・`CandidateSecretTests`、見た目は `make ui-compare` の `secret-*`・`candidate-secret-*`
 - 検索を変える: `SearchTextTests` に例を足し、`.agent/conventions.md` の「検索」の限界を見直す。試作（`core.js`）と振る舞いを変えるときは理由を書く
 - 見た目を変える: `make ui-compare` で試作と並べて確かめ、`design/ui-compare/README.md` の「意図して変えたところ」を直す
 - 表示名・バンドル ID・版を変える: `Sources/Makurip/Info.plist` の 1 か所だけ

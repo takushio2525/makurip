@@ -17,7 +17,9 @@ final class KeyEventTap: KeyEventTapping {
 
     func start(_ handler: @escaping @MainActor (KeyTapEvent) -> KeyTapDecision) -> Bool {
         stop()
-        let types: [CGEventType] = [.keyDown, .keyUp, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let types: [CGEventType] = [
+            .keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        ]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
         guard
             let port = CGEvent.tapCreate(

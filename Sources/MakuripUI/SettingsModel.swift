@@ -308,6 +308,11 @@ final class SettingsModel {
             return
         }
         let combo: KeyCombo
+        if action.holdsModifier {
+            // 押している間だけ効くキーは、修飾キーの押下（`recordModifier`）で記録する
+            message = "修飾キー（⌥・⌘・⌃・⇧）を 1 つだけ押してください。"
+            return
+        }
         if action.usesDigits {
             guard KeyCodes.digit(of: press.keyCode) != nil,
                 !press.modifiers.intersection([.command, .control, .option]).isEmpty
@@ -319,6 +324,18 @@ final class SettingsModel {
         } else {
             combo = KeyCombo(.code(KeyCodes.canonical(press.keyCode)), press.modifiers)
         }
+        save(combo, id: id, action: action)
+    }
+
+    /// 記録中に修飾キーを押した（押している間だけ効くキーの記録。修飾キーが 1 つだけ押された瞬間に決める。離したときは何もしない）
+    func recordModifier(_ modifiers: HotKey.Modifiers) {
+        guard recording, let id = selectedID, let action = item(id)?.keyAction, action.holdsModifier,
+            KeyComboText.holdable(modifiers)
+        else { return }
+        save(KeyCombo(.hold, modifiers), id: id, action: action)
+    }
+
+    private func save(_ combo: KeyCombo, id: String, action: KeyAction) {
         do {
             // 重なったキーは前の割り当てから外す（試作と同じ）
             let moved = try controller.set(id, .array([.string(KeyComboText.format(combo))]), keyConflicts: .takeOver)
