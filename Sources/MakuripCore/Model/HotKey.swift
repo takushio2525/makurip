@@ -25,6 +25,9 @@ public struct HotKey: Codable, Hashable, Sendable {
     /// 履歴を開く既定キー ⌃⌘V（ユーザーが選んだ。Clipy の既定と同じなのでフェーズ4で変えられるようにする）
     public static let defaultOpenHistory = HotKey(keyCode: 9, modifiers: [.control, .command])
 
+    /// 呼び出しキーの動きに関係なく一覧を開く既定キー ⌃⌥⌘V（試作の openList と同じ）
+    public static let defaultOpenList = HotKey(keyCode: 9, modifiers: [.control, .option, .command])
+
     /// メニュー等に出す表記（例: ⌃⌘V）。修飾キーは macOS の慣習の順（⌃⌥⇧⌘）
     public var displayString: String {
         var result = ""

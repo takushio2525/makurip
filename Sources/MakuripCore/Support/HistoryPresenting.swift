@@ -9,6 +9,8 @@ public protocol HistoryPresenting: AnyObject {
     var isVisible: Bool { get }
     /// 一覧を開く（⌃⌘V・メニューから）
     func show()
+    /// 項目を選んだ状態で開く（候補窓から広げたとき）。実装しなければ `show()`
+    func show(selecting itemID: UUID?)
     func hide()
     /// 履歴が変わった（取り込み・消去）。開いていれば読み直す
     func historyDidChange()
@@ -18,6 +20,7 @@ public protocol HistoryPresenting: AnyObject {
 
 extension HistoryPresenting {
     public var debugState: [String: String] { [:] }
+    public func show(selecting itemID: UUID?) { show() }
 }
 
 /// 貼り付けのしかた
