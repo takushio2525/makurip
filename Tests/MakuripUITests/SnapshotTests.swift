@@ -119,37 +119,49 @@ struct SnapshotTests {
         }
     }
 
-    @Test("数千件の履歴で開く速さ（読み込み・絞り込み・最初の描画）")
-    func openSpeed() throws {
+    @Test("数千件の履歴で開く速さ（読み込み・絞り込み・最初の描画・検索）")
+    func openSpeed() async throws {
         _ = NSApplication.shared
+        func ms(_ start: Date) -> Double { Date().timeIntervalSince(start) * 1000 }
         var lines: [String] = []
         for count in [1000, 5000] {
             let history = SampleHistory.bulk(count: count)
-            let model = HistoryPanelModel(actions: history)
-            model.clock = { SampleHistory.now }
+            // 開いてすぐ打った場合（裏の正規化が終わる前。足りない分をその場で作る）
+            let cold = HistoryPanelModel(actions: history)
+            cold.clock = { SampleHistory.now }
+            var start = Date()
+            cold.open()
+            let openTime = ms(start)
+            start = Date()
+            cold.query = "sample-4999"
+            let coldSearch = ms(start)
+            // 開いて 1 秒後に打った場合（裏の正規化が終わっている）。メインアクターを空けて待つ
+            // （RunLoop を回すだけでは、裏の計算結果をメインに戻す仕事が走らない）
+            let warm = HistoryPanelModel(actions: history)
+            warm.clock = { SampleHistory.now }
+            warm.open()
+            try await Task.sleep(for: .seconds(1))
+            start = Date()
+            warm.query = "sample-4999"
+            let warmSearch = ms(start)
+            start = Date()
+            warm.query = "kopi"
+            let romaji = ms(start)
+            warm.query = ""
             let loader = ClipContentLoader(actions: history)
-            let openStart = Date()
-            model.open()
-            let openTime = Date().timeIntervalSince(openStart)
-            let searchStart = Date()
-            model.query = "sample-4999"
-            let searchTime = Date().timeIntervalSince(searchStart)
-            let romajiStart = Date()
-            model.query = "kopi"
-            let romajiTime = Date().timeIntervalSince(romajiStart)
-            model.query = ""
-            let renderStart = Date()
-            _ = render(model: model, loader: loader, dark: false, peek: false, settle: 0)
-            let renderTime = Date().timeIntervalSince(renderStart)
-            let moveStart = Date()
-            for _ in 0..<100 { model.move(by: 1) }
-            let moveTime = Date().timeIntervalSince(moveStart) / 100
+            start = Date()
+            _ = render(model: warm, loader: loader, dark: false, peek: false, settle: 0)
+            let renderTime = ms(start)
+            start = Date()
+            for _ in 0..<100 { warm.move(by: 1) }
+            let move = ms(start) / 100
             lines.append(
                 String(
-                    format: "%d 件: open %.1f ms / 検索 1 語 %.1f ms / ローマ字 %.1f ms / 最初の描画 %.1f ms / ↓ 1 回 %.2f ms",
-                    count, openTime * 1000, searchTime * 1000, romajiTime * 1000, renderTime * 1000, moveTime * 1000))
-            #expect(openTime < 0.5)
-            #expect(searchTime < 0.2)
+                    format:
+                        "%d 件: open %.1f ms / 開いてすぐの検索 %.1f ms / 温まった後の検索 %.1f ms・ローマ字 %.1f ms / 最初の描画 %.1f ms / ↓ 1 回 %.2f ms",
+                    count, openTime, coldSearch, warmSearch, romaji, renderTime, move))
+            #expect(openTime < 100)
+            #expect(warmSearch < 50)
         }
         try lines.joined(separator: "\n").write(
             to: output.appendingPathComponent("open-speed.txt"), atomically: true, encoding: .utf8)
@@ -243,5 +255,47 @@ struct SnapshotTests {
             at: NSPoint(x: cropWidth + gap + 16, y: cropHeight + 14), withAttributes: attributes)
         NSGraphicsContext.restoreGraphicsState()
         return out
+    }
+}
+
+/// 実際のストア（SQLite）から数千件を読む速さ（環境変数を付けたときだけ）
+@MainActor
+@Suite("ストアから読む速さ", .enabled(if: ProcessInfo.processInfo.environment["MAKURIP_SNAPSHOT_DIR"] != nil))
+struct StoreSpeedTests {
+    @Test("5000 件をストアに入れて、一覧の読み込み（メタデータと平文）にかかる時間")
+    func readSpeed() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "makurip-speed-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let limits = Limits(
+            maxItems: 10_000, maxTotalBytes: Limits.default.maxTotalBytes,
+            maxRepresentationBytes: Limits.default.maxRepresentationBytes, maxClipBytes: Limits.default.maxClipBytes,
+            inlineThresholdBytes: Limits.default.inlineThresholdBytes,
+            previewCharacterLimit: Limits.default.previewCharacterLimit)
+        let store = try ClipStore(directory: directory, limits: limits)
+        let body = String(repeating: "テスト用の文章 sample text。", count: 40)
+        for index in 0..<5000 {
+            let snapshot = PasteboardSnapshot(items: [
+                PasteboardItemSnapshot(representations: [
+                    PasteboardRepresentation(type: PasteboardTypes.utf8PlainText, data: Data("\(index) \(body)".utf8))
+                ])
+            ])
+            let context = CapturePipeline.Context(
+                now: Date(timeIntervalSince1970: 1_800_000_000 + Double(index)),
+                frontmostApp: SourceApp(bundleID: "com.example.app\(index % 9)", name: "App"), copyMethod: .keyboard)
+            guard case .accept(let clip) = CapturePipeline.process(snapshot, context: context, limits: limits) else {
+                continue
+            }
+            _ = try store.save(clip)
+        }
+        let start = Date()
+        let items = try store.items(limit: HistoryPanelModel.loadLimit)
+        let elapsed = Date().timeIntervalSince(start) * 1000
+        let line = String(format: "ストアから %d 件を読む: %.1f ms", items.count, elapsed)
+        print(line)
+        let output = URL(fileURLWithPath: ProcessInfo.processInfo.environment["MAKURIP_SNAPSHOT_DIR"]!)
+        try line.write(to: output.appendingPathComponent("store-speed.txt"), atomically: true, encoding: .utf8)
+        #expect(items.count == 5000)
+        #expect(elapsed < 300)
     }
 }

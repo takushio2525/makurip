@@ -65,22 +65,29 @@ public struct HistoryFilter: Hashable, Sendable {
     public func matches(_ item: ClipItem, haystack: String, ignoringKind: Bool = false, ignoringApp: Bool = false)
         -> Bool
     {
+        matches(item, ignoringKind: ignoringKind, ignoringApp: ignoringApp) { _ in haystack }
+    }
+
+    /// 検索語があるときだけ `haystack` を呼ぶ（正規化は重いので、検索語が空なら作らない）
+    func matches(
+        _ item: ClipItem, ignoringKind: Bool = false, ignoringApp: Bool = false, haystack: (ClipItem) -> String
+    ) -> Bool {
         if pinnedOnly, !item.isPinned { return false }
         if !ignoringKind, let kind, item.kind != kind { return false }
         if !method.accepts(item.copyMethod) { return false }
         if !ignoringApp, let app, Self.appKey(of: item.source) != app { return false }
-        return query.matches(normalized: haystack)
+        return query.isEmpty || query.matches(normalized: haystack(item))
     }
 
     /// 条件に合うものを元の並び（新しい順）のまま返す
     public func apply(to items: [ClipItem], haystack: (ClipItem) -> String) -> [ClipItem] {
-        items.filter { matches($0, haystack: haystack($0)) }
+        items.filter { matches($0, haystack: haystack) }
     }
 
     /// 種類ごとの件数（種類以外の条件はかけたまま）。キー nil が「すべて」
     public func kindCounts(in items: [ClipItem], haystack: (ClipItem) -> String) -> [ClipKind?: Int] {
         var counts: [ClipKind?: Int] = [nil: 0]
-        for item in items where matches(item, haystack: haystack(item), ignoringKind: true) {
+        for item in items where matches(item, ignoringKind: true, haystack: haystack) {
             counts[nil, default: 0] += 1
             counts[item.kind, default: 0] += 1
         }
@@ -92,7 +99,7 @@ public struct HistoryFilter: Hashable, Sendable {
         var counts: [String: Int] = [:]
         var sources: [String: SourceApp] = [:]
         var total = 0
-        for item in items where matches(item, haystack: haystack(item), ignoringApp: true) {
+        for item in items where matches(item, ignoringApp: true, haystack: haystack) {
             total += 1
             guard let key = Self.appKey(of: item.source), let source = item.source else { continue }
             counts[key, default: 0] += 1

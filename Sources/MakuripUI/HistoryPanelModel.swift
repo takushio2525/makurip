@@ -74,6 +74,7 @@ final class HistoryPanelModel {
     private(set) var pickerSelection = 0
 
     @ObservationIgnored private var haystacks: [UUID: (hash: String, text: String)] = [:]
+    @ObservationIgnored private var warmTask: Task<Void, Never>?
 
     init(actions: HistoryActions?, keymap: Keymap = .default) {
         self.actions = actions
@@ -122,25 +123,40 @@ final class HistoryPanelModel {
         focusRequest += 1
     }
 
-    /// 履歴を読み直す（取り込み・ピン留め・削除のあと）。選んでいた項目はなるべく選んだままにする
+    /// 履歴を読み直す（取り込み・ピン留め・削除のあと）。選んでいた項目はなるべく選んだままにする。
+    ///
+    /// 検索用の正規化（`HistoryFilter.haystack`）は数千件だと数百 ms かかるので、ここでは作らない。
+    /// 検索語が入ったときに足りない分だけその場で作り、開いた後に裏で温めておく（内容のハッシュが同じなら使い回す）
     func reload(keepSelection: Bool = true) {
         let loaded = actions?.historyItems(limit: Self.loadLimit) ?? []
         allItems = loaded
-        var next: [UUID: (hash: String, text: String)] = [:]
-        next.reserveCapacity(loaded.count)
-        for item in loaded {
-            if let cached = haystacks[item.id], cached.hash == item.contentHash {
-                next[item.id] = cached
-            } else {
-                next[item.id] = (item.contentHash, HistoryFilter.haystack(for: item))
-            }
-        }
-        haystacks = next
+        let alive = Dictionary(loaded.map { ($0.id, $0.contentHash) }, uniquingKeysWith: { first, _ in first })
+        haystacks = haystacks.filter { alive[$0.key] == $0.value.hash }
         refresh(keepSelection: keepSelection)
+        warmHaystacks()
     }
 
     func haystack(_ item: ClipItem) -> String {
-        haystacks[item.id]?.text ?? HistoryFilter.haystack(for: item)
+        if let cached = haystacks[item.id], cached.hash == item.contentHash { return cached.text }
+        let text = HistoryFilter.haystack(for: item)
+        haystacks[item.id] = (item.contentHash, text)
+        return text
+    }
+
+    /// まだ正規化していない項目を、メインスレッドの外でまとめて正規化しておく
+    private func warmHaystacks() {
+        warmTask?.cancel()
+        let missing = allItems.filter { haystacks[$0.id]?.hash != $0.contentHash }
+        guard !missing.isEmpty else { return }
+        warmTask = Task { [weak self] in
+            let computed = await Task.detached(priority: .utility) {
+                missing.map { ($0.id, $0.contentHash, HistoryFilter.haystack(for: $0)) }
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            for (id, hash, text) in computed where self.haystacks[id] == nil {
+                self.haystacks[id] = (hash, text)
+            }
+        }
     }
 
     private func refresh(keepSelection: Bool) {
