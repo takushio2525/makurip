@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import MakuripCore
 
 /// 元いたアプリへフォーカスを返して ⌘V を送る。
 ///
@@ -35,13 +36,27 @@ final class Paster {
     }
 
     static func postCommandV(to pid: pid_t) {
+        post(.paste, to: pid)
+    }
+
+    /// pid 宛てにキーを送る（前面のアプリを activate しない。候補窓の仮貼り・差し替え・取り消しもここから送る）。
+    /// Makurip が送った印（`SyntheticEventMarker`）を付け、候補窓の横取りが自分のキーを拾わないようにする
+    static func post(_ key: SyntheticKey, to pid: pid_t) {
+        let (code, flags, character): (CGKeyCode, CGEventFlags, UniChar?) =
+            switch key {
+            case .paste: (keyCodeV, .maskCommand, 0x76)  // ⌘V（"v"）
+            case .undo: (6, .maskCommand, 0x7A)  // ⌘Z（"z"）
+            case .redo: (6, [.maskCommand, .maskShift], 0x5A)  // ⌘⇧Z（"Z"）
+            case .deleteBackward: (51, [], nil)  // ⌫
+            }
         let source = CGEventSource(stateID: .privateState)
         for keyDown in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCodeV, keyDown: keyDown) else {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: keyDown) else {
                 continue
             }
-            event.flags = .maskCommand
-            event.keyboardSetUnicodeString(stringLength: 1, unicodeString: [UniChar(0x76)])  // "v"
+            event.flags = flags
+            if let character { event.keyboardSetUnicodeString(stringLength: 1, unicodeString: [character]) }
+            event.setIntegerValueField(.eventSourceUserData, value: SyntheticEventMarker.userData)
             event.postToPid(pid)
         }
     }

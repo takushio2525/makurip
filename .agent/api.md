@@ -11,7 +11,8 @@
 | `--pasteboard-name NAME` | 一般ペーストボードの代わりに名前付きペーストボードを監視・書き戻しする（E2E 用） |
 | `--dump-metadata` | 保存済み項目のメタデータだけを JSON で標準出力に書いて終わる。中身（平文・データ）は出さない。UI もロックも使わないので、動いているインスタンスがあっても読める |
 | `--debug-control` | E2E 用の遠隔操作を受け付ける。**`--data-dir` を指定したときだけ有効**（既定のデータフォルダでは無視してログに残す） |
-| `-MakuripPanelScreen NAME` | 一覧を出す画面を名前で固定する（UserDefaults の引数ドメイン。E2E が仮想ディスプレイに出すため）。指定すると文字カーソルの位置は使わず、その画面の下寄りの中央に出す |
+| `-MakuripPanelScreen NAME` | 一覧と候補窓を出す画面を名前で固定する（UserDefaults の引数ドメイン。E2E が仮想ディスプレイに出すため）。指定すると文字カーソルの位置は使わず、その画面の下寄りの中央に出す |
+| `-hotkeyMode paste\|candidate\|list` ほか | 候補窓の設定（下の「候補窓の設定」）を起動のときだけ上書きする（UserDefaults の引数ドメイン） |
 
 同じデータフォルダを 2 つのインスタンスが使おうとすると、後から起動した方が終了する（`instance.lock` の flock）。
 
@@ -22,14 +23,16 @@
 
 | 命令 | 動き |
 |---|---|
-| `toggleHistory` | ⌃⌘V と同じ（一覧を開く / 閉じる） |
+| `toggleHistory` | 一覧を開く / 閉じる（メニューの「履歴の一覧を開く」と同じ） |
+| `pressOpenKey` | ⌃⌘V を押したのと同じ（動きは `hotkeyMode`。既定は候補窓。許可がなければ一覧を開く） |
+| `pressOpenListKey` | ⌃⌥⌘V を押したのと同じ |
 | `simulateCopyShortcut` | ⌘C を見たときと同じ信号を入れる |
 | `setPasteTarget` | 貼り付けの宛先を pid で固定する |
 | `pause` / `resume` | 記録の一時停止 / 再開 |
 | `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く |
 | `quit` | 終了する |
 
-`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・`writtenAt`。
+`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・`writtenAt`。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
 
@@ -57,6 +60,7 @@
 @MainActor public protocol HistoryPresenting: AnyObject {
     var isVisible: Bool { get }
     func show()
+    func show(selecting itemID: UUID?)            // 候補窓から広げたとき。既定の実装は show()
     func hide()
     func historyDidChange()
     var debugState: [String: String] { get }   // 既定は空
@@ -76,6 +80,7 @@
 
 // MakuripUI 側の入口（差し替えた UI も同じ名前で用意する）
 public enum HistoryUIFactory { @MainActor static func make(actions: HistoryActions) -> HistoryPresenting }
+public enum CandidateUIFactory { @MainActor static func make(actions: HistoryActions, keymap: Keymap) -> CandidatePresenting }
 ```
 
 ## キーマップ（`Sources/MakuripCore/Keymap/Keymap.swift`）
@@ -86,7 +91,8 @@ public enum HistoryUIFactory { @MainActor static func make(actions: HistoryActio
 
 | ID | 操作 | 既定のキー | 範囲 |
 |---|---|---|---|
-| `open` | 履歴を呼び出す（どこからでも） | ⌃⌘V | 全体 |
+| `open` | 履歴を呼び出す（どこからでも）。動きは `hotkeyMode` | ⌃⌘V | 全体 |
+| `openList` | 一覧を開く（どこからでも） | ⌃⌥⌘V | 全体 |
 | `close` | 検索を消す／閉じる | esc | パネル |
 | `prev` / `next` | 前の項目 / 次の項目 | ↑・⌃P / ↓・⌃N | パネル |
 | `paste` / `pastePlain` / `copyOnly` | 貼り付け / プレーンテキストで / コピーだけ | ↩ / ⇧↩ / ⌘↩ | パネル |
@@ -98,8 +104,43 @@ public enum HistoryUIFactory { @MainActor static func make(actions: HistoryActio
 | `look` | 大きくプレビュー | ⌘Y | パネル |
 | `source` | コピー元のページを開く | ⌘O | パネル |
 | `delete` | 履歴から削除 | ⌘⌫ | パネル |
+| `candUp` / `candDown` | 上の候補へ / 下の候補へ（ターミナル式では ↑ が古いほう） | ↑ / ↓ | 候補窓 |
+| `candCommit` | 確定（改行や送信はしない） | ⇥・↩ | 候補窓 |
+| `candCancel` | 取り消し（貼る前に戻す） | esc | 候補窓 |
+| `candExpand` | 一覧に広げる | ⌃⌘V | 候補窓 |
 
-定型文（⌘S）・隠した内容の表示（⌥）・設定（⌘,）・候補窓のキーは、それぞれ #7・#5・#4・#8 で足す。
+候補窓の範囲のキーは候補窓が出ている間だけ効くので、候補窓のキーどうしだけで重なりを見る（⌃⌘V が `open` と `candExpand` の両方にあるのはこのため）。
+候補窓の間に全体のキー（⌃⌘V・⌃⌥⌘V）が来たら、タップは素通しして Carbon のホットキーに任せ、`HotKeyRouter` が「広げる」に振り分ける。
+定型文（⌘S）・隠した内容の表示（⌥）・設定（⌘,）は、それぞれ #7・#5・#4 で足す。
+
+## 候補窓（`Sources/MakuripCore/Candidate/`・#8）
+
+| 型 | 役割 |
+|---|---|
+| `CandidateCoordinator` | 流れ全体（始める・↑↓・確定・取り消し・広げる・閉じる経路すべて）。`start()`・`pasteLatest()`・`perform(_:)`・`frontmostAppDidChange(pid:)`・`environmentDidChange()`・`shutdown()` |
+| `CandidateSession` / `CandidateLayout` | 並び（ターミナル式・予測変換式）と選択 / 寸法・見えている 8 行・選んだ行までの距離（純粋関数） |
+| `ReplacePlanner` | 差し替え方式の決め方・貼った範囲の測り方・⌘Z で戻ったかの判定（純粋関数） |
+| `ComposingState` | 変換中の判定（AX の未確定の範囲 → 入力ソース。判定できなければ `.unknown`） |
+| `HotKeyRouter` | ⌃⌘V・⌃⌥⌘V の振り分け（`HotKeyMode` と、候補窓・一覧が出ているか） |
+| `CandidateSettings` / `DeferredPasteApps` | 設定（下表）/ 確定まで貼らないアプリの既定の一覧 |
+| `FocusedText` | 入力欄の選択範囲・文字数・未確定の範囲を AX で読み、選択範囲を書く（入力欄の文字は読まない） |
+| `KeyTapInput` | タップに届いた CGEvent を値にする（Makurip が送った印 `SyntheticEventMarker` の付いたキーは素通し） |
+
+差し込み（テストでは偽物）: `CandidateHost`（前面のアプリ・AX・ペーストボードの控えと戻し・pid 宛てのキー・ストア）・
+`CandidatePresenting`（窓。`present`・`dismiss`・`bump`・`contains(screenPoint:)`・クリックの知らせ）・
+`KeyEventTapping`（横取り。本番は `Sources/Makurip/KeyEventTap.swift`）・`CandidateScheduling`（無操作の時計）。
+
+### 候補窓の設定（UserDefaults・設定画面は #4）
+
+ID は試作の `Mk.PREFS` と同じ。`defaults write com.takushio2525.makurip <キー> <値>` で変えられ、⌃⌘V を押すたびに読み直す。秘密は入らない。
+
+| キー | 型 | 既定 | 取りうる値 |
+|---|---|---|---|
+| `hotkeyMode` | 文字列 | `candidate` | `paste`（すぐ貼るだけ）/ `candidate`（すぐ貼って候補窓）/ `list`（一覧を開く） |
+| `candOrder` | 文字列 | `terminal` | `terminal`（最新が下・↑ で古いほう）/ `ime`（最新が上・↓ で古いほう） |
+| `candPasteTiming` | 辞書（バンドル ID → 文字列） | 空 | `immediate`（すぐ仮に貼る）/ `onCommit`（確定まで貼らない）。既定の一覧より優先 |
+| `candReplaceMethod` | 辞書（バンドル ID → 文字列） | 空 | `selectRange` / `undo` / `deferred`。自動の判定より優先（`undo` は入力欄を読めなくても使う） |
+| `candIdleTimeout` | 数（秒） | 10 | 2〜120。何も押さないまま過ぎたら確定して閉じる |
 
 ## 検索と絞り込み（`Sources/MakuripCore/Search/`）
 
