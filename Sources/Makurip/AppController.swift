@@ -2,19 +2,20 @@ import AppKit
 import ApplicationServices
 import MakuripCore
 import MakuripUI
+import ServiceManagement
 
 /// アプリ本体。監視・保存・ホットキー・メニュー・一覧 UI・候補窓・貼り付けをつなぐ。
 ///
 /// 一覧 UI とは `HistoryPresenting` / `HistoryActions` だけでやりとりする（フェーズ2で UI を差し替えても、ここは変えない）。
 /// 候補窓は `CandidateCoordinator` に任せ、前面のアプリへの操作は `CandidateBridge` を通す。
+/// 設定は `SettingsController` が設定ファイルを見張り、変わった部分だけを `SettingsApplier` がここ（`SettingsApplying`）へ渡す。
 @MainActor
-final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
+final class AppController: NSObject, NSApplicationDelegate, HistoryActions, SettingsApplying {
     let options: LaunchOptions
     let dataDirectory: URL
     /// 既定以外のデータフォルダ（検証用）を使っているか
     let isolated: Bool
     let pasteboard: NSPasteboard
-    let limits = Limits.default
 
     private var instanceLock: InstanceLock?
     private(set) var store: ClipStore?
@@ -22,7 +23,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
     private(set) var detector: CopyShortcutDetector?
     let hotKeys = HotKeyCenter()
     private let paster = Paster()
-    let keymap = Keymap.default
+    /// いまのキーの割り当て（設定から。メニューの表示にも使う）
+    private(set) var keymap = Keymap.default
+    private(set) var settings: SettingsController?
+    private var settingsWindow: SettingsPresenting?
+    /// 設定のどこからでも効くキー（記録中は外し、終わったら付け直す）
+    private var globalKeys: (open: HotKey?, openList: HotKey?) = (nil, nil)
+    private var recordingKeys = false
+    /// 直近の呼び出しキーの振り分け（検証の状態出力用）
+    private(set) var lastHotKeyRoute: String?
     private(set) var history: HistoryPresenting?
     private(set) var candidate: CandidateCoordinator?
     private let keyTap = KeyEventTap()
@@ -57,9 +66,29 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
         }
         instanceLock = lock
 
+        // 設定（既定のデータフォルダのときだけ、UserDefaults の時代の候補窓の設定を引き継ぐ）
+        let file = SettingsFile(directory: dataDirectory)
+        if !isolated {
+            do {
+                let imported = try SettingsMigration.migrateIfNeeded(
+                    file: file, defaults: .standard, domainName: AppIdentity.bundleID)
+                if !imported.isEmpty {
+                    Log.app.info("UserDefaults の設定を引き継いだ ids=\(imported.joined(separator: ","), privacy: .public)")
+                }
+            } catch {
+                Log.app.error("設定の引き継ぎに失敗: \(String(describing: error), privacy: .public)")
+            }
+        }
+        let settings = SettingsController(file: file)
+        self.settings = settings
+        for issue in settings.issues {
+            Log.app.error("設定ファイルの項目を使わない id=\(issue.id, privacy: .public)")
+        }
+        keymap = settings.settings.keymap
+
         let store: ClipStore
         do {
-            store = try ClipStore(directory: dataDirectory, limits: limits)
+            store = try ClipStore(directory: dataDirectory, limits: settings.settings.limits)
             try store.removeOrphanBlobs()
             try store.enforceLimits()
         } catch {
@@ -75,7 +104,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
         self.detector = detector
 
         let monitor = PasteboardMonitor(
-            pasteboard: pasteboard, store: store, limits: limits,
+            pasteboard: pasteboard, store: store, limits: settings.settings.limits,
             environment: .init(
                 now: { Date() },
                 frontmostApp: {
@@ -88,10 +117,10 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
         monitor.onEvent = { [weak self] event in self?.handle(event) }
         self.monitor = monitor
 
-        history = HistoryUIFactory.make(actions: self)
+        history = HistoryUIFactory.make(actions: self, keymap: keymap)
         let candidate = CandidateCoordinator(
             host: CandidateBridge(app: self), presenter: CandidateUIFactory.make(actions: self, keymap: keymap),
-            tap: keyTap, scheduler: MainScheduler(), keymap: keymap, settings: .load(from: .standard))
+            tap: keyTap, scheduler: MainScheduler(), keymap: keymap, settings: settings.settings.candidate)
         candidate.onEvent = { event in Self.log(event) }
         self.candidate = candidate
         observeEnvironment()
@@ -99,11 +128,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
 
         detector.start()
         monitor.start()
-        // 呼び出しキーはキーマップ（全操作の ID・既定キー・説明の一覧）から引く。フェーズ4で付け替えられる
-        let openKey = keymap.primary(.openHistory)?.hotKey ?? .defaultOpenHistory
-        hotKeys.register(openKey, for: .openHistory) { [weak self] in self?.hotKeyPressed(.open) }
-        let listKey = keymap.primary(.openList)?.hotKey ?? .defaultOpenList
-        hotKeys.register(listKey, for: .openList) { [weak self] in self?.hotKeyPressed(.openList) }
+        // 呼び出しキー（キーマップの open・openList）の登録・上限・候補窓の設定をここで当てる。
+        // 以後は設定ファイルが変わるたびに、変わった部分だけを当て直す（CLI・AI・設定画面のどこから変えても同じ）
+        SettingsApplier.apply(settings.settings, previous: nil, to: self)
+        settings.observe { [weak self] new, old in
+            guard let self else { return }
+            SettingsApplier.apply(new, previous: old, to: self)
+            self.debugControl?.writeStatus()
+        }
+        settings.startWatching()
 
         if options.debugControl {
             if isolated {
@@ -122,6 +155,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
         candidate?.shutdown()
         monitor?.stop()
         detector?.stop()
+        settings?.stopWatching()
         hotKeys.unregister(.openHistory)
         hotKeys.unregister(.openList)
         for (center, observer) in environmentObservers { center.removeObserver(observer) }
@@ -132,11 +166,10 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
     /// ⌃⌘V・⌃⌥⌘V。動き（すぐ貼るだけ／すぐ貼って候補窓／一覧を開く）は設定の `hotkeyMode`（`.agent/api.md`）
     func hotKeyPressed(_ key: HotKeyRouter.Key) {
         guard let candidate, let history else { return }
-        // 設定画面（#4）ができるまでは UserDefaults を押すたびに読む（defaults write ですぐ切り替えられる）
-        candidate.settings = CandidateSettings.load(from: .standard)
         let route = HotKeyRouter.route(
             key, mode: candidate.settings.hotKeyMode, candidateActive: candidate.isActive,
             listVisible: history.isVisible)
+        lastHotKeyRoute = String(describing: route)
         switch route {
         case .expandCandidate:
             candidate.expand()
@@ -151,6 +184,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
             // 許可がない・履歴がないときは一覧を開く（許可の案内と空の案内が出る）
             if !candidate.pasteLatest() { openList(selecting: nil) }
         }
+    }
+
+    /// いま呼び出しキーを押したら何をするか（押さずに計算する。検証の状態出力用）
+    func previewRoute(_ key: HotKeyRouter.Key) -> String? {
+        guard let candidate, let history else { return nil }
+        return String(
+            describing: HotKeyRouter.route(
+                key, mode: candidate.settings.hotKeyMode, candidateActive: candidate.isActive,
+                listVisible: history.isVisible))
     }
 
     func toggleHistory() {
@@ -311,6 +353,127 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
         if let previousApp, !previousApp.isTerminated {
             previousApp.activate()
         }
+    }
+
+    func openSettings() {
+        if history?.isVisible == true {
+            history?.hide()
+        }
+        if settingsWindow == nil, let settings {
+            settingsWindow = SettingsUIFactory.make(
+                controller: settings,
+                environment: SettingsEnvironment(
+                    appName: { Self.appName(bundleID: $0) },
+                    hotKeyRegistered: { [weak self] action in self?.isRegistered(action) },
+                    launchAtLoginNote: { [weak self] in self?.launchAtLoginNote },
+                    recordingDidChange: { [weak self] recording in self?.setRecordingKeys(recording) }))
+        }
+        settingsWindow?.show()
+    }
+
+    var isSettingsVisible: Bool { settingsWindow?.isVisible ?? false }
+
+    // MARK: SettingsApplying（設定ファイルが変わったら、変わった部分だけ当て直す）
+
+    func applyLimits(_ limits: Limits) {
+        monitor?.limits = limits
+        do {
+            let removed = try store?.setLimits(limits) ?? []
+            Log.capture.info(
+                "上限を変えた maxItems=\(limits.maxItems) maxTotalBytes=\(limits.maxTotalBytes) removed=\(removed.count)")
+            if !removed.isEmpty { history?.historyDidChange() }
+        } catch {
+            Log.capture.error("上限の当て直しに失敗: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    func applyExcludedApps(_ bundleIDs: Set<String>) {
+        monitor?.excludedApps = bundleIDs
+        Log.capture.info("記録しないアプリ count=\(bundleIDs.count)")
+    }
+
+    func applyGlobalKeys(open: HotKey?, openList: HotKey?) {
+        globalKeys = (open, openList)
+        if !recordingKeys { registerGlobalKeys() }
+    }
+
+    func applyKeymap(_ keymap: Keymap) {
+        self.keymap = keymap
+        history?.keymapDidChange(keymap)
+        candidate?.keymap = keymap
+    }
+
+    func applyCandidateSettings(_ settings: CandidateSettings) {
+        candidate?.settings = settings
+        Log.app.info(
+            "候補窓の設定 hotkeyMode=\(settings.hotKeyMode.rawValue, privacy: .public) order=\(settings.order.rawValue, privacy: .public)"
+        )
+    }
+
+    func applyLaunchAtLogin(_ enabled: Bool) {
+        // 検証用に隔離したインスタンスは、本物のログイン項目に触らない
+        guard !isolated else {
+            Log.app.info("検証用のフォルダなので、ログイン時の起動は登録しない enabled=\(enabled)")
+            return
+        }
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            Log.app.info("ログイン時の起動 enabled=\(enabled)")
+        } catch {
+            Log.app.error("ログイン時の起動を変えられなかった: \(String(describing: error), privacy: .public)")
+        }
+        settingsWindow?.environmentDidChange()
+    }
+
+    private func registerGlobalKeys() {
+        hotKeys.unregister(.openHistory)
+        hotKeys.unregister(.openList)
+        if let open = globalKeys.open {
+            hotKeys.register(open, for: .openHistory) { [weak self] in self?.hotKeyPressed(.open) }
+        }
+        if let openList = globalKeys.openList {
+            hotKeys.register(openList, for: .openList) { [weak self] in self?.hotKeyPressed(.openList) }
+        }
+        settingsWindow?.environmentDidChange()
+    }
+
+    /// キーを記録している間は、どこからでも効くキーを外す（⌃⌘V などを記録できるように。Carbon が先に食べてしまうため）
+    private func setRecordingKeys(_ recording: Bool) {
+        recordingKeys = recording
+        if recording {
+            hotKeys.unregister(.openHistory)
+            hotKeys.unregister(.openList)
+        } else {
+            registerGlobalKeys()
+        }
+    }
+
+    private func isRegistered(_ action: KeyAction) -> Bool? {
+        guard !recordingKeys else { return nil }
+        switch action {
+        case .openHistory: return globalKeys.open.map { _ in hotKeys.registered[.openHistory] != nil }
+        case .openList: return globalKeys.openList.map { _ in hotKeys.registered[.openList] != nil }
+        default: return nil
+        }
+    }
+
+    private var launchAtLoginNote: String? {
+        if isolated { return "検証用のフォルダで動いているので、ログイン項目には登録しません。" }
+        switch SMAppService.mainApp.status {
+        case .requiresApproval: return "システム設定の「一般 → ログイン項目」で許可が要ります。"
+        default: return nil
+        }
+    }
+
+    /// バンドル ID のアプリの表示名（入っていなければ nil）
+    static func appName(bundleID: String) -> String? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        let name = FileManager.default.displayName(atPath: url.path)
+        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 
     // MARK: 取り込みの結果

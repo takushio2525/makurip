@@ -16,11 +16,14 @@ public protocol HistoryPresenting: AnyObject {
     func historyDidChange()
     /// 検証用の状態（絞り込みの語・表示中の行数など。中身は入れない）。実装しなければ空
     var debugState: [String: String] { get }
+    /// キーの割り当てが変わった（設定から）。開いていれば画面のヒントもすぐ変える
+    func keymapDidChange(_ keymap: Keymap)
 }
 
 extension HistoryPresenting {
     public var debugState: [String: String] { [:] }
     public func show(selecting itemID: UUID?) { show() }
+    public func keymapDidChange(_ keymap: Keymap) {}
 }
 
 /// 貼り付けのしかた
@@ -51,6 +54,8 @@ public protocol HistoryActions: AnyObject {
     func representationInfos(itemID: UUID) -> [RepresentationInfo]
     /// 型 1 つのデータ（サムネイル・プレビュー用）。中身は UI の中だけで使い、ログ等に出さない
     func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data?
+    /// 設定画面を開く（一覧の ⌘,。UI は先に閉じておく）
+    func openSettings()
 }
 
 extension HistoryActions {
@@ -61,4 +66,40 @@ extension HistoryActions {
     public func delete(itemID: UUID) {}
     public func representationInfos(itemID: UUID) -> [RepresentationInfo] { [] }
     public func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data? { nil }
+    public func openSettings() {}
+}
+
+/// 設定画面（`MakuripUI` が実装する）。値の読み書きは `SettingsController` を通す
+@MainActor
+public protocol SettingsPresenting: AnyObject {
+    var isVisible: Bool { get }
+    /// 窓を出して前面にする（メニューの「設定…」・一覧の ⌘,）
+    func show()
+    func close()
+    /// 本体の状態（ホットキーを登録できたか等）が変わった。開いていれば描き直す
+    func environmentDidChange()
+}
+
+/// 設定画面が本体に聞くこと・頼むこと
+public struct SettingsEnvironment {
+    /// バンドル ID のアプリの表示名（入っていなければ nil）
+    public var appName: @MainActor (String) -> String?
+    /// どこからでも効くキーを登録できたか（分からなければ nil）
+    public var hotKeyRegistered: @MainActor (KeyAction) -> Bool?
+    /// ログイン時の起動の状態の注記（システム設定で許可が要る等。なければ nil）
+    public var launchAtLoginNote: @MainActor () -> String?
+    /// キーを記録している間は true（その間、本体はどこからでも効くキーを外す。押したキーを横取りしないように）
+    public var recordingDidChange: @MainActor (Bool) -> Void
+
+    public init(
+        appName: @escaping @MainActor (String) -> String? = { _ in nil },
+        hotKeyRegistered: @escaping @MainActor (KeyAction) -> Bool? = { _ in nil },
+        launchAtLoginNote: @escaping @MainActor () -> String? = { nil },
+        recordingDidChange: @escaping @MainActor (Bool) -> Void = { _ in }
+    ) {
+        self.appName = appName
+        self.hotKeyRegistered = hotKeyRegistered
+        self.launchAtLoginNote = launchAtLoginNote
+        self.recordingDidChange = recordingDidChange
+    }
 }

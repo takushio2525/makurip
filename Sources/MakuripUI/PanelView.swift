@@ -310,7 +310,7 @@ private struct CardList: View {
     }
 }
 
-/// 下段のキーのヒント（↑↓ 選ぶ　↩ 貼る　⌘1–9 すぐ貼る　⌘Y 拡大）
+/// 下段のキーのヒント（↑↓ 選ぶ　↩ 貼る　⌘1–9 すぐ貼る　⌘Y 拡大）と、右端の設定の歯車（試作の .gear）
 private struct FooterHints: View {
     let model: HistoryPanelModel
     @Environment(\.palette) private var palette
@@ -323,6 +323,13 @@ private struct FooterHints: View {
             Hint(combos: [keymap.primary(.quickPaste)].compactMap { $0 }, label: "すぐ貼る")
             Hint(combos: [keymap.primary(.preview)].compactMap { $0 }, label: "拡大")
             Spacer(minLength: 0)
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(palette.text2)
+                .frame(width: 26, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .onTapGesture { model.effects.openSettings() }
+                .help("キー設定（\(keymap.primary(.settings)?.displayString ?? "未設定")）")
         }
         .font(.system(size: 11))
         .padding(.leading, 14)

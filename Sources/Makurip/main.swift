@@ -5,6 +5,31 @@ let options = LaunchOptions.parse(CommandLine.arguments)
 let (dataDirectory, isolated) = DataDirectory.resolve(
     argument: options.dataDirectory, environment: ProcessInfo.processInfo.environment, bundleID: AppIdentity.bundleID)
 
+if let arguments = options.settingsArguments {
+    // 設定の CLI（UI もロックも使わない。動いているインスタンスは設定ファイルの変化を見て読み直す）
+    let file = SettingsFile(directory: dataDirectory)
+    if !isolated {
+        // 既定のデータフォルダでは、アプリより先に CLI を使っても UserDefaults の設定を引き継ぐ
+        _ = try? SettingsMigration.migrateIfNeeded(file: file, defaults: .standard, domainName: AppIdentity.bundleID)
+    }
+    // 例のコマンドに使う実行ファイルの完全なパス（PATH の名前やリンクで呼ばれても、そのまま実行できる形にする）
+    let executable =
+        Bundle.main.executablePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+        ?? URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path
+    func quoted(_ text: String) -> String {
+        text.contains(where: { $0 == " " || $0 == "'" })
+            ? "'\(text.replacingOccurrences(of: "'", with: "'\\''"))'" : text
+    }
+    let command = quoted(executable) + (isolated ? " --data-dir \(quoted(dataDirectory.path))" : "") + " --settings"
+    let cli = SettingsCLI(
+        file: file, command: command,
+        appName: { bundleID in NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map(\.path) })
+    let output = cli.run(arguments)
+    FileHandle.standardOutput.write(Data(output.stdout.utf8))
+    FileHandle.standardError.write(Data(output.stderr.utf8))
+    exit(output.exitCode)
+}
+
 if options.dumpMetadata {
     // メタデータだけを書き出して終わる（UI もロックも使わない。動いているインスタンスがあっても読める）
     let databaseExists = FileManager.default.fileExists(

@@ -177,8 +177,11 @@ public protocol CandidatePresenting: AnyObject {
     func contains(screenPoint: CGPoint) -> Bool
     /// 検証用の状態（中身は入れない）
     var debugState: [String: String] { get }
+    /// キーの割り当てが変わった（窓の下のヒントに使う）
+    func keymapDidChange(_ keymap: Keymap)
 }
 
 extension CandidatePresenting {
     public var debugState: [String: String] { [:] }
+    public func keymapDidChange(_ keymap: Keymap) {}
 }

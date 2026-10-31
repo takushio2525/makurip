@@ -1,7 +1,7 @@
 import Foundation
 
 /// 呼び出しキー（⌃⌘V）を押したときの動き。ID（rawValue）は試作（core.js の `Mk.PREFS` の `hotkeyMode`）と同じ。
-/// 選ぶ画面は設定（#4）で作る。いまは UserDefaults の `hotkeyMode` で切り替えられる（`.agent/api.md`）
+/// 設定項目 `hotkeyMode`（`SettingsSchema`）で選ぶ
 public enum HotKeyMode: String, CaseIterable, Sendable, Codable {
     /// 最新の履歴をそのまま貼る。窓は出さない
     case pasteOnly = "paste"
@@ -50,9 +50,9 @@ public enum PasteTiming: String, CaseIterable, Sendable, Codable {
     case onCommit
 }
 
-/// 候補窓まわりの設定。設定スキーマ（#4）ができるまでは UserDefaults から読む。
+/// 候補窓まわりの設定。値は設定ファイル（`AppSettings.candidate`）から作る。
 ///
-/// キーは試作の `Mk.PREFS` の ID に合わせた（`hotkeyMode`・`candOrder`）。アプリごとの上書きは辞書で持つ。
+/// 項目の ID は試作の `Mk.PREFS` に合わせた（`hotkeyMode`・`candOrder`）。アプリごとの上書きは辞書で持つ。
 /// 秘密は入らないので、AI（#6）が読み書きしてよい
 public struct CandidateSettings: Hashable, Sendable {
     public var hotKeyMode: HotKeyMode
@@ -78,7 +78,7 @@ public struct CandidateSettings: Hashable, Sendable {
 
     public static let `default` = CandidateSettings()
 
-    /// UserDefaults のキー
+    /// 設定項目の ID（UserDefaults の時代のキーと同じ名前。引き継ぎは `SettingsMigration`）
     public enum Key {
         public static let hotKeyMode = "hotkeyMode"
         public static let order = "candOrder"
@@ -97,25 +97,6 @@ public struct CandidateSettings: Hashable, Sendable {
         bundleID.flatMap { replaceMethod[$0] }
     }
 
-    /// 壊れた値・知らない値は無視して既定に戻す
-    public static func load(from defaults: UserDefaults) -> CandidateSettings {
-        var settings = CandidateSettings()
-        if let raw = defaults.string(forKey: Key.hotKeyMode), let mode = HotKeyMode(rawValue: raw) {
-            settings.hotKeyMode = mode
-        }
-        if let raw = defaults.string(forKey: Key.order), let order = CandidateOrder(rawValue: raw) {
-            settings.order = order
-        }
-        if let raw = defaults.dictionary(forKey: Key.pasteTiming) {
-            settings.pasteTiming = raw.compactMapValues { ($0 as? String).flatMap(PasteTiming.init(rawValue:)) }
-        }
-        if let raw = defaults.dictionary(forKey: Key.replaceMethod) {
-            settings.replaceMethod = raw.compactMapValues { ($0 as? String).flatMap(ReplaceMethod.init(rawValue:)) }
-        }
-        let timeout = defaults.double(forKey: Key.idleTimeout)
-        if timeout >= 2, timeout <= 120 { settings.idleTimeout = timeout }
-        return settings
-    }
 }
 
 /// 候補窓で、確定するまで貼らないのを既定にするアプリ（ユーザーの決定: ターミナルとチャット系）。
@@ -124,7 +105,7 @@ public struct CandidateSettings: Hashable, Sendable {
 /// - チャット: Enter で送信される・画像を貼ると送信の確認が開く・相手に入力中と見える
 ///
 /// バンドル ID は 2026-10-31 に手元の .app の Info.plist で確かめた（「未確認」と書いたものは手元に無く、公開の値）。
-/// アプリごとの変更は `CandidateSettings.pasteTiming`（設定画面は #4）
+/// アプリごとの変更は設定項目 `candPasteTiming`（`CandidateSettings.pasteTiming`）
 public enum DeferredPasteApps {
     public enum Category: String, Sendable {
         case terminal

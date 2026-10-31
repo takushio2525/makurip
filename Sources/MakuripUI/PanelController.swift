@@ -3,11 +3,11 @@ import MakuripCore
 import SwiftUI
 
 /// 一覧 UI の入口。UI を差し替えるときは、このターゲット（`Sources/MakuripUI/`）を丸ごと置き換え、
-/// 同じ名前の `HistoryUIFactory.make(actions:)` を用意する。
+/// 同じ名前の `HistoryUIFactory.make(actions:keymap:)` を用意する。
 public enum HistoryUIFactory {
     @MainActor
-    public static func make(actions: HistoryActions) -> HistoryPresenting {
-        PanelController(actions: actions)
+    public static func make(actions: HistoryActions, keymap: Keymap = .default) -> HistoryPresenting {
+        PanelController(actions: actions, keymap: keymap)
     }
 }
 
@@ -28,9 +28,9 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
     /// 直近に出した位置の手がかりの種類（検証用。座標は出さない）
     private var lastAnchorKind = ""
 
-    init(actions: HistoryActions) {
+    init(actions: HistoryActions, keymap: Keymap) {
         self.actions = actions
-        model = HistoryPanelModel(actions: actions)
+        model = HistoryPanelModel(actions: actions, keymap: keymap)
         loader = ClipContentLoader(actions: actions)
         panel = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: HistoryPanelView.size),
@@ -57,7 +57,11 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
                 self?.hide()
                 NSWorkspace.shared.open(url)
             },
-            previewChanged: { [weak self] open in self?.setPeekVisible(open) }
+            previewChanged: { [weak self] open in self?.setPeekVisible(open) },
+            openSettings: { [weak self] in
+                self?.hide()
+                self?.actions?.openSettings()
+            }
         )
     }
 
@@ -102,6 +106,10 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
 
     func historyDidChange() {
         if panel.isVisible { model.reload() }
+    }
+
+    func keymapDidChange(_ keymap: Keymap) {
+        model.keymap = keymap
     }
 
     // ほかをクリックしてキーウィンドウでなくなったら閉じる（フォーカスは奪い返さない）

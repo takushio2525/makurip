@@ -291,31 +291,6 @@ struct CandidateSettingsTests {
         #expect(DeferredPasteApps.category(of: "com.googlecode.iterm2") == .terminal)
     }
 
-    @Test("UserDefaults から読む。壊れた値・知らない値は既定に戻す")
-    func load() throws {
-        let name = "makurip-test-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        #expect(CandidateSettings.load(from: defaults) == .default)
-
-        defaults.set("list", forKey: CandidateSettings.Key.hotKeyMode)
-        defaults.set("ime", forKey: CandidateSettings.Key.order)
-        defaults.set(["com.apple.Terminal": "immediate", "x": "bogus"], forKey: CandidateSettings.Key.pasteTiming)
-        defaults.set(["com.example.app": "undo"], forKey: CandidateSettings.Key.replaceMethod)
-        defaults.set(20.0, forKey: CandidateSettings.Key.idleTimeout)
-        let loaded = CandidateSettings.load(from: defaults)
-        #expect(loaded.hotKeyMode == .list)
-        #expect(loaded.order == .ime)
-        #expect(loaded.pasteTiming == ["com.apple.Terminal": .immediate])
-        #expect(loaded.replaceOverride(for: "com.example.app") == .undo)
-        #expect(loaded.idleTimeout == 20)
-
-        defaults.set("bogus", forKey: CandidateSettings.Key.hotKeyMode)
-        defaults.set(0.5, forKey: CandidateSettings.Key.idleTimeout)
-        let broken = CandidateSettings.load(from: defaults)
-        #expect(broken.hotKeyMode == .candidate)
-        #expect(broken.idleTimeout == 10)
-    }
 }
 
 /// タップに届いたイベントの読み取り（CGEvent はメモリの中で作るだけで、どこにも送らない）

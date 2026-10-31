@@ -94,6 +94,30 @@ public enum KeyCodes {
     public static let rightArrow: UInt16 = 124
     public static let downArrow: UInt16 = 125
     public static let upArrow: UInt16 = 126
+    public static let space: UInt16 = 49
+    public static let comma: UInt16 = 43
+
+    /// F1〜F20 の仮想キーコード（並びは F1, F2, …）。文字を打たないキーなので、修飾キーなしでも割り当てられる
+    public static let functionKeyCodes: [UInt16] = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90,
+    ]
+
+    /// 文字を打たないキー（矢印・↩・⇥・esc・⌫・⌦・home・end・pgup・pgdn・F1〜F20）。それ以外（英字・数字・記号・space）は文字を打つ
+    public static let nonCharacterCodes: Set<UInt16> = Set(
+        [
+            returnKey, keypadEnter, tab, delete, escape, leftArrow, rightArrow, downArrow, upArrow, 117, 115, 119, 116,
+            121,
+        ]
+            + functionKeyCodes)
+
+    /// 文字を打つキーか（修飾キーなしで割り当てると、検索欄や前面のアプリで文字が打てなくなる）
+    public static func typesCharacter(_ code: UInt16) -> Bool {
+        !nonCharacterCodes.contains(canonical(code))
+    }
+
+    public static func isFunctionKey(_ code: UInt16) -> Bool {
+        functionKeyCodes.contains(code)
+    }
 
     /// 数字キー 1〜9 の仮想キーコード（並びは 1, 2, …, 9）
     public static let digitCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
@@ -114,15 +138,18 @@ public enum KeyCodes {
         26: "7", 27: "-", 28: "8", 29: "0", 30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 37: "L", 38: "J",
         39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".", 50: "`",
         36: "↩", 48: "⇥", 49: "space", 51: "⌫", 53: "esc", 117: "⌦", 115: "home", 119: "end", 116: "pgup",
-        121: "pgdn", 123: "←", 124: "→", 125: "↓", 126: "↑",
+        121: "pgdn", 123: "←", 124: "→", 125: "↓", 126: "↑", 93: "¥", 94: "_",
+        122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8", 101: "F9", 109: "F10",
+        103: "F11", 111: "F12", 105: "F13", 107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19",
+        90: "F20",
     ]
 }
 
 /// キーで呼べる操作の一覧。**全操作はここから定義する**（ID・既定のキー・説明文）。
 ///
-/// フェーズ4で設定スキーマにそのまま載せ、設定画面・CLI・AI（MCP）が同じ ID と説明文で付け替えられるようにする。
+/// 設定スキーマ（`SettingsSchema`）は操作ごとに `keys.<ID>` の項目を作り、設定画面・CLI・AI（MCP）が同じ ID と説明文で付け替える。
 /// ID（rawValue）と並びは試作（`makurip-design/ui/shared/core.js` の `Mk.ACTIONS`）と同じにしてある。
-/// 定型文・秘密の表示・設定を開く操作は、それぞれのフェーズ（#7・#5・#4）で足す。
+/// 定型文・秘密の表示の操作は、それぞれのフェーズ（#7・#5）で足す。
 public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case openHistory = "open"
     case openList
@@ -142,6 +169,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
     case preview = "look"
     case openSource = "source"
     case delete
+    case settings
     case candidateUp = "candUp"
     case candidateDown = "candDown"
     case candidateCommit = "candCommit"
@@ -172,7 +200,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .openHistory, .openList, .close: "呼び出す"
         case .previous, .next, .paste, .pastePlain, .copyOnly, .quickPaste: "選ぶ・貼る"
         case .kindNext, .kindPrevious, .cycleMethod, .chooseApp, .pinnedOnly: "絞り込み"
-        case .togglePin, .preview, .openSource, .delete: "項目の操作"
+        case .togglePin, .preview, .openSource, .delete, .settings: "項目の操作"
         case .candidateUp, .candidateDown, .candidateCommit, .candidateCancel, .candidateExpand: "候補窓"
         }
     }
@@ -197,6 +225,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .preview: "大きくプレビュー"
         case .openSource: "コピー元のページを開く"
         case .delete: "履歴から削除"
+        case .settings: "設定を開く"
         case .candidateUp: "上の候補へ"
         case .candidateDown: "下の候補へ"
         case .candidateCommit: "確定"
@@ -227,6 +256,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .preview: "選んだ項目を大きく表示する（画像やコードの確認用）。"
         case .openSource: "コピーした元のページ（ブラウザや AI チャット）を開く。"
         case .delete: "選んだ項目を履歴から消す。"
+        case .settings: "この設定画面を開く（一覧を閉じてから開く）。"
         case .candidateUp: "候補窓で 1 つ上の履歴に貼り替える。ターミナル式の並びでは 1 つ古い履歴になる。"
         case .candidateDown: "候補窓で 1 つ下の履歴に貼り替える。ターミナル式の並びでは 1 つ新しい履歴になる。"
         case .candidateCommit: "貼った中身を確定して候補窓を閉じる。改行や送信はしない。"
@@ -234,6 +264,9 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .candidateExpand: "仮に貼った中身を戻し、選んでいた項目を選んだ状態で一覧を開く。"
         }
     }
+
+    /// 番号で動く操作か（キーは「修飾キー + 1〜9」で割り当てる）
+    public var usesDigits: Bool { self == .quickPaste }
 
     /// 既定のキー（試作と同じ。先頭のものを画面のヒントに出す）
     public var defaultCombos: [KeyCombo] {
@@ -256,6 +289,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .preview: [KeyCombo(.code(16), .command)]  // ⌘Y
         case .openSource: [KeyCombo(.code(31), .command)]  // ⌘O
         case .delete: [KeyCombo(.code(KeyCodes.delete), .command)]  // ⌘⌫
+        case .settings: [KeyCombo(.code(KeyCodes.comma), .command)]  // ⌘,
         case .candidateUp: [KeyCombo(.code(KeyCodes.upArrow))]
         case .candidateDown: [KeyCombo(.code(KeyCodes.downArrow))]
         case .candidateCommit: [KeyCombo(.code(KeyCodes.tab)), KeyCombo(.code(KeyCodes.returnKey))]
@@ -317,8 +351,13 @@ public struct Keymap: Hashable, Sendable {
         return result
     }
 
+    /// `action` が関わる重なりだけ
+    public func conflicts(involving action: KeyAction) -> [KeyConflict] {
+        conflicts().filter { $0.first == action || $0.second == action }
+    }
+
     /// 2 つの範囲のキーが同時に効きうるか
-    static func scopesInteract(_ a: KeyAction.Scope, _ b: KeyAction.Scope) -> Bool {
+    public static func scopesInteract(_ a: KeyAction.Scope, _ b: KeyAction.Scope) -> Bool {
         (a == .candidate) == (b == .candidate)
     }
 }

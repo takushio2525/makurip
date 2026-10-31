@@ -73,7 +73,10 @@ public final class CandidateCoordinator {
     private let presenter: CandidatePresenting
     private let tap: KeyEventTapping
     private let scheduler: CandidateScheduling
-    public var keymap: Keymap
+    /// 設定から付け替えられる（窓のヒントも同じキーにする）
+    public var keymap: Keymap {
+        didSet { presenter.keymapDidChange(keymap) }
+    }
     public var settings: CandidateSettings
     public var onEvent: ((Event) -> Void)?
 

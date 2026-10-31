@@ -12,7 +12,10 @@
 | `--dump-metadata` | 保存済み項目のメタデータだけを JSON で標準出力に書いて終わる。中身（平文・データ）は出さない。UI もロックも使わないので、動いているインスタンスがあっても読める |
 | `--debug-control` | E2E 用の遠隔操作を受け付ける。**`--data-dir` を指定したときだけ有効**（既定のデータフォルダでは無視してログに残す） |
 | `-MakuripPanelScreen NAME` | 一覧と候補窓を出す画面を名前で固定する（UserDefaults の引数ドメイン。E2E が仮想ディスプレイに出すため）。指定すると文字カーソルの位置は使わず、その画面の下寄りの中央に出す |
-| `-hotkeyMode paste\|candidate\|list` ほか | 候補窓の設定（下の「候補窓の設定」）を起動のときだけ上書きする（UserDefaults の引数ドメイン） |
+| `--settings <命令> ...` | 設定の CLI（下の「設定」）。後ろの引数は `--data-dir` を除いてすべて CLI に渡す。UI もロックも使わないので、動いているインスタンスがあっても使える |
+
+~~`-hotkeyMode paste|candidate|list` ほか（候補窓の設定を UserDefaults の引数ドメインで起動のときだけ上書き）~~ は #4 でなくした。
+隔離したインスタンスの設定は、起動する前に `Makurip --data-dir DIR --settings set ...` で書く。
 
 同じデータフォルダを 2 つのインスタンスが使おうとすると、後から起動した方が終了する（`instance.lock` の flock）。
 
@@ -29,10 +32,13 @@
 | `simulateCopyShortcut` | ⌘C を見たときと同じ信号を入れる |
 | `setPasteTarget` | 貼り付けの宛先を pid で固定する |
 | `pause` / `resume` | 記録の一時停止 / 再開 |
-| `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く |
+| `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く（設定ファイルから読み直したときも自動で書く） |
 | `quit` | 終了する |
 
-`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・`writtenAt`。
+`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・
+`lastHotKeyRoute`（直近に押した呼び出しキーの振り分け）・`openKeyRoute`（いま呼び出しキーを押したらどうなるか。押さずに `HotKeyRouter.route` で計算した値: `startCandidate` / `pasteLatest` / `openList` / `closeList` / `expandCandidate`）・
+`storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
+`settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・`writtenAt`。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
 
@@ -64,6 +70,7 @@
     func hide()
     func historyDidChange()
     var debugState: [String: String] { get }   // 既定は空
+    func keymapDidChange(_ keymap: Keymap)        // 設定でキーが変わった（既定は何もしない）
 }
 
 @MainActor public protocol HistoryActions: AnyObject {
@@ -75,18 +82,35 @@
     func delete(itemID: UUID)
     func representationInfos(itemID: UUID) -> [RepresentationInfo]          // サムネイル・プレビューで読む型を選ぶ
     func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data?  // 型 1 つのデータ（UI の中だけで使う）
+    func openSettings()                           // 一覧の ⌘,（UI は先に閉じる）
 }
 // paste(itemID:) と historyItems・historyDidClose 以外は既定の実装（何もしない・空）がある
 
+@MainActor public protocol SettingsPresenting: AnyObject {
+    var isVisible: Bool { get }
+    func show()                                   // メニューの「設定…」・一覧の ⌘,
+    func close()
+    func environmentDidChange()                   // ホットキーの登録の成否などが変わった
+}
+public struct SettingsEnvironment {               // 設定画面が本体に聞くこと
+    appName: (String) -> String?                  // バンドル ID → 表示名
+    hotKeyRegistered: (KeyAction) -> Bool?        // どこからでも効くキーを登録できたか
+    launchAtLoginNote: () -> String?              // ログイン項目の注記
+    recordingDidChange: (Bool) -> Void            // キーの記録中は本体がホットキーを外す
+}
+
 // MakuripUI 側の入口（差し替えた UI も同じ名前で用意する）
-public enum HistoryUIFactory { @MainActor static func make(actions: HistoryActions) -> HistoryPresenting }
+public enum HistoryUIFactory { @MainActor static func make(actions: HistoryActions, keymap: Keymap) -> HistoryPresenting }
 public enum CandidateUIFactory { @MainActor static func make(actions: HistoryActions, keymap: Keymap) -> CandidatePresenting }
+public enum SettingsUIFactory { @MainActor static func make(controller: SettingsController, environment: SettingsEnvironment) -> SettingsPresenting }
 ```
+
+`CandidatePresenting` にも `keymapDidChange(_:)`（既定は何もしない）がある。`CandidateCoordinator.keymap` を変えると窓にも伝わる。
 
 ## キーマップ（`Sources/MakuripCore/Keymap/Keymap.swift`）
 
 全操作は `KeyAction`（ID・既定のキー・説明文・まとまり・範囲）から定義する。ID は試作（`core.js` の `Mk.ACTIONS`）と同じ。
-フェーズ4の設定スキーマ・CLI・MCP（#6）はこの ID と説明文をそのまま使う。重なりは `Keymap.conflicts()` で見つける（全体のキーとパネルのキーは同じ範囲として見る）。
+設定スキーマは操作ごとに `keys.<ID>` の項目を作り、設定画面・CLI・MCP（#6）がこの ID と説明文をそのまま使う。重なりは `Keymap.conflicts()` で見つける（全体のキーとパネルのキーは同じ範囲として見る）。
 キーは物理キーの位置（仮想キーコード）で持つ（`KeyCombo`。`.digits` は 1〜9 の範囲）。
 
 | ID | 操作 | 既定のキー | 範囲 |
@@ -104,6 +128,7 @@ public enum CandidateUIFactory { @MainActor static func make(actions: HistoryAct
 | `look` | 大きくプレビュー | ⌘Y | パネル |
 | `source` | コピー元のページを開く | ⌘O | パネル |
 | `delete` | 履歴から削除 | ⌘⌫ | パネル |
+| `settings` | 設定を開く | ⌘, | パネル |
 | `candUp` / `candDown` | 上の候補へ / 下の候補へ（ターミナル式では ↑ が古いほう） | ↑ / ↓ | 候補窓 |
 | `candCommit` | 確定（改行や送信はしない） | ⇥・↩ | 候補窓 |
 | `candCancel` | 取り消し（貼る前に戻す） | esc | 候補窓 |
@@ -111,7 +136,7 @@ public enum CandidateUIFactory { @MainActor static func make(actions: HistoryAct
 
 候補窓の範囲のキーは候補窓が出ている間だけ効くので、候補窓のキーどうしだけで重なりを見る（⌃⌘V が `open` と `candExpand` の両方にあるのはこのため）。
 候補窓の間に全体のキー（⌃⌘V・⌃⌥⌘V）が来たら、タップは素通しして Carbon のホットキーに任せ、`HotKeyRouter` が「広げる」に振り分ける。
-定型文（⌘S）・隠した内容の表示（⌥）・設定（⌘,）は、それぞれ #7・#5・#4 で足す。
+定型文（⌘S）・隠した内容の表示（⌥）は、それぞれ #7・#5 で足す。キーとして使える組み合わせの決まりは `KeyRules`（下の「設定」）。
 
 ## 候補窓（`Sources/MakuripCore/Candidate/`・#8）
 
@@ -122,7 +147,7 @@ public enum CandidateUIFactory { @MainActor static func make(actions: HistoryAct
 | `ReplacePlanner` | 差し替え方式の決め方・貼った範囲の測り方・⌘Z で戻ったかの判定（純粋関数） |
 | `ComposingState` | 変換中の判定（AX の未確定の範囲 → 入力ソース。判定できなければ `.unknown`） |
 | `HotKeyRouter` | ⌃⌘V・⌃⌥⌘V の振り分け（`HotKeyMode` と、候補窓・一覧が出ているか） |
-| `CandidateSettings` / `DeferredPasteApps` | 設定（下表）/ 確定まで貼らないアプリの既定の一覧 |
+| `CandidateSettings` / `DeferredPasteApps` | 設定（`AppSettings.candidate` から作る）/ 確定まで貼らないアプリの既定の一覧 |
 | `FocusedText` | 入力欄の選択範囲・文字数・未確定の範囲を AX で読み、選択範囲を書く（入力欄の文字は読まない） |
 | `KeyTapInput` | タップに届いた CGEvent を値にする（Makurip が送った印 `SyntheticEventMarker` の付いたキーは素通し） |
 
@@ -130,17 +155,66 @@ public enum CandidateUIFactory { @MainActor static func make(actions: HistoryAct
 `CandidatePresenting`（窓。`present`・`dismiss`・`bump`・`contains(screenPoint:)`・クリックの知らせ）・
 `KeyEventTapping`（横取り。本番は `Sources/Makurip/KeyEventTap.swift`）・`CandidateScheduling`（無操作の時計）。
 
-### 候補窓の設定（UserDefaults・設定画面は #4）
+### 候補窓の設定
 
-ID は試作の `Mk.PREFS` と同じ。`defaults write com.takushio2525.makurip <キー> <値>` で変えられ、⌃⌘V を押すたびに読み直す。秘密は入らない。
+設定ファイルの項目（下の「設定」）。ID は試作の `Mk.PREFS` と同じで、UserDefaults の時代（#8）のキーとも同じ名前。
+`hotkeyMode`（`paste` / `candidate` / `list`）・`candOrder`（`terminal` / `ime`）・`candPasteTiming`（バンドル ID → `immediate` / `onCommit`。既定の一覧より優先）・
+`candReplaceMethod`（バンドル ID → `selectRange` / `undo` / `deferred`。自動の判定より優先）・`candIdleTimeout`（2〜120 秒）。
+`defaults write` で書いた値は、既定のデータフォルダで最初に起動したとき（か CLI を使ったとき）に設定ファイルへ引き継ぎ、UserDefaults からは消す。
 
-| キー | 型 | 既定 | 取りうる値 |
+## 設定（`Sources/MakuripCore/Settings/`・#4）
+
+| 型 | 役割 |
+|---|---|
+| `SettingsSchema` | 項目の一覧（`SettingItem`: ID・まとまり・名前・説明・型・頼みの例・詳細か・画面に出すか・既定の一覧）と、値の読み書き・**検証の 1 か所**（`validate`・`applying(_:to:in:keyConflicts:)`） |
+| `KeyRules` | キーとして使える組み合わせ（範囲ごと）。使えなければ理由の文 |
+| `KeyComboText` | キーの文字表現（`⌃⌘V`・`ctrl+cmd+v`・`⌘1–9` を読み、画面の表記で書く） |
+| `AppSettings` | 値の型付きの形。`limits`（`Limits`）・`candidate`（`CandidateSettings`）・`keymap`・`globalHotKey(_:)` を作る。既定値は `Limits.default`・`CandidateSettings.default`・`KeyAction.defaultCombos` から |
+| `SettingsFile` | `<データフォルダ>/settings.json` の読み書き（純粋関数の `decode`・`encode` と、置き換えで書く `save`） |
+| `SettingsMigration` | UserDefaults の永続ドメインから引き継ぐ（設定ファイルがないときに 1 回だけ。既定のデータフォルダのときだけ） |
+| `SettingsController` | 動いているアプリの設定。ファイルの監視（フォルダとファイルの DispatchSource）で読み直し、変わったら `observe` の相手に知らせる。画面からの `set`・`reset`・`resetAll` もここ |
+| `SettingsApplier` / `SettingsApplying` | 変わった部分だけを反映先（`AppController`）へ渡す（上限・記録しないアプリ・どこからでも効くキー・キーマップ・候補窓の設定・ログイン時の起動） |
+| `SettingsCLI` | `--settings` の本体（純粋。`run(_:) -> Output`） |
+
+### 設定ファイル
+
+```json
+{
+  "formatVersion" : 1,
+  "settings" : {
+    "hotkeyMode" : "paste",
+    "keys.open" : [ "⌥V" ]
+  }
+}
+```
+
+- 既定と違う値だけを書く。キーは名前の順。置き換えで書く（読む側が書きかけを見ない）
+- 知らない項目は読み飛ばし、書き戻すときに残す。値が検証に通らない項目は既定に戻し、理由（`issues`）を画面と `list` に出す
+- JSON として読めないときはすべて既定で動き、次に書くときに `settings.broken.json` へ退避する
+- 重なったキーもそのまま読む（拒否するのは CLI と画面で入れるとき）
+
+### 項目
+
+| ID | 型 | 既定 | 範囲・値 |
 |---|---|---|---|
-| `hotkeyMode` | 文字列 | `candidate` | `paste`（すぐ貼るだけ）/ `candidate`（すぐ貼って候補窓）/ `list`（一覧を開く） |
-| `candOrder` | 文字列 | `terminal` | `terminal`（最新が下・↑ で古いほう）/ `ime`（最新が上・↓ で古いほう） |
-| `candPasteTiming` | 辞書（バンドル ID → 文字列） | 空 | `immediate`（すぐ仮に貼る）/ `onCommit`（確定まで貼らない）。既定の一覧より優先 |
-| `candReplaceMethod` | 辞書（バンドル ID → 文字列） | 空 | `selectRange` / `undo` / `deferred`。自動の判定より優先（`undo` は入力欄を読めなくても使う） |
-| `candIdleTimeout` | 数（秒） | 10 | 2〜120。何も押さないまま過ぎたら確定して閉じる |
+| `hotkeyMode` | 選択肢 | `candidate` | `paste` / `candidate` / `list` |
+| `candOrder` | 選択肢 | `terminal` | `terminal` / `ime` |
+| `launchAtLogin` | オン・オフ | false | 変えたときだけ `SMAppService.mainApp` に登録・解除（隔離中はしない） |
+| `maxItems` | 整数 | 1000 | 10〜20000 件 |
+| `maxTotalMB` | 整数 | 1024 | 100〜20480 MB（「2GB」とも書ける） |
+| `excludedApps` | バンドル ID の並び | なし | 前面にあるときのコピーはデータを読まずに捨てる（`SkipReason.excludedApp`） |
+| `candPasteTiming` | バンドル ID → 選択肢 | なし | `immediate` / `onCommit`（既定の一覧は `builtIn`） |
+| `candIdleTimeout` | 数（詳細） | 10 | 2〜120 秒 |
+| `candReplaceMethod` | バンドル ID → 選択肢（詳細・画面に出さない） | なし | `selectRange` / `undo` / `deferred` |
+| `keys.<操作 ID>` | キーの並び | `KeyAction.defaultCombos` | `KeyRules` に通るもの。どこからでも効くキーは 1 つだけ。空の並びで未設定 |
+
+### CLI（`Makurip [--data-dir DIR] --settings ...`）
+
+`schema` / `list` / `get <ID>` / `set <ID> <値>...` / `add <ID> <値>` / `remove <ID> <値>` / `reset <ID>... | --all` / `path` / `help`。
+`--json` で機械向け、`--take-over` で重なった操作から外して付け替える。終了コード: 0 成功・1 使い方の誤り・2 検証に通らない・3 書けない。
+`schema --json` の形: `guide`（AI 向けの案内）・`command`・`settingsFile`・`keyFormat`・`items[]`（`id`・`section`・`group`・`label`・`description`・`type`・
+`default`・`current`・`choices[]`・`min`/`max`/`step`/`unit`・`keyScope`・`builtIn[]`・`examples[]`（`request`・`value`・`command`・`note`）・`advanced`・`shownInSettingsWindow`）。
+AI 向けの手順と頼みの対応表は `docs/ai-settings.md`。
 
 ## 検索と絞り込み（`Sources/MakuripCore/Search/`）
 
@@ -189,6 +263,7 @@ UI 側（`Sources/MakuripUI/`）: `ClipContentLoader.language(for:)`（一覧の
 | `representationInfos(id:)` | 型の一覧（中身なし） |
 | `data(id:itemIndex:type:)` | 型 1 つのデータ（一覧のサムネイル・プレビュー用。全型を読む `snapshot` より軽い） |
 | `setPinned(_:id:)` / `setFlags(_:id:)` / `delete(id:)` / `clearUnpinned()` | 編集 |
+| `limits` / `setLimits(_:)` | いまの上限 / 上限を変える（下げたら超えた古い履歴をその場で消す。設定から） |
 | `enforceLimits()` / `removeOrphanBlobs()` | 上限の当て直し・保存途中で落ちた残りの掃除（起動時に呼ぶ） |
 
 ## DB スキーマ（版 1・`PRAGMA user_version = 1`）
@@ -224,4 +299,4 @@ CREATE TABLE representation (
 );
 ```
 
-データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・（検証時のみ）`debug-status.json`。
+データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・`settings.json`（+ 壊れていたときの `settings.broken.json`）・（検証時のみ）`debug-status.json`。

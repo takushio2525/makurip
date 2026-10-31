@@ -78,6 +78,10 @@ final class CandidatePanelController: NSObject, CandidatePresenting, NSWindowDel
         window.orderOut(nil)
     }
 
+    func keymapDidChange(_ keymap: Keymap) {
+        model.keymap = keymap
+    }
+
     func bump() {
         model.bump()
     }

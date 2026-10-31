@@ -29,7 +29,13 @@ public final class ClipStore: @unchecked Sendable {
     public static let blobDirectoryName = "blobs"
 
     public let directory: URL
-    public let limits: Limits
+    /// 上限（設定で変わる。変えるときは `setLimits` を通す）
+    public var limits: Limits {
+        lock.lock()
+        defer { lock.unlock() }
+        return currentLimits
+    }
+    private var currentLimits: Limits
     private let database: SQLiteDatabase
     private let lock = NSLock()
     private let fileManager = FileManager.default
@@ -38,7 +44,7 @@ public final class ClipStore: @unchecked Sendable {
 
     public init(directory: URL, limits: Limits = .default) throws {
         self.directory = directory
-        self.limits = limits
+        self.currentLimits = limits
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
             at: directory.appendingPathComponent(Self.blobDirectoryName, isDirectory: true),
@@ -140,6 +146,15 @@ public final class ClipStore: @unchecked Sendable {
             let ids = try queryIDs("SELECT id FROM clip WHERE pinned = 0")
             try deleteLocked(ids)
             return ids.count
+        }
+    }
+
+    /// 上限を変える（設定から）。下げたときは、超えた古い履歴（ピン留めを除く）をその場で消す。消した ID を返す
+    @discardableResult
+    public func setLimits(_ limits: Limits) throws -> [UUID] {
+        try withLock {
+            currentLimits = limits
+            return try enforceLimitsLocked()
         }
     }
 
@@ -299,7 +314,7 @@ public final class ClipStore: @unchecked Sendable {
         do {
             for (itemIndex, item) in clip.snapshot.items.enumerated() {
                 for (position, rep) in item.representations.enumerated()
-                where rep.data.count > limits.inlineThresholdBytes {
+                where rep.data.count > currentLimits.inlineThresholdBytes {
                     if blobFiles.isEmpty {
                         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
                     }
@@ -355,7 +370,7 @@ public final class ClipStore: @unchecked Sendable {
         var count = rows.count
         var bytes = rows.reduce(0) { $0 + $1.1 }
         var victims: [UUID] = []
-        for (id, size) in rows where count > limits.maxItems || bytes > limits.maxTotalBytes {
+        for (id, size) in rows where count > currentLimits.maxItems || bytes > currentLimits.maxTotalBytes {
             victims.append(id)
             count -= 1
             bytes -= size

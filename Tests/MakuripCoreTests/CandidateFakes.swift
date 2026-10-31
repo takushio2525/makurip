@@ -225,6 +225,8 @@ final class FakePresenter: CandidatePresenting {
     var onEvent: ((CandidatePresenterEvent) -> Void)?
     private(set) var states: [CandidateViewState] = []
     private(set) var bumps = 0
+    /// 設定から渡されたキーマップ（窓のヒント用）
+    private(set) var keymap: Keymap?
     /// 窓の枠（CoreGraphics の座標）
     var frame = CGRect(x: 400, y: 300, width: 372, height: 292)
 
@@ -237,6 +239,7 @@ final class FakePresenter: CandidatePresenting {
 
     func dismiss() { isVisible = false }
     func bump() { bumps += 1 }
+    func keymapDidChange(_ keymap: Keymap) { self.keymap = keymap }
     func contains(screenPoint: CGPoint) -> Bool { isVisible && frame.contains(screenPoint) }
 }
 

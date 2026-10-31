@@ -1,5 +1,5 @@
 # Makurip のよく使うコマンド。詳細は AGENTS.md の「コマンド」節
-.PHONY: build test lint format check app install e2e ui-compare clean
+.PHONY: build test lint format check app install e2e e2e-settings ui-compare clean
 
 build:
 	swift build
@@ -25,6 +25,10 @@ install:
 # 隔離した取り込み・永続化の E2E（一般ペーストボードに触らない）
 e2e:
 	scripts/e2e/capture.sh
+
+# 設定の隔離 E2E（CLI で変えて、動いているインスタンスにすぐ効くか。窓は出さず、ホットキーは使われていない組み合わせだけ）
+e2e-settings:
+	scripts/e2e/settings.sh
 
 # 試作（案 B）と SwiftUI のパネルを同じ状態で描いて並べる（画面ロック中でも動く。出力は .ui-compare/）
 ui-compare:
