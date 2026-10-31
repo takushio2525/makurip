@@ -158,6 +158,15 @@ check "拒否したことを記録した" "rejected" "$(status_value '.ai.lastOu
 AI list --limit 200 --json > "$RESP/cli-list.json"
 AI list --limit 200 > "$RESP/cli-list.txt"
 
+echo "== 設定画面の「登録コマンドをコピー」は、ほかの書き戻しと同じく新しい履歴にしない（#29 L7）"
+COUNT_BEFORE_COPY="$(status_value '.itemCount')"
+notify copyMCPRegisterCommand
+sleep 1.5
+# コマンドには実行ファイルとデータフォルダのパスが入るので、先頭の形だけを見る（出さない）
+check "ペーストボードに登録コマンドが入った" "yes" \
+    "$([[ "$("$DEVTOOL" pb-text --pasteboard "$PB")" == "claude mcp add "* ]] && echo yes || echo no)"
+check "履歴の件数は変わらない" "$COUNT_BEFORE_COPY" "$(status_value '.itemCount')"
+
 echo "== 一覧を開いて、追加がすぐ出るか見る"
 notify toggleHistory
 sleep 0.5

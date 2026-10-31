@@ -92,6 +92,7 @@ final class HistoryPanelModel {
 
     @ObservationIgnored private var haystacks: [UUID: (hash: String, text: String)] = [:]
     @ObservationIgnored private var snippetHaystacks: [UUID: (snippet: Snippet, text: String)] = [:]
+    @ObservationIgnored private var snippetMasks: [UUID: (snippet: Snippet, masked: Snippet?)] = [:]
     @ObservationIgnored private var warmTask: Task<Void, Never>?
 
     init(actions: HistoryActions?, keymap: Keymap = .default) {
@@ -229,14 +230,30 @@ final class HistoryPanelModel {
         allSnippets = actions?.snippets() ?? []
         let alive = Set(allSnippets.map(\.id))
         snippetHaystacks = snippetHaystacks.filter { alive.contains($0.key) }
+        snippetMasks = snippetMasks.filter { alive.contains($0.key) }
     }
 
-    /// 定型文の検索用の文字列（中身が変わったら作り直す。数百件でも打鍵のたびに正規化しないように）
+    /// 定型文の検索用の文字列（中身が変わったら作り直す。数百件でも打鍵のたびに正規化しないように）。
+    /// 秘密っぽい定型文は伏せ字の写しから作る（履歴の秘密と同じく、本当の値では引けない。#29 L3）
     func snippetHaystack(_ snippet: Snippet) -> String {
         if let cached = snippetHaystacks[snippet.id], cached.snippet == snippet { return cached.text }
-        let text = snippet.searchHaystack
+        let text = maskedSnippet(snippet) == nil ? snippet.searchHaystack : snippet.maskedSearchHaystack
         snippetHaystacks[snippet.id] = (snippet, text)
         return text
+    }
+
+    /// 秘密っぽい定型文の伏せ字の写し（秘密でなければ nil）。判定は中身が変わったときだけやり直す
+    func maskedSnippet(_ snippet: Snippet) -> Snippet? {
+        if let cached = snippetMasks[snippet.id], cached.snippet == snippet { return cached.masked }
+        let masked = snippet.isSecretLikely ? snippet.masked : nil
+        snippetMasks[snippet.id] = (snippet, masked)
+        return masked
+    }
+
+    /// カード・⌘Y に出す定型文。秘密っぽいものは伏せ字で、表示のキーを押している間だけ本当の値（#29 L3）
+    func shownSnippet(_ snippet: Snippet) -> Snippet {
+        guard !isRevealing, let masked = maskedSnippet(snippet) else { return snippet }
+        return masked
     }
 
     /// ⌘S: 定型文の一覧と履歴を切り替える。ピン留めだけの表示は外す（試作の scope は 1 つ）
@@ -246,10 +263,13 @@ final class HistoryPanelModel {
         refresh(keepSelection: false)
     }
 
-    /// 定型文の窓を開く。定型文の一覧では選んだものを編集、履歴の一覧では選んだ項目から新しく作る
+    /// 定型文の窓を開く。定型文の一覧では選んだものを編集、履歴の一覧では選んだ項目から新しく作る。
+    /// 秘密っぽい項目からは作らず、パネルを揺らす（定型文の窓は本文を伏せずに出し、定型文は伏せ字にも自動消去にもならない。#25）
     func editSnippet() {
         if showsSnippets {
             effects.editSnippet(selectedSnippet.map { .edit($0.id) } ?? .new(body: ""))
+        } else if selected?.isSecretLikely == true {
+            shakeCount += 1
         } else {
             effects.editSnippet(selected.map { .fromHistory($0.id) } ?? .new(body: ""))
         }
@@ -258,10 +278,13 @@ final class HistoryPanelModel {
     // MARK: キー
 
     /// 押されたキーを処理したら true（false のキーは検索欄へ流す）。
-    /// 日本語入力の変換中（`isComposing`）は何も横取りしない（確定の Enter や候補選びの ↑↓ を奪わないため）
+    /// 日本語入力の変換中（`isComposing`）は何も横取りしない（確定の Enter や候補選びの ↑↓ を奪わないため）。
+    /// 表示のキー（⌥）を押したままでも、ほかの操作のキーは効く（⌥ で秘密を見ながら ↩ で貼る。#28）
     func handle(_ press: KeyStroke, isComposing: Bool = false) -> Bool {
         if isComposing { return false }
-        guard let (action, digit) = keymap.action(for: press) else { return false }
+        guard let (action, digit) = keymap.action(for: press, scope: .panel, ignoringHeld: .reveal) else {
+            return false
+        }
         if isPickerOpen { return handlePicker(action) }
         perform(action, digit: digit)
         return true

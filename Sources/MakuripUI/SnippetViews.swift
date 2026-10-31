@@ -221,6 +221,9 @@ struct SnippetCardView: View {
     let query: SearchQuery
     let quickHeld: Bool
     let quickCombo: KeyCombo?
+    /// 秘密っぽい定型文か（`snippet` は伏せ字の写し）と、表示のキーで本当の値を出しているか（#29 L3）
+    var secret = false
+    var revealing = false
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -235,7 +238,7 @@ struct SnippetCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 0) {
-                SnippetMetaLine(snippet: snippet)
+                SnippetMetaLine(snippet: snippet, secret: secret, revealing: revealing)
                 Spacer(minLength: 6)
                 if index < 9, let quickCombo {
                     KeyChip(
@@ -263,9 +266,12 @@ struct SnippetCardView: View {
     }
 }
 
-/// カードの下の行（試作の Mk.metaHTML の定型文: 「定型文 · ;略語」）
+/// カードの下の行（試作の Mk.metaHTML の定型文: 「定型文 · ;略語」）。秘密っぽい定型文は「定型文 · 秘密」と出す
+/// （試作に無い。履歴の秘密の札と同じ色と印。隠している間は鍵、表示している間は目）
 struct SnippetMetaLine: View {
     let snippet: Snippet
+    var secret = false
+    var revealing = false
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -274,6 +280,16 @@ struct SnippetMetaLine: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(palette.snippet)
                 .fixedSize()
+            if secret {
+                MetaDot()
+                HStack(spacing: 3) {
+                    Image(systemName: revealing ? "eye" : "lock").font(.system(size: 9.5))
+                    Text("秘密")
+                }
+                .fontWeight(.semibold)
+                .foregroundStyle(revealing ? palette.accentInk : palette.secret)
+                .fixedSize()
+            }
             if !snippet.abbreviation.isEmpty {
                 MetaDot()
                 Text(snippet.abbreviation)
@@ -288,7 +304,9 @@ struct SnippetMetaLine: View {
 
 /// ⌘Y の定型文（試作の pk-head・.pv-snippet・.pv-note・details）
 struct SnippetPeekContent: View {
+    /// 秘密っぽい定型文なら伏せ字の写し（表示のキーを押している間は本当の値）
     let snippet: Snippet
+    var secret = false
     let model: HistoryPanelModel
     @Environment(\.palette) private var palette
 
@@ -296,6 +314,7 @@ struct SnippetPeekContent: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 SnippetBadge()
+                if secret { SecretBadge() }
                 Text(DisplayText.snippetInfo(snippet))
                     .font(.system(size: 12))
                     .foregroundStyle(palette.text2)
@@ -324,6 +343,7 @@ struct SnippetPeekContent: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(
                             palette.wellLine, lineWidth: 0.5))
+                    if secret { secretNote }
                     note
                 }
                 .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
@@ -337,6 +357,23 @@ struct SnippetPeekContent: View {
             .padding(.horizontal, 12)
             details
                 .padding(EdgeInsets(top: 12, leading: 16, bottom: 14, trailing: 16))
+        }
+    }
+
+    /// 秘密っぽい定型文の案内（履歴の秘密の ⌘Y と同じ文と、押している間だけ表示するボタン。#29 L3）
+    private var secretNote: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text("秘密らしき値なので隠しています。")
+                    RevealHint(combo: model.keymap.primary(.reveal), suffix: "を押している間だけ表示します。")
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Text("貼り付けると元の文字列が入ります。")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(palette.text2)
+            PressToReveal(pressed: Binding(get: { model.revealPressed }, set: { model.revealPressed = $0 }))
         }
     }
 

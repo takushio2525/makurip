@@ -76,6 +76,114 @@ struct SecretDisplayTests {
         #expect(model.selectedIndex == 0)
     }
 
+    @Test("⇧⌘S: 秘密の項目からは定型文を作らず（平文を窓へ渡さない）、パネルを揺らす。秘密でなければ今までどおり（#25）")
+    func editSnippetFromSecret() {
+        var requests: [SnippetEditRequest] = []
+        let model = HistoryPanelModel(actions: history)
+        model.effects.editSnippet = { requests.append($0) }
+        model.open()
+        model.select(4)
+        #expect(model.selected?.id == secretKey.id)
+        let shakes = model.shakeCount
+        model.revealHeld = true  // ⌥ で見ていても同じ
+        #expect(model.handle(KeyStroke(keyCode: 1, modifiers: [.command, .shift])))
+        #expect(requests.isEmpty, "秘密の項目で定型文の窓を開いた: \(requests)")
+        #expect(model.shakeCount == shakes + 1)
+        model.revealHeld = false
+        model.select(0)
+        #expect(!(model.selected?.isSecretLikely ?? true))
+        model.perform(.editSnippet)
+        #expect(requests == [.fromHistory(model.items[0].id)])
+    }
+
+    @Test("履歴から定型文の下書きを作る本文: 秘密の項目なら作らない（本体の側も同じ決まりを通す。#25）")
+    func snippetDraftFromSecret() {
+        func snapshot(_ text: String) -> PasteboardSnapshot {
+            PasteboardSnapshot(items: [
+                PasteboardItemSnapshot(representations: [
+                    PasteboardRepresentation(type: PasteboardTypes.utf8PlainText, data: Data(text.utf8))
+                ])
+            ])
+        }
+        #expect(SnippetFromHistory.draftBody(of: secretKey, snapshot: snapshot(realText(secretKey))) == nil)
+        let plain = history.items[0]
+        #expect(SnippetFromHistory.draftBody(of: plain, snapshot: snapshot("ふつうの文")) == "ふつうの文")
+        // 消えた項目・文字のない項目は、今までどおり空の下書き
+        #expect(SnippetFromHistory.draftBody(of: nil, snapshot: nil) == "")
+        #expect(SnippetFromHistory.draftBody(of: plain, snapshot: PasteboardSnapshot(items: [])) == "")
+    }
+
+    @Test("一覧: ⌥ を押したまま ↓・↩・⇧↩・⌘1 でも操作が効く（表示のキーの修飾を外して引き直す。#28）")
+    func panelKeysWhileRevealing() {
+        var pasted: [(UUID, PasteMode)] = []
+        let model = HistoryPanelModel(actions: history)
+        model.effects.paste = { pasted.append(($0, $1)) }
+        model.open()
+        model.revealHeld = true
+        #expect(model.handle(KeyStroke(keyCode: KeyCodes.downArrow, modifiers: .option)))
+        #expect(model.selectedIndex == 1)
+        #expect(model.handle(KeyStroke(keyCode: KeyCodes.returnKey, modifiers: .option)))
+        #expect(pasted.map(\.0) == [model.items[1].id] && pasted.map(\.1) == [.normal])
+        #expect(model.handle(KeyStroke(keyCode: KeyCodes.returnKey, modifiers: [.option, .shift])))
+        #expect(pasted.last?.1 == .plainText)
+        #expect(model.handle(KeyStroke(keyCode: 18, modifiers: [.option, .command])))  // ⌥⌘1
+        #expect(pasted.last?.0 == model.items[0].id)
+        // ⌥ と文字のキー（ほかの操作に当たらない）は検索欄へ流す
+        #expect(!model.handle(KeyStroke(keyCode: 0, modifiers: .option)))
+    }
+
+    @Test("⌘S: 秘密っぽい定型文はカード・⌘Y・検索で伏せ字。表示のキーを押している間だけ本当の値（#29 L3）")
+    func secretSnippetMasked() throws {
+        history.snippetList = SampleHistory.secretSnippets
+        let real = SampleHistory.secretSnippetValue
+        let model = HistoryPanelModel(actions: history)
+        model.open()
+        model.toggleSnippets()
+        model.select(1)
+        let snippet = try #require(model.selectedSnippet)
+        #expect(snippet.body.contains(real), "選んでいる定型文（貼る元）は本当の値のまま")
+        #expect(model.maskedSnippet(snippet) != nil)
+        let shown = model.shownSnippet(snippet)
+        #expect(!shown.body.contains(real))
+        #expect(shown.body.hasPrefix("検証環境のキー:\nsk-test-"))
+        #expect(shown.name == snippet.name, "秘密でない名前はそのまま")
+        model.revealHeld = true
+        #expect(model.shownSnippet(snippet).body.contains(real))
+        model.revealHeld = false
+        model.revealPressed = true
+        #expect(model.shownSnippet(snippet).body.contains(real), "⌘Y の「押している間だけ表示」でも出す")
+        model.revealPressed = false
+        // 秘密でない定型文は伏せない
+        let plain = model.snippetItems[0]
+        #expect(model.maskedSnippet(plain) == nil)
+        #expect(model.shownSnippet(plain) == plain)
+        // 検索: 本当の値では引けず、見えている接頭辞・名前・「秘密」で引ける
+        model.query = String(real.dropFirst(8).prefix(10))
+        #expect(!model.snippetItems.contains { $0.id == snippet.id })
+        for query in ["sk-test", "検証用", "himitsu"] {
+            model.query = query
+            #expect(model.snippetItems.contains { $0.id == snippet.id }, "\(query) で引けない")
+        }
+    }
+
+    @Test("秘密っぽい定型文のカードもパネルの幅に収まる（隠している・表示中・ライト・ダーク）")
+    func secretSnippetCardWidth() {
+        let width = HistoryPanelView.cardWidth
+        let snippet = SampleHistory.secretSnippets[1]
+        for revealing in [false, true] {
+            for dark in [false, true] {
+                let card = SnippetCardView(
+                    snippet: revealing ? snippet : snippet.masked, index: 1, isSelected: true, query: .empty,
+                    quickHeld: false, quickCombo: Keymap.default.primary(.quickPaste), secret: true,
+                    revealing: revealing
+                )
+                .environment(\.palette, dark ? .dark : .light)
+                let size = NSHostingController(rootView: card).sizeThatFits(in: CGSize(width: width, height: 10_000))
+                #expect(size.width <= width + 0.5)
+            }
+        }
+    }
+
     @Test("⌘O: 秘密の URL は伏せ字から URL を作らず、コピー元のページだけを開く")
     func openSourceOfSecretURL() {
         var opened: [URL] = []

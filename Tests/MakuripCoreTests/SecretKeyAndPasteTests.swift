@@ -73,3 +73,51 @@ struct SecretPasteTests {
         #expect(PasteboardMarkers.containsExcludedMarker(prepared.allTypes))
     }
 }
+
+/// 定型文の秘密（#29 L3）。AI の口の一覧と同じく本文か名前で判定し、貼るときは ConcealedType を足す
+@Suite("定型文の秘密")
+struct SnippetSecretTests {
+    func snippet(name: String = "", abbreviation: String = "", body: String) -> Snippet {
+        Snippet(
+            id: UUID(), name: name, abbreviation: abbreviation, body: body, createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    @Test("秘密の本文の定型文を貼るときは ConcealedType を足す。ふつうの本文には足さない")
+    func pasteMarksConcealed() {
+        let secret = SnippetPaste.snapshot(for: "トークン: " + FakeSecret.github)
+        #expect(secret.allTypes.contains(PasteboardMarkers.concealed))
+        #expect(secret.items.count == 1)
+        #expect(secret.items[0].representations.first?.type == PasteboardTypes.utf8PlainText, "文字の型は先頭のまま")
+        let plain = SnippetPaste.snapshot(for: "いつもお世話になっております。")
+        #expect(!plain.allTypes.contains(PasteboardMarkers.concealed))
+        #expect(plain.allTypes == [PasteboardTypes.utf8PlainText])
+    }
+
+    @Test("秘密っぽいかは本文か名前で決める（AI の口の一覧と同じ）。伏せ字の写しに本当の値は入らない")
+    func detectionAndMask() {
+        #expect(!snippet(name: "あいさつ", body: "いつもお世話になっております。").isSecretLikely)
+        let byBody = snippet(name: "GitHub", abbreviation: ";gh", body: "token: " + FakeSecret.github)
+        #expect(byBody.isSecretLikely)
+        let byName = snippet(name: FakeSecret.github, body: "ふつうの本文")
+        #expect(byName.isSecretLikely)
+        for item in [byBody, byName] {
+            let masked = item.masked
+            #expect(![masked.name, masked.abbreviation, masked.body].joined().contains(FakeSecret.github))
+            #expect(masked.id == item.id)
+        }
+        #expect(byBody.masked.name == "GitHub" && byBody.masked.abbreviation == ";gh", "秘密でない名前・略語はそのまま")
+        #expect(byBody.masked.body.hasPrefix("token: "))
+    }
+
+    @Test("秘密の定型文の検索の文字列: 本当の値では引けず、見えている接頭辞・名前・「秘密」で引ける")
+    func searchHaystack() {
+        let item = snippet(name: "GitHub", body: "token: " + FakeSecret.github)
+        let haystack = item.maskedSearchHaystack
+        let hidden = String(FakeSecret.github.dropFirst(6).prefix(12))
+        #expect(!SearchText.parse(hidden).matches(normalized: haystack))
+        for query in ["ghp_", "github", "秘密", "ひみつ", "himitsu", "定型文"] {
+            #expect(SearchText.parse(query).matches(normalized: haystack), "\(query) で引けない")
+        }
+    }
+}

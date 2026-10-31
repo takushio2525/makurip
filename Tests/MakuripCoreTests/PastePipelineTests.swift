@@ -104,3 +104,24 @@ struct PastePipelineTests {
         #expect(read.firstData(for: Self.custom.0) == Self.custom.1)
     }
 }
+
+/// 一覧から貼るときの宛先（#27）。Makurip 自身の窓から一覧を開いたら、前に使った別のアプリを宛先にしない
+@Suite("貼り付けの宛先")
+struct PasteTargetTests {
+    let own: pid_t = 500
+
+    @Test("前面がほかのアプリなら、そのアプリが宛先")
+    func otherApp() {
+        #expect(PasteTarget.pid(frontmost: 700, own: own) == 700)
+    }
+
+    @Test("前面が Makurip 自身（定型文の窓・設定画面）なら宛先なし（前に使ったアプリへ ⌘V を送らない）")
+    func ownWindow() {
+        #expect(PasteTarget.pid(frontmost: own, own: own) == nil)
+    }
+
+    @Test("前面のアプリが分からないときも宛先なし")
+    func unknown() {
+        #expect(PasteTarget.pid(frontmost: nil, own: own) == nil)
+    }
+}

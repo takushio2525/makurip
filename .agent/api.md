@@ -37,6 +37,7 @@
 | `pasteSnippet` | 定型文を貼る（一覧の ↩ と同じ処理）。`userInfo["index"]` は 1 からの番号、`["mode"]` は `normal` / `plainText` / `copyOnly`（既定 `normal`）。番号の外は何もしない |
 | `clearHistory` | 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る） |
 | `enableAIAccess` / `disableAIAccess` | AI の口をオン / オフにする（設定画面の切り替えと同じ。`--debug-control` は隔離したときだけ効くので、本物の履歴の口は開けられない） |
+| `copyMCPRegisterCommand` | 設定画面の「登録コマンドをコピー」と同じ（監視しているペーストボードに書く。新しい履歴にならないことを `make e2e-ai` が確かめる） |
 | `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く（設定ファイルから読み直したときも自動で書く） |
 | `quit` | 終了する |
 
@@ -45,7 +46,7 @@
 `storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
 `secrets`（`count` 秘密の件数・`knownFormat` 自動消去の対象の件数・`autoDeleted` 起動してから自動で消した件数・`retentionSeconds`・`nextSweepAt` 次に消す時刻。中身は出さない）・
 `settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・
-`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない）・
+`snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない。秘密の形の値を含んだときはどちらも `"hidden"`）・
 `ai`（`enabled` AI の口がオンか・`externalHistoryChanges` MCP・CLI が履歴を変えたと知らされた回数・`activityCount` AI の操作の記録の件数・`lastTool`・`lastOutcome`。#6）・`writtenAt`。
 `historyUI` には `showsSnippets`・`snippetCount` もある。
 

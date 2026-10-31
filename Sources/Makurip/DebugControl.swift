@@ -32,6 +32,8 @@ final class DebugControl {
         /// AI の口をオン・オフにする（設定画面の切り替えと同じ。隔離したときだけ効くので、本物の履歴の口は開けられない）
         case enableAIAccess
         case disableAIAccess
+        /// 設定画面の「登録コマンドをコピー」と同じ（書き戻しが新しい履歴にならないかを E2E で確かめる用）
+        case copyMCPRegisterCommand
         /// 状態を書く
         case writeStatus
         case quit
@@ -95,6 +97,8 @@ final class DebugControl {
             controller.setAIAccess(true)
         case .disableAIAccess:
             controller.setAIAccess(false)
+        case .copyMCPRegisterCommand:
+            controller.copyMCPRegisterCommand()
         case .writeStatus:
             break
         case .quit:
@@ -124,7 +128,8 @@ final class DebugControl {
         return summary
     }
 
-    /// 定型文の件数・読み直した回数・読めなかった項目の数と、直近に貼った定型文の長さ（中身は出さない）
+    /// 定型文の件数・読み直した回数・読めなかった項目の数と、直近に貼った定型文の長さ（中身は出さない。
+    /// 秘密の形の値を含んだときは長さとカーソルの位置も "hidden"。#29 L3）
     private static func snippetSummary(_ controller: AppController) -> [String: Any] {
         var summary: [String: Any] = [
             "count": controller.snippets().count,
@@ -134,7 +139,10 @@ final class DebugControl {
             "editorVisible": controller.isSnippetEditorVisible,
             "dateFormat": controller.snippetDateFormat().rawValue,
         ]
-        if let last = controller.lastSnippetPaste {
+        if let last = controller.lastSnippetPaste, last.concealed {
+            summary["lastPasteLength"] = "hidden"
+            summary["lastCursorOffsetFromEnd"] = "hidden"
+        } else if let last = controller.lastSnippetPaste {
             summary["lastPasteLength"] = last.length
             summary["lastCursorOffsetFromEnd"] = last.cursorOffsetFromEnd ?? NSNull()
         }

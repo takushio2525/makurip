@@ -281,6 +281,38 @@ struct CandidateSettingsTests {
         #expect(settings.timing(for: "com.apple.TextEdit") == .onCommit)
     }
 
+    @Test("アプリごとの上書き（candPasteTiming・candReplaceMethod）もバンドル ID の大文字・小文字を区別しない（#29 L4）")
+    func overridesIgnoreCase() {
+        var settings = CandidateSettings.default
+        // CLI・AI は小文字で書きがち。書いたら効く
+        settings.pasteTiming = ["com.apple.terminal": .immediate, "COM.APPLE.TEXTEDIT": .onCommit]
+        settings.replaceMethod = ["com.example.EDITOR": .undo]
+        #expect(settings.timing(for: "com.apple.Terminal") == .immediate)
+        #expect(settings.timing(for: "com.apple.TextEdit") == .onCommit)
+        #expect(settings.replaceOverride(for: "com.example.editor") == .undo)
+        #expect(settings.replaceOverride(for: "com.example.other") == nil)
+        #expect(settings.replaceOverride(for: nil) == nil)
+        // 大文字・小文字だけが違う上書きが 2 つあれば、そのままの表記を先にし、なければ表記の並びの先頭を選ぶ
+        settings.pasteTiming = ["com.apple.Terminal": .immediate, "com.apple.terminal": .onCommit]
+        #expect(settings.timing(for: "com.apple.Terminal") == .immediate)
+        #expect(settings.timing(for: "com.apple.terminal") == .onCommit)
+        #expect(settings.timing(for: "COM.APPLE.TERMINAL") == .immediate)
+    }
+
+    @Test("候補窓の流れでも、小文字で書いた上書きが効く（ターミナルですぐ貼る）")
+    @MainActor
+    func lowercaseOverrideInCoordinator() async {
+        var settings = CandidateSettings.default
+        settings.pasteTiming = ["com.apple.terminal": .immediate]
+        let h = CandidateHarness(bundleID: "com.apple.Terminal", settings: settings)
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.method != .deferred)
+        #expect(h.editor.string == "メモ：最新")
+        h.coordinator.cancel()
+        await h.coordinator.waitUntilIdle()
+    }
+
     @Test("既定の一覧に重なりがなく、ターミナルとチャットの両方がある")
     func appList() {
         let ids = DeferredPasteApps.all.map { $0.bundleID.lowercased() }

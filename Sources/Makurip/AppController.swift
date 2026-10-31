@@ -230,13 +230,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         openList(selecting: nil)
     }
 
-    /// 一覧を開く。候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で
+    /// 一覧を開く。候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で。
+    /// 貼り付けの宛先は開くたびに決め直す。前面が Makurip 自身（定型文の窓・設定画面）なら宛先なしにして、
+    /// 前に使った別のアプリへ ⌘V を送らない・閉じてもそのアプリへ切り替えない（#27）
     func openList(selecting itemID: UUID?) {
         guard let history, !history.isVisible else { return }
         let front = NSWorkspace.shared.frontmostApplication
-        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            previousApp = front
-        }
+        let target = PasteTarget.pid(
+            frontmost: front?.processIdentifier, own: ProcessInfo.processInfo.processIdentifier)
+        previousApp = target == nil ? nil : front
         history.show(selecting: itemID)
     }
 
@@ -531,9 +533,11 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         return isolated ? command + " --data-dir '\(dataDirectory.path)'" : command
     }
 
-    private func copyMCPRegisterCommand() {
+    /// 設定画面の「登録コマンドをコピー」。ほかの書き戻しと同じく、この変化は新しい履歴にしない（#29 L7）
+    func copyMCPRegisterCommand() {
         pasteboard.clearContents()
         pasteboard.setString(mcpRegisterCommand, forType: .string)
+        monitor?.acknowledgeOwnWrite(changeCount: pasteboard.changeCount)
     }
 
     // MARK: 定型文（#7）
@@ -554,11 +558,14 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         let snapshot = SnippetPaste.snapshot(for: expansion.text)
         let changeCount = PasteboardWriter.write(snapshot, to: pasteboard)
         monitor.acknowledgeOwnWrite(changeCount: changeCount)
-        lastSnippetPaste = (expansion.text.utf16.count, expansion.cursorOffsetFromEnd)
+        // 秘密の形の値を含む（ConcealedType を足した）ときは、長さもログ・状態に出さない（取り込みのログと同じ。#29 L3）
+        let concealed = snapshot.allTypes.contains(PasteboardMarkers.concealed)
+        let length = concealed ? "hidden" : String(expansion.text.utf16.count)
+        lastSnippetPaste = (expansion.text.utf16.count, expansion.cursorOffsetFromEnd, concealed)
 
         if mode == .copyOnly {
             lastPasteOutcome = "copied"
-            Log.paste.info("定型文をコピーだけ length=\(expansion.text.utf16.count)")
+            Log.paste.info("定型文をコピーだけ length=\(length, privacy: .public)")
             historyDidClose()
             debugControl?.writeStatus()
             return
@@ -576,15 +583,16 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
                     offsetFromEnd: expansion.cursorOffsetFromEnd)
             }
             Log.paste.info(
-                "定型文を貼り付け outcome=\(outcome.rawValue, privacy: .public) mode=\(mode.rawValue, privacy: .public) length=\(expansion.text.utf16.count) cursorMoved=\(cursorMoved)"
+                "定型文を貼り付け outcome=\(outcome.rawValue, privacy: .public) mode=\(mode.rawValue, privacy: .public) length=\(length, privacy: .public) cursorMoved=\(cursorMoved)"
             )
             if outcome == .noPermission { statusMenu?.flashPermissionNeeded() }
             debugControl?.writeStatus()
         }
     }
 
-    /// 直近に貼った定型文の長さと、カーソルの位置（検証の状態出力用。中身は持たない）
-    private(set) var lastSnippetPaste: (length: Int, cursorOffsetFromEnd: Int?)?
+    /// 直近に貼った定型文の長さと、カーソルの位置（検証の状態出力用。中身は持たない）。秘密の形の値を含んだときは `concealed`
+    /// （状態出力ではどちらも伏せる）
+    private(set) var lastSnippetPaste: (length: Int, cursorOffsetFromEnd: Int?, concealed: Bool)?
 
     /// 差し込みに使う値。{{クリップボード}}・{{言語}} があるときだけ履歴を読む（秘密っぽい項目と、文字でない項目は飛ばす）
     private func snippetContext(for body: String) -> SnippetTemplate.Context {
@@ -620,9 +628,21 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         return false
     }
 
-    /// 定型文の窓を開く。履歴から作るときは、その項目の文字を本文の下書きにする
+    /// 定型文の窓を開く。履歴から作るときは、その項目の文字を本文の下書きにする（秘密っぽい項目からは作らない。#25）
     func openSnippetEditor(_ request: SnippetEditRequest) {
         guard let snippetStore else { return }
+        var resolved = request
+        if case .fromHistory(let itemID) = request {
+            let item = try? store?.item(id: itemID)
+            guard
+                let body = SnippetFromHistory.draftBody(
+                    of: item, snapshot: (try? store?.snapshot(id: itemID)).flatMap { $0 })
+            else {
+                Log.app.info("秘密っぽい項目からは定型文を作らない")
+                return
+            }
+            resolved = .new(body: body)
+        }
         if history?.isVisible == true { history?.hide() }
         if snippetEditor == nil {
             snippetEditor = SnippetEditorUIFactory.make(
@@ -630,11 +650,6 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
                 environment: SnippetEditorEnvironment(dateFormat: { [weak self] in
                     self?.snippetDateFormat() ?? .default
                 }))
-        }
-        var resolved = request
-        if case .fromHistory(let itemID) = request {
-            let text = (try? store?.snapshot(id: itemID)).flatMap { $0 }.flatMap(KindClassifier.plainText(of:))
-            resolved = .new(body: text ?? "")
         }
         snippetEditor?.show(resolved)
     }

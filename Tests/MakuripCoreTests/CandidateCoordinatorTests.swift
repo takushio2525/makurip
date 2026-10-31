@@ -186,6 +186,27 @@ struct CandidateCoordinatorTests {
         #expect(h.host.openedLists == [h.id(0)])
     }
 
+    @Test("keys.candExpand を空にしても、呼び出しキーは候補窓を広げる（試作どおり。項目の説明にそう書く。#29 L5）")
+    func emptyExpandKeysStillExpandByHotKey() async {
+        let h = CandidateHarness()
+        h.coordinator.keymap.set([], for: .candidateExpand)
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        #expect(h.tap.press(9, [.control, .command]) == .pass)
+        #expect(h.coordinator.isActive)
+        for key in [HotKeyRouter.Key.open, .openList] {
+            #expect(
+                HotKeyRouter.route(key, mode: .candidate, candidateActive: true, listVisible: false)
+                    == .expandCandidate)
+        }
+        // 設定画面と CLI（--settings schema）に出る説明が、この振る舞いと食い違わない
+        let summary = SettingsSchema.item(SettingID.keys(.candidateExpand))?.summary
+        #expect(summary?.contains("呼び出しキー") == true)
+        #expect(summary?.contains("空にしても止まらない") == true)
+        h.coordinator.cancel()
+        await h.coordinator.waitUntilIdle()
+    }
+
     @Test("選択範囲を書けないアプリは ⌘Z で差し替える（戻ったことを AX で確かめてから貼る）")
     func undoMethod() async {
         let editor = FakeEditor("メモ：")
@@ -581,6 +602,27 @@ struct CandidateInterceptLifetimeTests {
         await h.coordinator.waitUntilIdle()
         h.expectClosed()
         #expect(h.coordinator.lastEndReason == path.reason)
+    }
+
+    @Test(
+        "表示のキー（⌥）を押したままの確定・取り消し・ほかのキーでも、タップ・窓・時計が残らない（#28）",
+        arguments: [KeyCodes.tab, KeyCodes.returnKey, KeyCodes.escape, 0], [false, true])
+    func revealHeldPathsReleaseTap(key: UInt16, deferred: Bool) async {
+        let h = CandidateHarness(bundleID: deferred ? "com.apple.Terminal" : "com.example.editor")
+        #expect(h.coordinator.start() == .started)
+        await h.coordinator.waitUntilIdle()
+        h.tap.press(KeyCodes.upArrow)
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        h.tap.press(key, .option)
+        #expect(!h.tap.isActive)
+        #expect(!h.presenter.isVisible)
+        await h.coordinator.waitUntilIdle()
+        h.expectClosed()
+        #expect(!h.coordinator.revealed)
+        let expected: CandidateCoordinator.EndReason =
+            key == KeyCodes.escape ? .cancelKey : key == 0 ? .otherKey : .commitKey
+        #expect(h.coordinator.lastEndReason == expected)
     }
 
     @Test("同じアプリの中での切り替え通知・窓の中のクリックでは閉じない")

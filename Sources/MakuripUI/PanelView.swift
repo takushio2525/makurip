@@ -354,10 +354,12 @@ private struct SnippetCardList: View {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(model.snippetItems.enumerated()), id: \.element.id) { index, snippet in
+                        // 秘密っぽい定型文は伏せ字で、表示のキーを押している間だけ本当の値（#29 L3）
                         SnippetCardView(
-                            snippet: snippet, index: index, isSelected: index == model.selectedIndex,
-                            query: model.searchQuery, quickHeld: model.quickModifierHeld,
-                            quickCombo: model.keymap.primary(.quickPaste)
+                            snippet: model.shownSnippet(snippet), index: index,
+                            isSelected: index == model.selectedIndex, query: model.searchQuery,
+                            quickHeld: model.quickModifierHeld, quickCombo: model.keymap.primary(.quickPaste),
+                            secret: model.maskedSnippet(snippet) != nil, revealing: model.isRevealing
                         )
                         .id(snippet.id)
                         .onTapGesture(count: 2) {

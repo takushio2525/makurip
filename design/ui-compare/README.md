@@ -210,6 +210,7 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 | 履歴が空（「⌘S 定型文を見る」） | `images/compare-empty-history.png` |
 | 定型文の窓（試作の設定シートと並べる）: 編集・新しい下書き（履歴から登録） | `images/compare-snippet-editor-light.png`・`images/compare-snippet-editor-dark.png`・`images/compare-snippet-editor-new-light.png`・`images/compare-snippet-editor-new-dark.png` |
 | 一覧のエッジケース（試作に無い）: 0 件・長い名前と空白のない長い行・10 行・壊れた記法・同じ名前・差し込みだらけ・300 件 | `images/edge-snippets-empty.png`・`images/edge-snippets-empty-dark.png`・`images/edge-snippets-long.png`・`images/edge-snippets-long-dark.png`・`images/edge-snippets-many.png` |
+| 秘密っぽい定型文（試作に無い。#29 L3）: 伏せ字と「秘密」の札・⌥ を押している間の表示（ダーク） | `images/edge-snippet-secret.png`・`images/edge-snippet-secret-reveal-dark.png` |
 | 窓のエッジケース: 保存できない（本文が空）・0 件・ファイルに読めない項目・長いもの・300 件 | `images/edge-snippet-editor-error.png`・`images/edge-snippet-editor-empty-dark.png`・`images/edge-snippet-editor-issues.png`・`images/edge-snippet-editor-long.png`・`images/edge-snippet-editor-many.png` |
 | 設定画面の「定型文」のまとまり（日付の書き方） | `images/edge-settings-snippet.png` |
 
@@ -232,6 +233,9 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
   左に一覧（番号・名前・略語・本文の 1 行目、上下のボタンで並べ替え）、右に名前・略語・本文（差し込みに定型文の色）と、差し込みを入れる札
 - **⌘Y の本文は選べない**: 試作は文字を選べるが、札を画像にしているので、選んでコピーすると札が文字にならない。貼るのは ↩ で行う
 - **⌘⌫ で定型文を消さない**: 試作どおり（一覧では消せない）。消すのは定型文の窓で、確かめてから
+- **秘密っぽい定型文**（試作に無い。#29 L3）: 本文か名前に秘密の形の値がある定型文は、カードの名前・本文・略語を伏せ字にし、下の行に「定型文 · 秘密」（履歴の秘密の札と同じ色。
+  隠している間は鍵、⌥ を押して表示している間は目）を出す。⌘Y は「定型文」の札の隣に「秘密」の札、本文の下に履歴の秘密と同じ案内（「⌥ を押している間だけ表示します。」・
+  「貼り付けると元の文字列が入ります。」）と「押している間だけ表示」のボタン。`images/edge-snippet-secret.png`・`images/edge-snippet-secret-reveal-dark.png`
 
 ### オフスクリーン描画では分からないこと（実機で確かめる。#9）
 

@@ -31,13 +31,16 @@ public enum SnippetClipboard {
 
 /// 定型文を貼るときにペーストボードへ書く中身（純粋関数）
 public enum SnippetPaste {
-    /// 置き換えた文字を、文字の型（UTF-8）だけで書く。プレーンテキストで貼るときも同じ（書式を持たないため）
+    /// 置き換えた文字を、文字の型（UTF-8）だけで書く。プレーンテキストで貼るときも同じ（書式を持たないため）。
+    /// 秘密の形の値を含むときは ConcealedType の印を足す（ほかのクリップボード履歴アプリに記録させない。
+    /// 履歴の秘密を貼るとき `PastePipeline.prepare(…, secret: true)` と同じ。#29 L3）
     public static func snapshot(for text: String) -> PasteboardSnapshot {
-        PasteboardSnapshot(items: [
+        let snapshot = PasteboardSnapshot(items: [
             PasteboardItemSnapshot(representations: [
                 PasteboardRepresentation(type: PasteboardTypes.utf8PlainText, data: Data(text.utf8))
             ])
         ])
+        return SecretDetector.findings(in: text).isEmpty ? snapshot : PastePipeline.markedConcealed(snapshot)
     }
 
     /// `{{カーソル}}` の位置へ文字カーソルを動かす先。**貼る前と後の入力欄を AX で読めて、
