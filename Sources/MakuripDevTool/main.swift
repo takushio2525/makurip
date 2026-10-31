@@ -501,7 +501,7 @@ let usage = """
       pb-release NAME
       pb-text --pasteboard NAME                名前付きペーストボードの平文（自作のテストデータの確認用。一般は読まない）
       post-keys --pid PID [--text S] [--key return|escape|up|down|cmd-v|cmd-c|cmd-a|cmd-s]   pid 宛てにキーを送る
-      notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|pasteSnippet|clearHistory|enableAIAccess|disableAIAccess|writeStatus|quit> [--pid PID] [--index N --mode normal|plainText|copyOnly]
+      notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|pasteSnippet|clearHistory|enableAIAccess|disableAIAccess|copyMCPRegisterCommand|writeStatus|quit> [--pid PID] [--index N --mode normal|plainText|copyOnly]
       window-id --pid PID                      その pid のいちばん大きい窓の番号（screencapture -l 用）
       image-stats PATH                         画像が真っ黒でないかの確認用
       activate --pid PID                       その pid のアプリを前面に戻す

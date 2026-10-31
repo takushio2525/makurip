@@ -32,6 +32,8 @@ final class DebugControl {
         /// AI の口をオン・オフにする（設定画面の切り替えと同じ。隔離したときだけ効くので、本物の履歴の口は開けられない）
         case enableAIAccess
         case disableAIAccess
+        /// 設定画面の「登録コマンドをコピー」と同じ（書き戻しが新しい履歴にならないかを E2E で確かめる用）
+        case copyMCPRegisterCommand
         /// 状態を書く
         case writeStatus
         case quit
@@ -95,6 +97,8 @@ final class DebugControl {
             controller.setAIAccess(true)
         case .disableAIAccess:
             controller.setAIAccess(false)
+        case .copyMCPRegisterCommand:
+            controller.copyMCPRegisterCommand()
         case .writeStatus:
             break
         case .quit:
