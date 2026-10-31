@@ -332,7 +332,8 @@ public final class CandidateCoordinator {
             }
             // どこからでも効くキー（⌃⌘V など）は Carbon のホットキーに任せる（候補窓が出ていれば広げる）
             if keymap.action(for: press, scope: .global) != nil { return .pass }
-            guard let (action, _) = keymap.action(for: press, scope: .candidate) else {
+            // 表示のキー（⌥）を押したままでも確定・取り消し・↑↓ を効かせる（⌥ で秘密を見ながら ⇥ で確定する。#28）
+            guard let (action, _) = keymap.action(for: press, scope: .candidate, ignoringHeld: .reveal) else {
                 // それ以外のキーは確定して、そのキーは前面のアプリへそのまま渡す（予測変換と同じ）
                 end(.otherKey, finish: implicitFinish(applyLatest: true))
                 return .pass

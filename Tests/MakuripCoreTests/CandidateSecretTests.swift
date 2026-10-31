@@ -147,3 +147,150 @@ struct CandidateSecretTests {
         await h.coordinator.waitUntilIdle()
     }
 }
+
+/// 表示のキー（既定 ⌥）を押したまま候補窓を操作する（#28）。キーの照合は修飾キーの完全一致なので、
+/// 表示のキーの修飾を外したキーでも引き直す。⌥ 付きのキーを前面のアプリへ渡さない
+@MainActor
+@Suite("候補窓と秘密: 表示のキーを押したまま")
+struct CandidateRevealHeldTests {
+    func harness() -> CandidateHarness {
+        let h = CandidateHarness(
+            items: [(.text, .text("最新")), (.text, .text(CandidateSecretTests.secretText)), (.code, .text("let x = 1"))])
+        h.host.items[1].flags = CandidateSecretTests.flags
+        return h
+    }
+
+    @Test("⌥ で秘密を見ながら ⇥・↩ で確定し、秘密を貼る", arguments: [KeyCodes.tab, KeyCodes.returnKey, KeyCodes.keypadEnter])
+    func commitWhileRevealing(key: UInt16) async {
+        let h = harness()
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.press(KeyCodes.upArrow)
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.coordinator.revealed)
+        #expect(h.tap.press(key, .option) == .consume, "⌥ 付きのキーが前面のアプリへ渡った")
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.lastEndReason == .commitKey)
+        #expect(h.editor.string == "メモ：\(CandidateSecretTests.secretText)")
+        #expect(h.host.used == [h.id(1)])
+        h.expectClosed()
+    }
+
+    @Test("⌥ を押したまま esc で、仮に貼ったものを戻して閉じる")
+    func cancelWhileRevealing() async {
+        let h = harness()
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "メモ：最新")
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.tap.press(KeyCodes.escape, .option) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.lastEndReason == .cancelKey)
+        #expect(h.editor.string == "メモ：")
+        #expect(h.editor.pasteboard == .text("元のクリップボード"))
+        #expect(h.host.used.isEmpty)
+        h.expectClosed()
+    }
+
+    @Test("⌥ を押したまま ↑↓ で候補をたどる（閉じない。秘密は仮に貼らない）")
+    func moveWhileRevealing() async {
+        let h = harness()
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.tap.press(KeyCodes.upArrow, .option) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.isActive)
+        #expect(h.presenter.last?.selectedItem?.id == h.id(1))
+        #expect(h.presenter.last?.revealed == true)
+        #expect(h.editor.string == "メモ：")
+        #expect(h.tap.press(KeyCodes.upArrow, .option) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "メモ：let x = 1")
+        #expect(h.tap.press(KeyCodes.downArrow, .option) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.presenter.last?.selectedItem?.id == h.id(1))
+        #expect(h.coordinator.isActive)
+        h.coordinator.cancel()
+        await h.coordinator.waitUntilIdle()
+        h.expectClosed()
+    }
+
+    @Test("⌥ を押したまま広げるキーで、選んでいた項目を選んで一覧を開く")
+    func expandWhileRevealing() async {
+        let h = harness()
+        h.coordinator.keymap.set([KeyCombo(.code(37), .command)], for: .candidateExpand)  // ⌘L
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.press(KeyCodes.upArrow)
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.tap.press(37, [.command, .option]) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.lastEndReason == .expandKey)
+        #expect(h.host.openedLists == [h.id(1)])
+        h.expectClosed()
+    }
+
+    @Test("⌥ を押したまま全体のキー（⌃⌥⌘V）は、今までどおり Carbon に任せる")
+    func globalKeyWhileRevealing() async {
+        let h = harness()
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.tap.press(9, [.control, .option, .command]) == .pass)
+        #expect(h.coordinator.isActive)
+        h.coordinator.cancel()
+        await h.coordinator.waitUntilIdle()
+    }
+
+    @Test("⌥ を押したまま文字のキーは、今までどおり閉じてそのキーを渡す（秘密は貼らない）")
+    func otherKeyWhileRevealing() async {
+        let h = harness()
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.press(KeyCodes.upArrow)
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.tap.press(0, .option) == .pass)  // ⌥A
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.lastEndReason == .otherKey)
+        #expect(h.editor.string == "メモ：")
+        h.expectClosed()
+    }
+
+    @Test("表示のキーを ⌃ に付け替えたら ⌃⇥ で確定し、⌥⇥ はほかのキーとして閉じる")
+    func revealModifierFollowsKeymap() async {
+        let cases: [(HotKey.Modifiers, CandidateCoordinator.EndReason)] = [
+            (.control, .commitKey), (.option, .otherKey),
+        ]
+        for (modifiers, expected) in cases {
+            let h = harness()
+            h.coordinator.keymap.set([KeyCombo(.hold, .control)], for: .reveal)
+            h.coordinator.start()
+            await h.coordinator.waitUntilIdle()
+            h.tap.press(KeyCodes.upArrow)
+            await h.coordinator.waitUntilIdle()
+            h.tap.press(KeyCodes.tab, modifiers)
+            await h.coordinator.waitUntilIdle()
+            #expect(h.coordinator.lastEndReason == expected, "\(modifiers)")
+            h.expectClosed()
+        }
+    }
+
+    @Test("⌥ 付きのキーを候補窓の操作に割り当てていれば、そちらを先に引く")
+    func explicitOptionBindingWins() async {
+        let h = harness()
+        h.coordinator.keymap.set(
+            [KeyCombo(.code(KeyCodes.escape)), KeyCombo(.code(KeyCodes.tab), .option)], for: .candidateCancel)
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.send(.flagsChanged(.option))
+        #expect(h.tap.press(KeyCodes.tab, .option) == .consume)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.coordinator.lastEndReason == .cancelKey)
+        #expect(h.editor.string == "メモ：")
+        h.expectClosed()
+    }
+}

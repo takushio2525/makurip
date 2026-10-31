@@ -89,12 +89,22 @@ public struct CandidateSettings: Hashable, Sendable {
 
     /// そのアプリでの貼り方。上書きがなければ、ターミナルとチャットは確定まで貼らない
     public func timing(for bundleID: String?) -> PasteTiming {
-        if let bundleID, let override = pasteTiming[bundleID] { return override }
+        if let override = Self.lookup(pasteTiming, bundleID) { return override }
         return DeferredPasteApps.category(of: bundleID) == nil ? .immediate : .onCommit
     }
 
     public func replaceOverride(for bundleID: String?) -> ReplaceMethod? {
-        bundleID.flatMap { replaceMethod[$0] }
+        Self.lookup(replaceMethod, bundleID)
+    }
+
+    /// アプリごとの上書きを引く。バンドル ID の大文字・小文字は区別しない（既定の一覧・記録しないアプリと同じ。
+    /// CLI・AI が `com.apple.terminal` と書いても効くように。#29 L4）。そのままの表記を先にし、
+    /// 大文字・小文字だけが違うものが複数あれば、表記の並びで先頭のものにする（辞書の順に左右されない）
+    static func lookup<Value>(_ overrides: [String: Value], _ bundleID: String?) -> Value? {
+        guard let bundleID else { return nil }
+        if let exact = overrides[bundleID] { return exact }
+        let lowered = bundleID.lowercased()
+        return overrides.filter { $0.key.lowercased() == lowered }.min { $0.key < $1.key }?.value
     }
 
 }

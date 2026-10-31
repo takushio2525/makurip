@@ -273,17 +273,18 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .togglePin: "選んだ項目を固定し、古くなっても消えないようにする。"
         case .preview: "選んだ項目を大きく表示する（画像やコードの確認用）。"
         case .reveal:
-            "API キーなど隠している内容を、押している間だけ表示する（一覧・プレビュー・候補窓）。離すとすぐ隠れる。修飾キー（⌥・⌘・⌃・⇧）1 つで割り当てる。"
+            "API キーなど隠している内容を、押している間だけ表示する（一覧・プレビュー・候補窓）。離すとすぐ隠れる。押したままでも、ほかの操作のキーはそのまま効く（⌥ を押したまま ⇥ で確定・↩ で貼り付けなど）。修飾キー（⌥・⌘・⌃・⇧）1 つで割り当てる。"
         case .openSource: "コピーした元のページ（ブラウザや AI チャット）を開く。"
         case .delete: "選んだ項目を履歴から消す。"
         case .settings: "この設定画面を開く（一覧を閉じてから開く）。"
         case .editSnippet:
-            "定型文の一覧では、選んだ定型文を編集する窓を開く（1 件もなければ新しく作る）。履歴の一覧では、選んだ項目の文字から新しい定型文を作る。"
+            "定型文の一覧では、選んだ定型文を編集する窓を開く（1 件もなければ新しく作る）。履歴の一覧では、選んだ項目の文字から新しい定型文を作る（秘密っぽい項目からは作らない。定型文は伏せ字にも自動消去にもならないため）。"
         case .candidateUp: "候補窓で 1 つ上の履歴に貼り替える。ターミナル式の並びでは 1 つ古い履歴になる。"
         case .candidateDown: "候補窓で 1 つ下の履歴に貼り替える。ターミナル式の並びでは 1 つ新しい履歴になる。"
         case .candidateCommit: "貼った中身を確定して候補窓を閉じる。改行や送信はしない。"
         case .candidateCancel: "貼る前の状態に戻して候補窓を閉じる。"
-        case .candidateExpand: "仮に貼った中身を戻し、選んでいた項目を選んだ状態で一覧を開く。"
+        case .candidateExpand:
+            "仮に貼った中身を戻し、選んでいた項目を選んだ状態で一覧を開く。呼び出しキー（keys.open・keys.openList）は、ここに関係なく候補窓を広げる（ここを空にしても止まらない。試作どおり）。"
         }
     }
 
@@ -364,6 +365,20 @@ public struct Keymap: Hashable, Sendable {
                 let result = combo.matches(press)
                 if result.matched { return (action, result.digit) }
             }
+        }
+        return nil
+    }
+
+    /// `action(for:scope:)` と同じだが、押している間だけ効く操作 `held`（表示のキー）の修飾キーを押していれば、
+    /// それを外したキーでも引き直す（⌥ で秘密を見ながら ⇥ で確定する・↩ で貼る、など。#28）。
+    /// そのままのキーで当たる操作を先にする（⌥ 付きのキーを別の操作に割り当てていれば、そちらが効く）
+    public func action(for press: KeyStroke, scope: KeyAction.Scope, ignoringHeld held: KeyAction)
+        -> (action: KeyAction, digit: Int?)?
+    {
+        if let exact = action(for: press, scope: scope) { return exact }
+        for combo in combos(for: held) where combo.isHeld(by: press.modifiers) {
+            let stripped = KeyStroke(keyCode: press.keyCode, modifiers: press.modifiers.subtracting(combo.modifiers))
+            if let found = action(for: stripped, scope: scope) { return found }
         }
         return nil
     }

@@ -162,3 +162,55 @@ struct KeymapTests {
         #expect(KeyAction.pastePlain.summary.contains("外さず"))
     }
 }
+
+/// 表示のキーの修飾を外して引き直す（#28）
+@Suite("キーマップ: 表示のキーを押したまま")
+struct KeymapRevealHeldTests {
+    func press(_ code: UInt16, _ modifiers: HotKey.Modifiers) -> KeyStroke {
+        KeyStroke(keyCode: code, modifiers: modifiers)
+    }
+
+    @Test("⌥ を押したままのキーは、⌥ を外したキーでも引く（候補窓・一覧）")
+    func stripsRevealModifier() {
+        let map = Keymap.default
+        #expect(map.action(for: press(KeyCodes.tab, .option), scope: .candidate) == nil, "そのままでは当たらない")
+        #expect(
+            map.action(for: press(KeyCodes.tab, .option), scope: .candidate, ignoringHeld: .reveal)?.action
+                == .candidateCommit)
+        #expect(
+            map.action(for: press(KeyCodes.escape, .option), scope: .candidate, ignoringHeld: .reveal)?.action
+                == .candidateCancel)
+        #expect(
+            map.action(for: press(KeyCodes.upArrow, .option), scope: .candidate, ignoringHeld: .reveal)?.action
+                == .candidateUp)
+        #expect(
+            map.action(for: press(KeyCodes.returnKey, .option), scope: .panel, ignoringHeld: .reveal)?.action == .paste)
+        #expect(
+            map.action(for: press(KeyCodes.returnKey, [.option, .shift]), scope: .panel, ignoringHeld: .reveal)?.action
+                == .pastePlain)
+        let quick = map.action(for: press(19, [.option, .command]), scope: .panel, ignoringHeld: .reveal)
+        #expect(quick?.action == .quickPaste && quick?.digit == 2)
+        // 当たる操作がなければ nil（⌥A は文字として渡す）
+        #expect(map.action(for: press(0, .option), scope: .panel, ignoringHeld: .reveal) == nil)
+        // 範囲は守る（候補窓のキーを一覧で引かない）
+        #expect(
+            map.action(for: press(KeyCodes.tab, .option), scope: .panel, ignoringHeld: .reveal)?.action == .kindNext)
+    }
+
+    @Test("そのままのキーで当たる操作を先にする・表示のキーを付け替えたらその修飾を外す・未設定なら外さない")
+    func precedenceAndRebinding() {
+        var map = Keymap.default
+        map.set([KeyCombo(.code(KeyCodes.tab), .option)], for: .candidateCancel)
+        #expect(
+            map.action(for: press(KeyCodes.tab, .option), scope: .candidate, ignoringHeld: .reveal)?.action
+                == .candidateCancel)
+        map = .default
+        map.set([KeyCombo(.hold, .control)], for: .reveal)
+        #expect(
+            map.action(for: press(KeyCodes.tab, .control), scope: .candidate, ignoringHeld: .reveal)?.action
+                == .candidateCommit)
+        #expect(map.action(for: press(KeyCodes.tab, .option), scope: .candidate, ignoringHeld: .reveal) == nil)
+        map.set([], for: .reveal)
+        #expect(map.action(for: press(KeyCodes.tab, .control), scope: .candidate, ignoringHeld: .reveal) == nil)
+    }
+}
