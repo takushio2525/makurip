@@ -27,8 +27,25 @@ struct SettingsSnapshotTests {
         var dark = false
         /// 設定ファイルに先に書いておく値（重なり・アプリの札などのエッジケース）
         var file: [String: JSONValue] = [:]
+        /// AI の口（#6）の行を出す（nil なら出さない）。true ならオン
+        var aiAccess: Bool?
         let setUp: (SettingsModel) -> Void
     }
+
+    /// AI の口の行に出す記録の見本（メタデータだけ）
+    static let sampleActivity: [AIActivityEntry] = [
+        AIActivityEntry(
+            at: Date(timeIntervalSince1970: 1_793_419_380), channel: .mcp, client: "claude-code",
+            tool: "delete_secrets",
+            outcome: .ok, summary: "秘密っぽいもの（確度「高」）を 1 件消しました。"),
+        AIActivityEntry(
+            at: Date(timeIntervalSince1970: 1_793_419_200), channel: .mcp, client: "claude-code",
+            tool: "add_to_history",
+            outcome: .ok, summary: "コマンドを履歴に追加しました。"),
+        AIActivityEntry(
+            at: Date(timeIntervalSince1970: 1_793_418_000), channel: .mcp, client: "claude-code", tool: "list_history",
+            outcome: .refused, summary: "AI の口がオフなので断りました。"),
+    ]
 
     static let scenarios: [Scenario] = [
         Scenario(name: "settings-behavior-light", proto: "settings-behavior-light") { _ in },
@@ -58,6 +75,12 @@ struct SettingsSnapshotTests {
         // 定型文の日付の書き方（#7 で足した「定型文」のまとまり）
         Scenario(name: "edge-settings-snippet", file: ["snippetDateFormat": .string("japanese")]) {
             scroll($0, to: SettingID.snippetDateFormat)
+        },
+        // AI の口（#6 で足した行。試作に無い）: オフ（記録あり）・オンにした直後
+        Scenario(name: "edge-settings-ai-light", aiAccess: false) { scroll($0, to: SettingsModel.aiAccessRowID) },
+        Scenario(name: "edge-settings-ai-dark", dark: true, aiAccess: false) {
+            scroll($0, to: SettingsModel.aiAccessRowID)
+            $0.setAIAccess(true)
         },
         // 変えた直後の知らせ（下の段）
         Scenario(name: "edge-settings-message") { $0.choose(SettingID.candidateOrder, "ime") },
@@ -90,7 +113,24 @@ struct SettingsSnapshotTests {
                 let root: JSONValue = .object(["formatVersion": .int(1), "settings": .object(scenario.file)])
                 try JSONEncoder().encode(root).write(to: file.url)
             }
-            let model = SettingsModel(controller: SettingsController(file: file))
+            var environment = SettingsEnvironment()
+            if let enabled = scenario.aiAccess {
+                final class State { var enabled = false }
+                let state = State()
+                state.enabled = enabled
+                environment.aiAccess = AIAccessEnvironment(
+                    isEnabled: { state.enabled },
+                    setEnabled: { value in
+                        state.enabled = value
+                        return true
+                    },
+                    recentActivity: { Array(Self.sampleActivity.prefix($0)) },
+                    registerCommand: {
+                        AIAccessEnvironment.claudeRegisterCommand(
+                            executablePath: "/Users/sample/Applications/Makurip.app/Contents/MacOS/Makurip")
+                    })
+            }
+            let model = SettingsModel(controller: SettingsController(file: file), environment: environment)
             model.open()
             let rep = render(model: model, dark: scenario.dark, setUp: scenario.setUp)
             try rep.representation(using: .png, properties: [:])?.write(

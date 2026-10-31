@@ -9,7 +9,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 
 - 目的: Windows のクリップボード履歴に相当するものを Mac で。種類・コピー方法・コピー元で絞り込めることが売り
 - 対象: 作者本人（開発・AI チャットでコピーを多用する人）
-- 状況: フェーズ5（秘密の検出・マスク表示・自動消去 #5）まで。次は AI の口（#6）（`.agent/roadmap.md`）
+- 状況: フェーズ1〜7（AI の口 #6・定型文 #7 を含む）まで。残りは実機確認（#9）（`.agent/roadmap.md`）
 
 ## 技術スタック
 
@@ -27,6 +27,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 | 設定 | データフォルダの `settings.json` + ファイルの監視（`Sources/MakuripCore/Settings/`） | スキーマ・検証は Core の 1 か所。画面・CLI（`--settings`）が同じ関数を通す。UserDefaults・分散通知と比べた（`.agent/architecture.md` の「技術選定（フェーズ4）」） |
 | キーの記録 | 自前（窓の `NSEvent` ローカル監視 → `SettingsModel.record`） | KeyboardShortcuts（sindresorhus）は記録欄の見た目が試作の「新しいキーを押す…」と違い、依存も増えるので採らなかった |
 | 秘密の判定 | 自前（既知の接頭辞・文脈・ランダムさ。`Sources/MakuripCore/Secret/`） | gitleaks・trufflehog の規則と比べて採らなかった（`.agent/architecture.md` の「技術選定（フェーズ5）」）。判定の一覧と限界は `.agent/conventions.md` |
+| AI の口（MCP） | 自前の JSON-RPC 2.0（stdio・1 行 1 件。`Sources/MakuripCore/AI/`）。同じ実行ファイルの `--mcp` と、同じ道具の CLI `--ai` | 公式の Swift SDK（modelcontextprotocol/swift-sdk）は依存が 0 → 1 以上になり、使うのは道具（tools）だけなので採らなかった（`.agent/architecture.md` の「技術選定（フェーズ6）」）。オン・オフは DB の `meta`（設定画面からだけオン） |
 
 **外部ライブラリは 0**。入れる場合は採用理由と比べた代替を PR とこの表に書く。
 技術選定で比べた代替（XcodeGen・GRDB・SwiftData・KeyboardShortcuts など）は `.agent/architecture.md` の「技術選定」節。
@@ -37,14 +38,14 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文）。AppKit は NSPasteboard だけ使う
-│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー・定型文の一覧）と候補窓と設定画面と定型文の窓。Core にだけ依存する
-│   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・起動引数・--settings の入口）。Info.plist もここ
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文・AI の口（MCP・--ai の CLI））。AppKit は NSPasteboard だけ使う
+│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー・定型文の一覧）と候補窓と設定画面（「AI の口」の行を含む）と定型文の窓。Core にだけ依存する
+│   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・起動引数・--settings・--mcp・--ai の入口）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
-├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文）
-├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）
+├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口）
+├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）・ai-mcp.md（Claude Code への登録・道具・頼みと道具の対応・限界）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
 ├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
 ├── design/ui-compare/ ← 試作（案 B・候補窓・設定シート）と SwiftUI を並べた比較画像と、作り直すスクリプト（README.md に結果）
@@ -70,7 +71,9 @@ makurip/
 | 隔離 E2E（設定） | `MAKURIP_APP=.app-build/Makurip.app make e2e-settings`（窓を出さない。ホットキーは使われていない組み合わせだけ） |
 | 隔離 E2E（秘密） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-secrets`（偽物のキーで印・伏せ字・1 分での自動消去・当て直し。2〜3 分かかる） |
 | 隔離 E2E（定型文） | `MAKURIP_APP=.app-build/Makurip.app make e2e-snippets`（登録・置き換え・名前付きペーストボードへの書き戻し・履歴の消去で消えないこと。窓を出さず、キーも送らない） |
+| 隔離 E2E（AI の口） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-ai`（目印入りの履歴に MCP の全道具を JSON-RPC で呼び、応答に目印が 0 件か。一覧の窓を一瞬開く。巨大な要求の分で 1 分ほど） |
 | 設定の CLI | `Makurip [--data-dir DIR] --settings list\|get\|set\|add\|remove\|reset\|schema [--json]`（`docs/ai-settings.md`） |
+| AI の口 | `Makurip [--data-dir DIR] --mcp`（MCP サーバー）・`Makurip [--data-dir DIR] --ai status\|add\|list\|delete-secrets\|delete\|snippet-add\|snippets\|snippet-delete\|log\|disable [--json]`（`docs/ai-mcp.md`） |
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
 | メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]` |
@@ -85,6 +88,9 @@ makurip/
 - UserDefaults を使うテストは `UserDefaults(suiteName:)` で分ける。`register(defaults:)` はプロセス全体で共有されるので使わない
 - 隔離したインスタンスでホットキーの付け替えを試すときは、起動する前に CLI で使われていない組み合わせ（⌃⌥⇧⌘F11 など）にしておく（ほかのアプリのキーを奪わない）。ログイン時の起動は隔離中は登録しない作りにしてある
 - `--debug-control`（E2E 用の遠隔操作）は `--data-dir` を指定したときしか効かない作りにしてある。この制約を外さない
+- AI の口をオンにする道具・CLI の命令・設定の項目を作らない（オンは設定画面からだけ）。AI の道具の応答に中身・URL（ホスト名を除く）・ファイル名・ハッシュを足さない
+  （`AIAccessTests`・`AIListTests`・`MCPServerTests` と `make e2e-ai` の漏れの検査が守る。`.agent/conventions.md` の「AI の口」）。
+  AI の口の検証も `--data-dir` で隔離し、本物の履歴でオンにしない。本物の Claude Code への登録（`claude mcp add`）は利用者が行う
 - 自動テストで前面のアプリにキーを送らない（`CGEvent.post(tap:)` 禁止）。送るときは `postToPid` で宛先を固定する
 - 候補窓のキーの横取り（CGEventTap）を残さない。閉じる経路を足すときは `CandidateInterceptLifetimeTests` に足す（`.agent/conventions.md` の「候補窓」）
 - 一般ペーストボードを E2E で使うときは `MakuripDevTool pb-stash` で退避し、終わったら `pb-unstash` で戻す

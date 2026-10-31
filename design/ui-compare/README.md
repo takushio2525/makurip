@@ -160,6 +160,7 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 | キーが重なった状態（設定ファイルで ⌘E を 2 つの操作に。試作に無い） | `images/edge-settings-conflict-light.png`・`images/edge-settings-conflict-dark.png` |
 | 件数の上限・記録しないアプリ・確定まで貼らないアプリ（札）・数の打ち込み（試作に無い） | `images/edge-settings-history-light.png`・`images/edge-settings-history-dark.png` |
 | 変えた直後の知らせ・設定ファイルに読めない値があったときの注記 | `images/edge-settings-message.png`・`images/edge-settings-file-issue.png` |
+| 「AI の口」の段（#6。試作に無い）: オフで記録あり・オンにした直後（暗い配色） | `images/edge-settings-ai-light.png`・`images/edge-settings-ai-dark.png` |
 
 ### 見比べた結果
 
@@ -185,9 +186,14 @@ make ui-compare            # = design/ui-compare/shoot.sh。出力は .ui-compar
 - **窓の枠**: 本物の窓（信号機のボタンは AppKit が描くので、オフスクリーン描画には写らない）。中身を窓の上まで広げ、44pt のバーは SwiftUI で描く
 - **送り方**: 選んだ行が見えるところまで最小限に送る（`ScrollViewReader.scrollTo`）。試作の `scrollIntoView({block: 'nearest'})` と同じ考えだが、
   記録中の行の下に見える行の数は試作と少し違う
+- **「AI の口」の段（#6）**: 試作に無い。「詳細」の後・キーのまとまりの前に 1 行（`SettingsAIAccessRow`）。ほかの行と同じ形（左に名前と説明・右に「オフ／オン」の切り替え。↩・←→ で切り替え・⌫ でオフ）に、
+  Claude Code の登録コマンド（等幅の箱と「コピー」）と AI の操作の記録（新しい順に 6 件。断ったものは橙）を説明の下に足した。オンの間は橙の「いま：オン」を出す。
+  設定のスキーマの項目ではない（AI・CLI から変えられないように）。本体が `SettingsEnvironment.aiAccess` を渡したときだけ出すので、
+  試作と並べる `compare-settings-*` には写らず、`edge-settings-ai-*`（見本の記録と `/Users/sample/…` のパスで描く）で見る
 
 ### オフスクリーン描画では分からないこと（実機で確かめる。#9）
 
+- 「AI の口」の段の見た目（長い登録コマンドの折り返し・記録の行の切れ方・「コピー」）
 - 信号機のボタンの位置（44pt のバーの中で上下の中央に来るか）・窓の影・Makurip を前面にしたときのフォーカス
 - キーの記録（全体のキー ⌃⌘V なども、記録の間はホットキーを外すので記録できるか）・「追加…」のメニューと「その他…」の選ぶ画面
 
