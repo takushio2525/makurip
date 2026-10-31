@@ -97,6 +97,45 @@ struct SnippetEditorSnapshotTests {
         }
     }
 
+    /// 本文（NSTextView）は SwiftUI のフォーカスの外なので、頼みが届くかを窓に載せて確かめる（窓を作るので描画と一緒に動かす）
+    @Test("本文の入力欄にフォーカスが届く（新しい下書き・差し込みの札）。名前の入力欄へも移せる")
+    func bodyFocus() throws {
+        _ = NSApplication.shared
+        let dir = SettingsTempDirectory()
+        let controller = SnippetController(file: SnippetFile(directory: dir.url))
+        try controller.add(SnippetDraft(name: "a", body: "x"))
+        let model = SnippetEditorModel(controller: controller)
+        let host = NSHostingView(rootView: SnippetEditorView(model: model).frame(width: 680, height: 560))
+        host.frame = CGRect(x: 0, y: 0, width: 680, height: 560)
+        let window = NSWindow(
+            contentRect: CGRect(x: -10_000, y: -10_000, width: 680, height: 560), styleMask: [.titled],
+            backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.4)) }
+        model.open(.open)
+        settle()
+        #expect(!model.bodyFocused)
+        model.beginNew()
+        settle()
+        #expect(model.bodyFocused)
+        #expect(window.firstResponder is SnippetBodyTextView)
+        model.select(controller.snippets[0].id)
+        settle()
+        model.bodySelection = NSRange(location: 1, length: 0)
+        model.insert(.date)
+        settle()
+        #expect(model.bodyFocused)
+        #expect(model.draft.body == "x{{日付}}")
+        #expect((window.firstResponder as? NSTextView)?.string == "x{{日付}}")
+        // 名前の検証に通らないときは名前の入力欄へ（SwiftUI のフォーカス）
+        model.draft.name = String(repeating: "n", count: 101)
+        model.save()
+        settle()
+        #expect(!model.bodyFocused)
+    }
+
     func render(model: SnippetEditorModel, dark: Bool, setUp: (SnippetEditorModel) -> Void) -> NSBitmapImageRep {
         let backdrop = dark ? SnapshotTests.backdropDark : SnapshotTests.backdropLight
         let size = CGSize(width: 20 + Self.size.width + 20, height: 20 + Self.size.height + 20)

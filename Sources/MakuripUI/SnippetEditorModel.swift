@@ -51,6 +51,8 @@ final class SnippetEditorModel {
     private(set) var message: Message?
     /// 入力欄へフォーカスを移す合図
     private(set) var focusRequest: (field: Field, revision: Int)?
+    /// 本文の入力欄にフォーカスがあるか（入力欄が知らせる。枠の色に使う）
+    var bodyFocused = false
     /// 保存してある値（変更の有無を見る）。新しい下書きは開いたときの値
     private var baseline = SnippetDraft()
 

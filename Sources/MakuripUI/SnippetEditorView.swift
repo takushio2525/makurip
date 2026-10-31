@@ -188,15 +188,17 @@ private struct SnippetEditorForm: View {
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text("本文").css(SnippetEditorCSS.label).foregroundStyle(palette.text3)
-                SnippetBodyEditor(model: model, palette: palette, focused: focus == .body) { focused in
-                    if focused { focus = .body }
-                }
+                SnippetBodyEditor(
+                    model: model, palette: palette, text: model.draft.body,
+                    selectionRevision: model.bodySelectionRevision,
+                    focusRevision: model.focusRequest?.field == .body ? model.focusRequest?.revision : nil
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(palette.well))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(
-                        focus == .body ? palette.accent.opacity(0.6) : palette.wellLine,
-                        lineWidth: focus == .body ? 1 : 0.5)
+                        model.bodyFocused ? palette.accent.opacity(0.6) : palette.wellLine,
+                        lineWidth: model.bodyFocused ? 1 : 0.5)
                 )
             }
             VStack(alignment: .leading, spacing: 6) {
@@ -217,10 +219,14 @@ private struct SnippetEditorForm: View {
         }
         .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onChange(of: model.focusRequest?.revision) { _, _ in
-            guard let request = model.focusRequest else { return }
-            focus = request.field
-        }
+        // 名前・略語は SwiftUI のフォーカスで、本文（NSTextView）は入力欄の側で前に出す（`SnippetBodyEditor`）
+        .onChange(of: model.focusRequest?.revision) { _, _ in focusRequested() }
+        .onAppear { focusRequested() }
+    }
+
+    private func focusRequested() {
+        guard let request = model.focusRequest, request.field != .body else { return }
+        focus = request.field
     }
 
     static func note(_ model: SnippetEditorModel) -> String {
@@ -376,19 +382,36 @@ private struct SnippetEditorFooter: View {
 /// 本文の入力欄（NSTextView）。差し込み（`{{日付}}` など）に定型文の色を付け、札のボタンは選択範囲に入れる。
 /// 色は一時的な属性（`NSLayoutManager.temporaryAttributes`）で付ける（打った文字に色が移らず、取り消しの履歴にも乗らない）
 struct SnippetBodyEditor: NSViewRepresentable {
-    @Bindable var model: SnippetEditorModel
+    /// 打った文字・選択範囲・フォーカスを書き戻す相手
+    let model: SnippetEditorModel
     let palette: PanelPalette
-    let focused: Bool
-    let focusChanged: (Bool) -> Void
+    /// 以下は値で受け取る（変わったときに SwiftUI が updateNSView を呼ぶように。モデルの参照だけでは呼ばれない）
+    let text: String
+    let selectionRevision: Int
+    /// 本文へのフォーカスの頼みの番号（頼みがなければ nil）
+    let focusRevision: Int?
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
+        let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
-        guard let text = scroll.documentView as? NSTextView else { return scroll }
+        // 差し込みの色に NSLayoutManager の一時的な属性を使うので、TextKit 1 で作る
+        let text = SnippetBodyTextView(usingTextLayoutManager: false)
+        text.minSize = .zero
+        text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        text.isVerticallyResizable = true
+        text.isHorizontallyResizable = false
+        text.autoresizingMask = [.width]
+        text.textContainer?.widthTracksTextView = true
+        text.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        scroll.documentView = text
+        let model = model
+        text.focusChanged = { focused in
+            if model.bodyFocused != focused { model.bodyFocused = focused }
+        }
         text.delegate = context.coordinator
         text.drawsBackground = false
         text.isRichText = false
@@ -416,15 +439,24 @@ struct SnippetBodyEditor: NSViewRepresentable {
         guard let text = coordinator.textView else { return }
         text.textColor = NSColor(palette.text)
         text.insertionPointColor = NSColor(palette.accent)
-        if text.string != model.draft.body {
-            text.string = model.draft.body
+        if text.string != self.text {
+            text.string = self.text
         }
-        if coordinator.lastRevision != model.bodySelectionRevision {
-            coordinator.lastRevision = model.bodySelectionRevision
+        if coordinator.lastRevision != selectionRevision {
+            coordinator.lastRevision = selectionRevision
             let length = (text.string as NSString).length
             let range = model.bodySelection
             text.setSelectedRange(NSRange(location: min(range.location, length), length: 0))
-            if focused, text.window?.firstResponder !== text { text.window?.makeFirstResponder(text) }
+        }
+        // 本文へのフォーカスの頼み（差し込みの札を押した・新しい下書き・本文が空で保存できなかった）。窓に載る前なら次の回で
+        if let focusRevision, coordinator.lastFocusRevision != focusRevision {
+            coordinator.lastFocusRevision = focusRevision
+            // 描き直しの途中でフォーカスを動かさない（入力欄が知らせるフォーカスでモデルが変わるため）。run loop の次の回で
+            RunLoop.main.perform(inModes: [.common]) {
+                MainActor.assumeIsolated {
+                    if text.window?.firstResponder !== text { text.window?.makeFirstResponder(text) }
+                }
+            }
         }
         coordinator.apply(palette: palette)
     }
@@ -434,6 +466,7 @@ struct SnippetBodyEditor: NSViewRepresentable {
         let model: SnippetEditorModel
         weak var textView: NSTextView?
         var lastRevision = 0
+        var lastFocusRevision = -1
         private var palette: PanelPalette?
 
         init(model: SnippetEditorModel) {
@@ -471,5 +504,22 @@ struct SnippetBodyEditor: NSViewRepresentable {
                     forCharacterRange: NSRange(range, in: string))
             }
         }
+    }
+}
+
+/// 本文の入力欄。フォーカスが来た・離れたことを知らせる（枠の色に使う。SwiftUI の FocusState は NSTextView に届かないため）
+final class SnippetBodyTextView: NSTextView {
+    var focusChanged: (Bool) -> Void = { _ in }
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result { focusChanged(true) }
+        return result
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        if result { focusChanged(false) }
+        return result
     }
 }

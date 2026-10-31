@@ -261,7 +261,7 @@ final class HistoryPanelModel {
     }
 
     func perform(_ action: KeyAction, digit: Int? = nil) {
-        // 定型文の一覧では、絞り込み・ピン留め・削除・コピー元のページは効かない（試作と同じ）
+        // 定型文の一覧では、絞り込み・ピン留め・削除は効かない（試作と同じ。コピー元のページはないので揺らす）
         if showsSnippets, [.kindNext, .kindPrevious, .cycleMethod, .chooseApp, .togglePin, .delete].contains(action) {
             return
         }
