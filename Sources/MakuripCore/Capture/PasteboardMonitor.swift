@@ -33,7 +33,10 @@ public final class PasteboardMonitor {
     public let pasteboard: NSPasteboard
     public let interval: TimeInterval
     private let store: ClipStore
-    private let limits: Limits
+    /// 上限（設定で変わる。型 1 つ・1 件の大きさの上限は内部の定数のまま）
+    public var limits: Limits
+    /// 記録しないアプリ（小文字のバンドル ID）。前面にあるときのコピーはデータを読まずに捨てる
+    public var excludedApps: Set<String> = []
     private let environment: Environment
     private var timer: Timer?
     private var lastChangeCount: Int
@@ -171,14 +174,17 @@ public final class PasteboardMonitor {
     }
 
     private func capture(at now: Date, signal: CopyShortcutSignal?) -> Event {
+        let method = CopyMethodClassifier.classify(
+            changeDetectedAt: now, lastShortcutAt: signal?.at, keyMonitorActive: environment.keyMonitorActive())
+        // キー操作なら、押した瞬間の前面アプリの方が正確
+        let app = (method == .keyboard ? signal?.frontmostApp : nil) ?? environment.frontmostApp()
+        if let bundleID = app?.bundleID?.lowercased(), excludedApps.contains(bundleID) {
+            return .skipped(.excludedApp)
+        }
         switch PasteboardReader.read(pasteboard, maxRepresentationBytes: limits.maxRepresentationBytes) {
         case .excluded:
             return .skipped(.excludedMarker)
         case .snapshot(let snapshot, let dropped):
-            let method = CopyMethodClassifier.classify(
-                changeDetectedAt: now, lastShortcutAt: signal?.at, keyMonitorActive: environment.keyMonitorActive())
-            // キー操作なら、押した瞬間の前面アプリの方が正確
-            let app = (method == .keyboard ? signal?.frontmostApp : nil) ?? environment.frontmostApp()
             let context = CapturePipeline.Context(
                 now: now, frontmostApp: app, copyMethod: method, droppedWhileReading: dropped)
             switch CapturePipeline.process(snapshot, context: context, limits: limits) {

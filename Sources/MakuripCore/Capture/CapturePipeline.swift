@@ -11,6 +11,8 @@ public enum SkipReason: String, Sendable, Hashable {
     case tooLarge
     /// 記録の一時停止中だった
     case paused
+    /// 記録しないアプリ（設定の excludedApps）が前面にあった。データは読まない
+    case excludedApp
 }
 
 public enum CaptureDecision: Sendable, Hashable {

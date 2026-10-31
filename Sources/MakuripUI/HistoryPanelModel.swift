@@ -15,12 +15,15 @@ final class HistoryPanelModel {
         var openURL: (URL) -> Void = { _ in }
         /// ⌘Y のプレビューを出す・閉じる（窓を足したり外したりするのは PanelController）
         var previewChanged: (Bool) -> Void = { _ in }
+        /// 設定画面を開く（一覧を閉じてから）
+        var openSettings: () -> Void = {}
     }
 
     /// 一覧に読み込む最大件数。ストアの件数上限（既定 1000）より大きくして全件を読む
     static let loadLimit = 100_000
 
-    let keymap: Keymap
+    /// 設定で付け替えられる（開いている間に変わっても、次のキーから新しい割り当てで引く）
+    var keymap: Keymap
     @ObservationIgnored weak var actions: HistoryActions?
     @ObservationIgnored var effects = Effects()
     @ObservationIgnored var clock: () -> Date = Date.init
@@ -232,6 +235,8 @@ final class HistoryPanelModel {
             openSource()
         case .delete:
             deleteSelected()
+        case .settings:
+            effects.openSettings()
         }
     }
 

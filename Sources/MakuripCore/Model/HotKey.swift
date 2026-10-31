@@ -28,23 +28,6 @@ public struct HotKey: Codable, Hashable, Sendable {
     /// 呼び出しキーの動きに関係なく一覧を開く既定キー ⌃⌥⌘V（試作の openList と同じ）
     public static let defaultOpenList = HotKey(keyCode: 9, modifiers: [.control, .option, .command])
 
-    /// メニュー等に出す表記（例: ⌃⌘V）。修飾キーは macOS の慣習の順（⌃⌥⇧⌘）
-    public var displayString: String {
-        var result = ""
-        if modifiers.contains(.control) { result += "⌃" }
-        if modifiers.contains(.option) { result += "⌥" }
-        if modifiers.contains(.shift) { result += "⇧" }
-        if modifiers.contains(.command) { result += "⌘" }
-        return result + (HotKey.keyNames[keyCode] ?? "#\(keyCode)")
-    }
-
-    /// US 配列の物理位置の名前（表示用）。JIS 配列でも英字・数字の位置は同じ
-    static let keyNames: [UInt32: String] = [
-        0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",
-        11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T", 18: "1", 19: "2",
-        20: "3", 21: "4", 22: "6", 23: "5", 25: "9", 26: "7", 28: "8", 29: "0", 31: "O",
-        32: "U", 34: "I", 35: "P", 37: "L", 38: "J", 40: "K", 45: "N", 46: "M",
-        36: "↩", 48: "⇥", 49: "Space", 51: "⌫", 53: "⎋",
-        123: "←", 124: "→", 125: "↓", 126: "↑",
-    ]
+    /// メニュー等に出す表記（例: ⌃⌘V）。修飾キーは macOS の慣習の順（⌃⌥⇧⌘）。キーの名前はキーマップと同じ表（`KeyCodes.names`）
+    public var displayString: String { KeyCombo(self).displayString }
 }

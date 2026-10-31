@@ -53,12 +53,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         guard let controller else { return }
 
-        // メニューは一覧を開く（⌃⌘V は既定で候補窓なので、一覧を開くキー ⌃⌥⌘V を添える）
+        // メニューは一覧を開く（呼び出しキーは既定で候補窓なので、一覧を開くキーを添える。キーは設定のキーマップから）
         let open = addItem("履歴の一覧を開く", action: #selector(openHistory))
-        let hotKey = controller.keymap.primary(.openList)?.hotKey ?? .defaultOpenList
-        open.keyEquivalent = "v"
-        open.keyEquivalentModifierMask = [.control, .option, .command]
-        open.toolTip = hotKey.displayString
+        Self.setKeyEquivalent(open, controller.keymap.primary(.openList))
+        let settings = addItem("設定…", action: #selector(openSettings))
+        Self.setKeyEquivalent(settings, controller.keymap.primary(.settings))
 
         menu.addItem(.separator())
         addItem(controller.isPaused ? "記録を再開" : "記録を一時停止", action: #selector(togglePause))
@@ -91,6 +90,26 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func openHistory() {
         controller?.toggleHistory()
+    }
+
+    @objc private func openSettings() {
+        controller?.openSettings()
+    }
+
+    /// メニューの右に出すキー。1 文字で書けるキー（英字・数字・記号）だけ。それ以外はヒントに表記を出す
+    static func setKeyEquivalent(_ item: NSMenuItem, _ combo: KeyCombo?) {
+        guard let combo else { return }
+        item.toolTip = combo.displayString
+        guard case .code = combo.key, combo.keySymbol.count == 1, let scalar = combo.keySymbol.unicodeScalars.first,
+            scalar.isASCII
+        else { return }
+        item.keyEquivalent = combo.keySymbol.lowercased()
+        var flags: NSEvent.ModifierFlags = []
+        if combo.modifiers.contains(.control) { flags.insert(.control) }
+        if combo.modifiers.contains(.option) { flags.insert(.option) }
+        if combo.modifiers.contains(.shift) { flags.insert(.shift) }
+        if combo.modifiers.contains(.command) { flags.insert(.command) }
+        item.keyEquivalentModifierMask = flags
     }
 
     @objc private func togglePause() {

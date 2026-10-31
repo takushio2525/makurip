@@ -15,6 +15,10 @@ struct KeyChip: View {
         case cardHeld
         /// 選んでいるカードの番号
         case cardSelected
+        /// 設定画面の「未設定」（試作の .kb-none）
+        case none
+        /// 設定画面の重なったキー（試作に無い）
+        case warning
     }
 
     let modifiers: String
@@ -22,6 +26,7 @@ struct KeyChip: View {
     var isReturn = false
     var style: Style = .normal
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
 
     init(modifiers: String, key: String, isReturn: Bool = false, style: Style = .normal) {
         self.modifiers = modifiers
@@ -36,7 +41,7 @@ struct KeyChip: View {
 
     private var height: CGFloat {
         switch style {
-        case .normal: 19
+        case .normal, .none, .warning: 19
         case .small: 17
         case .card, .cardHeld, .cardSelected: 18
         }
@@ -44,7 +49,7 @@ struct KeyChip: View {
 
     private var fontSize: CGFloat {
         switch style {
-        case .normal: 11
+        case .normal, .none, .warning: 11
         case .small: 10
         case .card, .cardHeld, .cardSelected: 10.5
         }
@@ -80,6 +85,8 @@ struct KeyChip: View {
         case .card: palette.text3
         case .cardHeld: palette.accentInk
         case .cardSelected: .white
+        case .none: palette.text3
+        case .warning: SettingsPalette.of(scheme).warning
         }
     }
 
@@ -87,6 +94,7 @@ struct KeyChip: View {
         switch style {
         case .cardHeld: palette.accentSoft
         case .cardSelected: palette.accent
+        case .warning: SettingsPalette.of(scheme).warningSoft
         default: palette.kbBg
         }
     }

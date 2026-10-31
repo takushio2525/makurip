@@ -15,7 +15,7 @@ final class CandidateViewModel {
         var id: UUID { item.id }
     }
 
-    let keymap: Keymap
+    var keymap: Keymap
     private(set) var state: CandidateViewState?
     /// 見えている行の先頭（画面の上から数えた行の番号）
     private(set) var firstVisibleRow = 0

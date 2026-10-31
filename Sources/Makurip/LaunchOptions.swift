@@ -13,6 +13,8 @@ struct LaunchOptions {
     var dumpMetadata = false
     /// `--debug-control`（E2E 用の遠隔操作を受け付ける。`--data-dir` を指定したときだけ有効）
     var debugControl = false
+    /// `--settings <命令> ...`（設定の CLI。後ろの引数は `--data-dir` を除いてすべて CLI に渡す）
+    var settingsArguments: [String]?
 
     static func parse(_ arguments: [String]) -> LaunchOptions {
         var options = LaunchOptions()
@@ -23,7 +25,10 @@ struct LaunchOptions {
             case "--pasteboard-name": options.pasteboardName = iterator.next()
             case "--dump-metadata": options.dumpMetadata = true
             case "--debug-control": options.debugControl = true
-            default: continue
+            case "--settings": options.settingsArguments = options.settingsArguments ?? []
+            default:
+                // --settings の後ろは CLI の引数（--json などもそのまま渡す）
+                if options.settingsArguments != nil { options.settingsArguments?.append(argument) }
             }
         }
         return options

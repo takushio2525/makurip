@@ -88,6 +88,21 @@ final class DebugControl {
         }
     }
 
+    /// 設定の値（秘密は入らない）と、ファイルから読み直した回数・読めなかった項目の数
+    private static func settingsSummary(_ controller: AppController) -> [String: Any] {
+        guard let settings = controller.settings else { return [:] }
+        var summary: [String: Any] = [
+            "reloadCount": settings.reloadCount, "issueCount": settings.issues.count, "watching": settings.isWatching,
+        ]
+        for id in [
+            SettingID.hotKeyMode, SettingID.candidateOrder, SettingID.maxItems, SettingID.maxTotalMegabytes,
+            SettingID.keys(.openHistory), SettingID.keys(.openList), SettingID.excludedApps,
+        ] {
+            summary[id] = SettingsSchema.value(id, in: settings.settings)?.compactText
+        }
+        return summary
+    }
+
     func writeStatus() {
         guard let controller else { return }
         var status: [String: Any] = [
@@ -103,6 +118,14 @@ final class DebugControl {
             "candidate": controller.candidate?.debugState ?? [:],
             "pasteTargetOverride": controller.pasteTargetOverride.map { Int($0) } ?? NSNull(),
             "lastPasteOutcome": controller.lastPasteOutcome ?? NSNull(),
+            "lastHotKeyRoute": controller.lastHotKeyRoute ?? NSNull(),
+            "storeLimits": [
+                "maxItems": controller.store?.limits.maxItems ?? 0,
+                "maxTotalBytes": controller.store?.limits.maxTotalBytes ?? 0,
+            ],
+            "candidateHotKeyMode": controller.candidate?.settings.hotKeyMode.rawValue ?? "",
+            "settings": Self.settingsSummary(controller),
+            "settingsVisible": controller.isSettingsVisible,
         ]
         status["writtenAt"] = ISO8601DateFormatter().string(from: Date())
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
