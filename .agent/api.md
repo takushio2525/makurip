@@ -69,7 +69,7 @@
 @MainActor public protocol HistoryActions: AnyObject {
     func historyItems(limit: Int) -> [ClipItem]
     func paste(itemID: UUID)                      // UI は先に自分を閉じてから呼ぶ
-    func paste(itemID: UUID, mode: PasteMode)     // .normal / .plainText（文字の型だけ）/ .copyOnly（⌘V を送らない）
+    func paste(itemID: UUID, mode: PasteMode)     // .normal / .plainText（文字の型だけ。プロンプトは外さない）/ .copyOnly（⌘V を送らない）。中身は PastePipeline.prepare
     func historyDidClose()                        // 貼らずに閉じたとき（元のアプリへフォーカスを返す）
     func setPinned(_ pinned: Bool, itemID: UUID)
     func delete(itemID: UUID)
@@ -150,6 +150,24 @@ ID は試作の `Mk.PREFS` と同じ。`defaults write com.takushio2525.makurip 
 | `SearchText.romajiToKana(_:)` / `parse(_:)` | ローマ字の読み / 検索欄の文字列を語（AND）と候補（元の綴り・読み）に分ける |
 | `SearchQuery` | `matches(normalized:)`（UTF-8 のバイト列で探す）・`highlightRanges(in:)`（元の文字列での一致範囲） |
 | `HistoryFilter` | 種類（nil はすべて）・`CopyMethodFilter`・アプリ（バンドル ID か名前）・ピン留め・検索語。`apply`・`kindCounts`・`appOptions` |
+
+## コードの言語・色付け・プロンプト（`Sources/MakuripCore/Syntax/`・`Paste/`・フェーズ3）
+
+どれも純粋関数。位置は UTF-16 で数える（`NSRange` にそのまま使える）。
+
+| 型 | 役割 |
+|---|---|
+| `CodeLanguage` | 18 の言語（`displayName` は画面に出す名前。シェルだけ「シェル」）。`init?(fenceTag:)` で ```swift などの別名から引く |
+| `CodeLanguageDetector.detect(_:)` | 言語（決まらなければ nil）。コードブロックの言語名 → shebang → JSON・XML・HTML・YAML の形 → 言語ごとの手がかりの点数 |
+| `SyntaxHighlighter.tokens(in:language:)` | 色を付ける区間 `[SyntaxToken]`（`location`・`length`・`kind`）。重ならず、順に並ぶ。`kind` は `keyword` / `string` / `comment` / `number` / `type` / `function` / `attribute` / `flag`（試作の `.s-*`）。言語が nil なら文字列・数・コメントだけ |
+| `ShellPrompt.analyze(_:)` | `Analysis`: 外すプロンプトの範囲（`promptRanges`）・コマンドの行（`commandLineRanges`）・外した文字列（`stripped`） |
+| `ShellPrompt.explicitPromptLength(_:)` | 1 行の頭のはっきりしたプロンプトの長さ（`$ `・PS1 など。root の `# ` と続き行の `> ` は文脈で決めるので見ない）。種類の判定でも使う |
+| `PastePipeline.prepare(_:kind:mode:)` | 貼るときにペーストボードへ書く中身。`.plainText` は文字の型だけ、`.normal`・`.copyOnly` はコマンドなら文字の型だけプロンプトを外す（UTF-16 は BOM と並びを保つ） |
+| `PastePipeline.candidatePaste(_:kind:)` | 候補窓から貼る中身と、入力欄に増える文字の長さ（`PastedContent`。外した後の文字で数える） |
+
+UI 側（`Sources/MakuripUI/`）: `ClipContentLoader.language(for:)`（一覧の平文から 1 回だけ判定してキャッシュ）・`codeCardLines`・`commandCard`・`commandPreview`・
+`cachedCodeTokens` / `codeTokens`（長いものは裏で作る）・`CodeStyler`（AttributedString / NSAttributedString にする）・`CodeTextView`（⌘Y のコード）・
+`DisplayText.sourcePage(_:)`（コピー元のページの「ホスト・パス」。http・https でホストがあるときだけ・クエリは出さない）。
 
 ## パネルの位置（`Sources/MakuripCore/Placement/`）
 
