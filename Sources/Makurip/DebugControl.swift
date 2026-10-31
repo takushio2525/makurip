@@ -29,6 +29,9 @@ final class DebugControl {
         case pasteSnippet
         /// 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る）
         case clearHistory
+        /// AI の口をオン・オフにする（設定画面の切り替えと同じ。隔離したときだけ効くので、本物の履歴の口は開けられない）
+        case enableAIAccess
+        case disableAIAccess
         /// 状態を書く
         case writeStatus
         case quit
@@ -88,6 +91,10 @@ final class DebugControl {
             }
         case .clearHistory:
             controller.clearHistory()
+        case .enableAIAccess:
+            controller.setAIAccess(true)
+        case .disableAIAccess:
+            controller.setAIAccess(false)
         case .writeStatus:
             break
         case .quit:
@@ -134,6 +141,18 @@ final class DebugControl {
         return summary
     }
 
+    /// AI の口（オンか・外から履歴が変わったと知らされた回数・記録の件数と直近の道具と結果。中身は出さない）
+    private static func aiSummary(_ controller: AppController) -> [String: Any] {
+        let recent = controller.aiActivity.recent(limit: AIActivityLog.maxEntries)
+        return [
+            "enabled": controller.isAIAccessEnabled,
+            "externalHistoryChanges": controller.externalHistoryChanges,
+            "activityCount": recent.count,
+            "lastTool": recent.first?.tool ?? "",
+            "lastOutcome": recent.first?.outcome.rawValue ?? "",
+        ]
+    }
+
     func writeStatus() {
         guard let controller else { return }
         var status: [String: Any] = [
@@ -160,6 +179,7 @@ final class DebugControl {
             "settingsVisible": controller.isSettingsVisible,
             "snippets": Self.snippetSummary(controller),
             "secrets": controller.secretStatus,
+            "ai": Self.aiSummary(controller),
         ]
         status["writtenAt"] = ISO8601DateFormatter().string(from: Date())
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {

@@ -67,6 +67,11 @@ final class SettingsModel {
                 .map(\.id)
             if !ids.isEmpty { sections.append(Section(id: group, title: group, note: nil, itemIDs: ids)) }
         }
+        // AI の口（#6）。設定のスキーマには載せない（AI・CLI から変えられないように）ので、画面だけの行
+        if environment.aiAccess != nil {
+            sections.append(
+                Section(id: "ai", title: "AI の口", note: "（MCP・--ai の CLI）", itemIDs: [Self.aiAccessRowID]))
+        }
         var keyGroups: [String] = []
         for action in KeyAction.allCases where !keyGroups.contains(action.group) { keyGroups.append(action.group) }
         for group in keyGroups {
@@ -91,7 +96,45 @@ final class SettingsModel {
 
     func item(_ id: String) -> SettingItem? { SettingsSchema.item(id) }
 
-    func environmentDidChange() { environmentRevision += 1 }
+    func environmentDidChange() {
+        environmentRevision += 1
+        refreshAIAccess()
+    }
+
+    // MARK: AI の口（#6。設定のスキーマの外。オンにできるのはこの画面だけ）
+
+    /// AI の口の行の ID（設定項目の ID ではない）
+    static let aiAccessRowID = "ui.aiAccess"
+    /// 画面に出す AI の操作の記録の件数
+    static let aiActivityShown = 6
+
+    private(set) var aiAccessEnabled = false
+    private(set) var aiActivity: [AIActivityEntry] = []
+
+    func refreshAIAccess() {
+        guard let ai = environment.aiAccess else { return }
+        aiAccessEnabled = ai.isEnabled()
+        aiActivity = ai.recentActivity(Self.aiActivityShown)
+    }
+
+    func setAIAccess(_ enabled: Bool) {
+        guard let ai = environment.aiAccess else { return }
+        select(Self.aiAccessRowID)
+        guard ai.setEnabled(enabled) else {
+            message = "AI の口を切り替えられませんでした（履歴の DB に書けません）。"
+            return
+        }
+        refreshAIAccess()
+        message =
+            enabled
+            ? "AI の口をオンにしました。登録した AI が、履歴への追加・形式の一覧・秘密の削除・定型文の登録をできます（中身は見せません）。使い終わったらオフにしてください。"
+            : "AI の口をオフにしました。AI からは履歴と定型文に触れません（設定の読み書きはできます）。"
+    }
+
+    func copyMCPRegisterCommand() {
+        environment.aiAccess?.copyRegisterCommand()
+        message = "登録のコマンドをコピーしました。ターミナルに貼って実行すると、Claude Code から使えるようになります。"
+    }
 
     // MARK: 開く・選ぶ
 
@@ -103,6 +146,7 @@ final class SettingsModel {
         message = nil
         settings = controller.settings
         issues = controller.issues
+        refreshAIAccess()
         scrollRequest += 1
     }
 
@@ -157,6 +201,7 @@ final class SettingsModel {
 
     /// ↩: 選択肢は次へ、数は打ち込み、アプリは足す、キーは記録
     func activateSelected() {
+        if selectedID == Self.aiAccessRowID { return setAIAccess(!aiAccessEnabled) }
         guard let id = selectedID, let item = item(id) else { return }
         switch item.kind {
         case .choice, .toggle: step(by: 1)
@@ -168,6 +213,7 @@ final class SettingsModel {
 
     /// ←→: 選択肢を 1 つ動かす（端で回る）・数を 1 段動かす（端で止まる）
     func step(by delta: Int) {
+        if selectedID == Self.aiAccessRowID { return setAIAccess(!aiAccessEnabled) }
         guard let id = selectedID, let item = item(id) else { return }
         switch item.kind {
         case .choice(let choices):
@@ -225,6 +271,8 @@ final class SettingsModel {
 
     /// ⌫: 選んでいる項目を既定に戻す
     func resetSelected() {
+        // AI の口の初期値はオフ
+        if selectedID == Self.aiAccessRowID { return setAIAccess(false) }
         guard let id = selectedID, let item = item(id) else { return }
         do {
             try controller.reset(id)
@@ -235,12 +283,14 @@ final class SettingsModel {
         }
     }
 
+    /// すべて初期値に戻す（AI の口もオフにする）
     func resetAll() {
         recording = false
         editingID = nil
         do {
             try controller.resetAll()
             settings = controller.settings
+            if aiAccessEnabled, environment.aiAccess?.setEnabled(false) == true { refreshAIAccess() }
             message = "すべて初期値に戻しました。"
         } catch {
             message = "設定ファイルに書けませんでした。"

@@ -15,6 +15,10 @@ struct LaunchOptions {
     var debugControl = false
     /// `--settings <命令> ...`（設定の CLI。後ろの引数は `--data-dir` を除いてすべて CLI に渡す）
     var settingsArguments: [String]?
+    /// `--mcp`（AI の口の MCP サーバー。標準入出力の JSON-RPC）
+    var mcp = false
+    /// `--ai <命令> ...`（AI の口の CLI。後ろの引数は `--data-dir`・`--pasteboard-name` を除いてすべて CLI に渡す）
+    var aiArguments: [String]?
 
     static func parse(_ arguments: [String]) -> LaunchOptions {
         var options = LaunchOptions()
@@ -25,10 +29,17 @@ struct LaunchOptions {
             case "--pasteboard-name": options.pasteboardName = iterator.next()
             case "--dump-metadata": options.dumpMetadata = true
             case "--debug-control": options.debugControl = true
-            case "--settings": options.settingsArguments = options.settingsArguments ?? []
+            case "--settings" where options.aiArguments == nil:
+                options.settingsArguments = options.settingsArguments ?? []
+            case "--mcp" where options.settingsArguments == nil && options.aiArguments == nil: options.mcp = true
+            case "--ai" where options.settingsArguments == nil: options.aiArguments = options.aiArguments ?? []
             default:
-                // --settings の後ろは CLI の引数（--json などもそのまま渡す）
-                if options.settingsArguments != nil { options.settingsArguments?.append(argument) }
+                // --settings・--ai の後ろは CLI の引数（--json などもそのまま渡す）
+                if options.settingsArguments != nil {
+                    options.settingsArguments?.append(argument)
+                } else if options.aiArguments != nil {
+                    options.aiArguments?.append(argument)
+                }
             }
         }
         return options

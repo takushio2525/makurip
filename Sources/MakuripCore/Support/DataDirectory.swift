@@ -28,15 +28,25 @@ public enum DataDirectory {
 
 /// データフォルダの排他ロック（`flock`）。持っているあいだ、同じフォルダで 2 つ目のインスタンスは起動できない
 public final class InstanceLock {
+    public static let fileName = "instance.lock"
     private let descriptor: Int32
 
-    /// 取れなければ nil（他のインスタンスが使っている）
-    public init?(directory: URL) {
+    /// 取れなければ nil（他のインスタンスが使っている）。
+    /// AI の口（`AppPresence`）が一瞬だけ共有のロックを取って確かめることがあるので、少し待ちながら数回試す
+    public init?(directory: URL, attempts: Int = 10) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let path = directory.appendingPathComponent("instance.lock").path
+        let path = directory.appendingPathComponent(Self.fileName).path
         let fd = open(path, O_RDWR | O_CREAT, 0o600)
         guard fd >= 0 else { return nil }
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+        var locked = false
+        for attempt in 0..<max(1, attempts) {
+            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+                locked = true
+                break
+            }
+            if attempt + 1 < attempts { usleep(30_000) }
+        }
+        guard locked else {
             close(fd)
             return nil
         }
@@ -46,5 +56,21 @@ public final class InstanceLock {
     deinit {
         flock(descriptor, LOCK_UN)
         close(descriptor)
+    }
+}
+
+/// 同じデータフォルダで Makurip（アプリ）が動いているか。アプリが持つ `instance.lock` の排他ロックを、共有のロックで試して確かめる
+/// （取れたら動いていないので、すぐ放す）。ロックのファイルがなければ動いていない（ファイルを作らない）
+public enum AppPresence {
+    public static func isRunning(directory: URL) -> Bool {
+        let path = directory.appendingPathComponent(InstanceLock.fileName).path
+        let fd = open(path, O_RDONLY)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        if flock(fd, LOCK_SH | LOCK_NB) == 0 {
+            flock(fd, LOCK_UN)
+            return false
+        }
+        return errno == EWOULDBLOCK
     }
 }

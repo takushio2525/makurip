@@ -47,6 +47,9 @@ public enum PasteboardMarkers {
         "net.antelle.keeweb",
     ]
 
+    /// AI の口（MCP・`--ai`）がクリップボードにも置いたときの印。保存はあちらで済んでいるので、監視は取り込まない（#6）
+    public static let savedByMakuripAI = "com.takushio2525.makurip.saved-by-ai"
+
     /// 除外の型が含まれているか（型名だけを見る。データは読まない）
     public static func containsExcludedMarker(_ types: some Sequence<String>, extra: Set<String> = []) -> Bool {
         types.contains { excluded.contains($0) || extra.contains($0) }
