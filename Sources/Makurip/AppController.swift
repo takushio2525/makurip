@@ -88,7 +88,9 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
 
         detector.start()
         monitor.start()
-        hotKeys.register(.defaultOpenHistory, for: .openHistory) { [weak self] in self?.toggleHistory() }
+        // 呼び出しキーはキーマップ（全操作の ID・既定キー・説明の一覧）から引く。フェーズ4で付け替えられる
+        let openKey = Keymap.default.primary(.openHistory)?.hotKey ?? .defaultOpenHistory
+        hotKeys.register(openKey, for: .openHistory) { [weak self] in self?.toggleHistory() }
 
         if options.debugControl {
             if isolated {
@@ -147,23 +149,63 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions {
     }
 
     func paste(itemID: UUID) {
-        guard let store, let monitor, let snapshot = try? store.snapshot(id: itemID) else { return }
-        // 全項目・全型をペーストボードへ戻す。この変化は新しい履歴にせず、先頭へ移すだけにする
+        paste(itemID: itemID, mode: .normal)
+    }
+
+    func paste(itemID: UUID, mode: PasteMode) {
+        guard let store, let monitor, let stored = try? store.snapshot(id: itemID) else { return }
+        // 全項目・全型をペーストボードへ戻す（プレーンテキストのときは文字の型だけ）。
+        // この変化は新しい履歴にせず、先頭へ移すだけにする
+        let snapshot = mode == .plainText ? (stored.plainTextOnly() ?? stored) : stored
         let changeCount = PasteboardWriter.write(snapshot, to: pasteboard)
         monitor.acknowledgeOwnWrite(changeCount: changeCount)
         try? store.touch(id: itemID)
         history?.historyDidChange()
 
+        if mode == .copyOnly {
+            // 貼らずにコピーだけ。元いたアプリへフォーカスを返す
+            lastPasteOutcome = "copied"
+            Log.paste.info("コピーだけ types=\(snapshot.allTypes.count) items=\(snapshot.items.count)")
+            historyDidClose()
+            debugControl?.writeStatus()
+            return
+        }
         let target = pasteTargetOverride.flatMap(NSRunningApplication.init(processIdentifier:)) ?? previousApp
         Task { @MainActor in
             let outcome = await paster.paste(into: target)
             lastPasteOutcome = outcome.rawValue
             Log.paste.info(
-                "貼り付け outcome=\(outcome.rawValue, privacy: .public) types=\(snapshot.allTypes.count) items=\(snapshot.items.count)"
+                "貼り付け outcome=\(outcome.rawValue, privacy: .public) mode=\(mode.rawValue, privacy: .public) types=\(snapshot.allTypes.count) items=\(snapshot.items.count)"
             )
             if outcome == .noPermission { statusMenu?.flashPermissionNeeded() }
             debugControl?.writeStatus()
         }
+    }
+
+    func setPinned(_ pinned: Bool, itemID: UUID) {
+        do {
+            try store?.setPinned(pinned, id: itemID)
+            Log.capture.info("ピン留め pinned=\(pinned)")
+        } catch {
+            Log.capture.error("ピン留めに失敗: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    func delete(itemID: UUID) {
+        do {
+            try store?.delete(id: itemID)
+            Log.capture.info("履歴から 1 件削除")
+        } catch {
+            Log.capture.error("削除に失敗: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    func representationInfos(itemID: UUID) -> [RepresentationInfo] {
+        (try? store?.representationInfos(id: itemID)) ?? []
+    }
+
+    func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data? {
+        try? store?.data(id: itemID, itemIndex: itemIndex, type: type)
     }
 
     func historyDidClose() {

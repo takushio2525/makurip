@@ -222,6 +222,23 @@ public final class ClipStore: @unchecked Sendable {
         }
     }
 
+    /// 型 1 つのデータ（一覧のサムネイル・プレビュー用。全型を読む `snapshot(id:)` より軽い）
+    public func data(id: UUID, itemIndex: Int, type: String) throws -> Data? {
+        try withLock {
+            let statement = try database.prepare(
+                """
+                SELECT inline_data, blob_file FROM representation
+                WHERE clip_id = ? AND item_index = ? AND type = ? ORDER BY position LIMIT 1
+                """)
+            try statement.bind(.text(id.uuidString), .int(itemIndex), .text(type))
+            guard try statement.step() else { return nil }
+            if let file = statement.text(1) {
+                return try Data(contentsOf: blobRoot.appendingPathComponent(file))
+            }
+            return statement.blob(0) ?? Data()
+        }
+    }
+
     /// 保存した型の一覧（中身なし）
     public func representationInfos(id: UUID) throws -> [RepresentationInfo] {
         try withLock {

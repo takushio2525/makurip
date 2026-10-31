@@ -44,3 +44,6 @@ screenshots/
 .idea/
 *.swp
 *~
+
+# 比較画像の作業場所（design/ui-compare/shoot.sh の出力）
+.ui-compare/

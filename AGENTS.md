@@ -9,7 +9,7 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 
 - 目的: Windows のクリップボード履歴に相当するものを Mac で。種類・コピー方法・コピー元で絞り込めることが売り
 - 対象: 作者本人（開発・AI チャットでコピーを多用する人）
-- 状況: フェーズ1（土台）。UI は仮で、フェーズ2で丸ごと差し替える（`.agent/roadmap.md`）
+- 状況: フェーズ2（本番 UI・絞り込み・日本語検索）まで。次は候補窓（#8）・プレビューの色付け（#3）・設定（#4）（`.agent/roadmap.md`）
 
 ## 技術スタック
 
@@ -32,14 +32,16 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア）。AppKit は NSPasteboard だけ使う
-│   ├── MakuripUI/     ← 仮の一覧（フェーズ2で丸ごと差し替える）。Core にだけ依存する
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置）。AppKit は NSPasteboard だけ使う
+│   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー）。Core にだけ依存する
 │   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・起動引数）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
+├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
 ├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
 ├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
+├── design/ui-compare/ ← 試作（案 B）と SwiftUI のパネルを並べた比較画像と、作り直すスクリプト（README.md に結果）
 ├── Config/            ← signing.local.env.example（雛形だけコミット。実ファイルは git 管理外）
 └── .agent/            ← AI 向け詳細仕様と作業メモ
 ```
@@ -58,6 +60,7 @@ makurip/
 | .app を組み立てて署名 | `make app`（→ `.app-build/Makurip.app`） |
 | 決まった場所へ入れる | `make install`（→ `~/Applications/Makurip.app`） |
 | 隔離 E2E（取り込み・永続化） | `make e2e`（一般ペーストボードに触らない） |
+| 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
 | メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]` |
 
@@ -80,7 +83,8 @@ makurip/
 - 要件の正本・決定事項: `.agent/requirements.md`
 - アーキテクチャ・データモデル・技術選定: `.agent/architecture.md`
 - 命名・ログ・エラー・判定の限界: `.agent/conventions.md`
-- 起動引数・公開型・DB スキーマ: `.agent/api.md`
+- 起動引数・公開型・DB スキーマ・キーマップ: `.agent/api.md`
+- 案 B の見た目と試作との差: `design/ui-compare/README.md`
 
 ### 作業履歴メモ（毎ターン参照・更新）
 

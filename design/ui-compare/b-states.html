@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Makurip B harness</title>
+<link rel="stylesheet" href="file://@DESIGN@/shared/base.css">
+<link rel="stylesheet" href="file://@DESIGN@/shared/panel-b.css">
+<style>
+  /* 比較用: 背景を単色にしてぼかしを切る（Swift 側の flat 描画と同じ条件にする） */
+  body { background: var(--flat) !important; }
+  :root { --flat: #dfe6f0; }
+  :root[data-theme="dark"] { --flat: #10131c; }
+  .glass { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  .desk, .closed-hint, .mk-toast, .mk-proto { display: none !important; }
+  .pb, .peek-panel { transition: none !important; }
+  .pb #q { caret-color: transparent; }
+  .pb { left: 40px !important; top: 40px !important; }
+  .peek-panel { left: 422px !important; top: 40px !important; height: 528px !important; }
+</style>
+<script src="file://@DESIGN@/shared/data.js"></script>
+<script>window.MK_DATA.items = window.MK_DATA.items.filter((i) => !i.secret);</script>
+<script src="file://@DESIGN@/shared/core.js"></script>
+<script src="file://@DESIGN@/shared/panel-b.js"></script>
+</head>
+<body>
+<script>
+  Mk.buildDesktop('b');
+  Mk.start(Mk.designs.b.mount());
+  const S = Mk.params.get('state') || 'light';
+  const A = Mk.app;
+  const p = document.getElementById('panel');
+  p.style.left = '40px'; p.style.top = '40px';
+  const q = document.getElementById('q');
+  const type = (v) => { q.value = v; A.onInput(v); };
+  if (S === 'light' || S === 'peek-light') A.move(1);
+  if (S === 'dark' || S === 'peek-dark') A.move(2);
+  if (S.startsWith('peek')) A.setLook(true);
+  if (S === 'filtered') { A.setKind('command'); A.setMethod('button'); }
+  if (S === 'search') type('depuroi');
+  if (S === 'empty-search') type('zzzz');
+  if (S === 'pinned') A.setScope('pinned');
+  if (S === 'picker') {
+    A.openPicker();
+    const pi = document.querySelector('.mk-pop input');
+    pi.value = 'めーる'; pi.dispatchEvent(new Event('input'));
+  }
+  if (S === 'peek-code') { A.move(1); A.setLook(true); }
+</script>
+<script>
+if (Mk.params.get('measure') === '1') {
+  A.setLook(true);
+  const out = {};
+  const m = (label, el) => {
+    if (!el) { out[label] = null; return; }
+    const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+    out[label] = { font: cs.fontSize + ' / ' + cs.lineHeight + ' / ' + cs.fontWeight + ' / ' + cs.fontFamily.slice(0, 40), w: Math.round(r.width*10)/10, h: Math.round(r.height*10)/10, text: (el.textContent||'').slice(0, 40) };
+  };
+  const cards = document.querySelectorAll('.card');
+  m('card0', cards[0]); m('card1', cards[1]); m('card2', cards[2]);
+  m('cmdPre', cards[0].querySelector('.cb-cmd'));
+  m('codePre', cards[1].querySelector('.cb-code'));
+  m('cardFoot', cards[0].querySelector('.card-f'));
+  m('grp', document.querySelector('.grp'));
+  m('tab', document.querySelector('.pb .tab'));
+  m('tabIcon', document.querySelector('.pb .tab svg'));
+  m('cap', document.querySelector('.pb-cap'));
+  m('search', document.querySelector('.pb-search'));
+  m('input', document.getElementById('q'));
+  m('sub', document.querySelector('.pb .sub'));
+  m('kb', document.querySelector('.pb-cap .kb'));
+  m('foot', document.querySelector('.pb-foot'));
+  m('pkCode', document.querySelector('.pv-code .code'));
+  m('pkHead', document.querySelector('.pk-head'));
+  m('pkBody', document.querySelector('.pk-body'));
+  m('pkFoot', document.querySelector('.pk-foot'));
+  // 等幅の 1 文字の幅
+  const probe = document.createElement('span'); probe.className = 'mono'; probe.style.fontSize = '100px'; probe.textContent = 'MMMMMMMMMM';
+  document.body.append(probe); out.monoAdvanceEm = probe.getBoundingClientRect().width / 1000;
+  const textCard = [...cards].find((c) => c.querySelector('.cb-text'));
+  m('textBody', textCard && textCard.querySelector('.cb-text'));
+  document.body.insertAdjacentHTML('beforeend', '<pre id="measure">' + JSON.stringify(out, null, 1) + '</pre>');
+}
+</script>
+</body>
+</html>

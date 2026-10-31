@@ -3,7 +3,7 @@
 ## モジュール構成（SwiftPM のターゲット）
 
 ```
-Makurip（実行ファイル）── MakuripUI（仮の一覧。フェーズ2で丸ごと差し替え）
+Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
      │                         │
      └──────────┬──────────────┘
                 ▼
@@ -12,8 +12,8 @@ Makurip（実行ファイル）── MakuripUI（仮の一覧。フェーズ2�
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`） | Foundation・AppKit（NSPasteboard だけ）・CryptoKit・libsqlite3 |
-| `MakuripUI` | 仮の一覧（NSPanel + SwiftUI）。入口は `HistoryUIFactory.make(actions:)` | MakuripCore |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CryptoKit・libsqlite3 |
+| `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:)` | MakuripCore |
 | `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・起動引数・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
 
@@ -31,11 +31,26 @@ Makurip（実行ファイル）── MakuripUI（仮の一覧。フェーズ2�
 
 ### 呼び出しと貼り付け
 
-1. ⌃⌘V（`HotKeyCenter`）→ `AppController.toggleHistory` — 前面のアプリを `previousApp` に控えて一覧を開く
-2. 一覧で Enter → UI が自分を閉じてから `HistoryActions.paste(itemID:)`
-3. `ClipStore.snapshot` で全項目・全型を読み、`PasteboardWriter.write` でペーストボードへ戻す
-4. 書いたあとの changeCount を `monitor.acknowledgeOwnWrite` に渡す（新しい履歴にしない）。`store.touch` で先頭へ移す
-5. `Paster` が `previousApp` を前面に戻し、その pid 宛てに ⌘V を送る（アクセシビリティの許可が要る）
+1. ⌃⌘V（`HotKeyCenter`。キーは `Keymap` の `openHistory` から引く）→ `AppController.toggleHistory` — 前面のアプリを `previousApp` に控えて一覧を開く
+2. `PanelController.show` — 窓を出す**前に**前面のアプリの文字カーソルを AX で取り（`InsertionPointLocator`）、`PanelPlacement` で位置を決める。
+   パネルは nonactivating なので Makurip は前面にならず、元のアプリが前面のままキーだけを受け取る
+3. キーはパネルの窓のローカル監視 → `HistoryPanelModel.handle`（キーマップで操作を引く。日本語入力の変換中は横取りしない）
+4. Enter（⇧Enter・⌘Enter・⌘1〜9）→ UI が自分を閉じてから `HistoryActions.paste(itemID:mode:)`
+5. `ClipStore.snapshot` で全項目・全型を読み（プレーンテキストのときは文字の型だけ）、`PasteboardWriter.write` でペーストボードへ戻す
+6. 書いたあとの changeCount を `monitor.acknowledgeOwnWrite` に渡す（新しい履歴にしない）。`store.touch` で先頭へ移す
+7. `Paster` が `previousApp` を前面に戻し、その pid 宛てに ⌘V を送る（アクセシビリティの許可が要る）。「コピーだけ」は送らずにフォーカスだけ返す
+
+### 一覧（フェーズ2・`Sources/MakuripUI/`）
+
+| 部品 | 役割 |
+|---|---|
+| `PanelController` | 窓（nonactivating な `KeyablePanel`）・キーのローカル監視・位置・⌘Y の子ウインドウ（`PeekPanel`）。メインメニューがないので検索欄の ⌘A/C/V/X/Z もここで送る |
+| `HistoryPanelModel` | 状態（絞り込み・選択・プレビュー・⌘E）と全操作。`handle(_:isComposing:)` がキーマップから操作を引く。単体テストはここを駆動する |
+| `HistoryPanelView` / `CardView` / `PeekView` | 試作（`~/dev/makurip-design/ui/shared/panel-b.*`・`base.css`）の寸法と色を写した SwiftUI。文字の行の高さは `CSSText` で CSS の line-height を再現 |
+| `ClipContentLoader` | サムネイル・全文・ファイル・色・リッチテキストを、見えたカードと選んだ 1 件だけ読む。画像の縮小はメインスレッドの外 |
+
+- 履歴は開くたびに全件のメタデータを読む（5000 件で 23 ms）。検索用の正規化（`HistoryFilter.haystack`）は開いた後に裏で作り、内容のハッシュが同じあいだ使い回す
+- 試作との見比べは `design/ui-compare/`（`make ui-compare`）
 
 ## データモデル
 
@@ -54,7 +69,9 @@ Makurip（実行ファイル）── MakuripUI（仮の一覧。フェーズ2�
 | `HotKey` | 仮想キーコード + 修飾キー（Codable。フェーズ4の設定で保存する） |
 
 後のフェーズでの載せ方:
-- フェーズ2（絞り込み）: `kind`・`copyMethod`・`source` は列として持っている。日本語検索の正規化は `preview_text` を元に別の列か索引を足す（スキーマ版を上げる）
+- ~~フェーズ2（絞り込み）: `kind`・`copyMethod`・`source` は列として持っている。日本語検索の正規化は `preview_text` を元に別の列か索引を足す（スキーマ版を上げる）~~
+- フェーズ2（済）: 絞り込みと日本語検索はメモリの中で行う（DB の列は足していない。スキーマ版 1 のまま）。全件を読んでも 5000 件で 23 ms、温まった後の検索が 15 ms で足りるため。1 万件を大きく超える上限にするなら、正規化した列と FTS を足す
+- フェーズ2.5（候補窓）: 位置は `PanelPlacement.frame(... side: .beside(rowOffset:))`（カーソルの右・選んだ行をカーソルの行にそろえる）。手がかりは `InsertionPointLocator` をそのまま使う
 - フェーズ3（プレビュー）: `ClipStore.snapshot(id:)` で全データ、`representationInfos(id:)` で型の一覧が取れる
 - フェーズ4（設定）: `Limits` と `HotKey` を UserDefaults か設定ファイルに保存し、`ClipStore(directory:limits:)` と `HotKeyCenter.register` に渡す
 - フェーズ5（秘密）: 判定結果を `ClipStore.setFlags(_:id:)` で `secretLikely` にする。判定は形式だけで行い、中身を外へ出さない
@@ -70,9 +87,22 @@ Makurip（実行ファイル）── MakuripUI（仮の一覧。フェーズ2�
 | ⌘C の検出 | `NSEvent.addGlobalMonitorForEvents(.keyDown)` | CGEventTap（listen-only でも入力監視の許可が別に要る）。グローバル監視はアクセシビリティの許可で動き、貼り付けにも同じ許可が要るので、ユーザーに頼む許可が 1 つで済む |
 | ⌘V の送り先 | `CGEvent.postToPid(元のアプリの pid)` | `CGEvent.post(tap: .cghidEventTap)`（その時点で前面にある別の窓に入りうる）。pid 宛てなら意図したアプリにしか届かない |
 
+## 技術選定（フェーズ2・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| パネルの窓 | nonactivating な NSPanel（`canBecomeKey`） | 通常の NSPanel + `NSApp.activate`（フェーズ1。Makurip が前面になり、日本語入力の状態や元の窓のフォーカスが動く）、NSPopover（カーソルの位置に出せない）。nonactivating なら元のアプリを前面のまま検索欄に打てる（Spotlight と同じ形） |
+| キーの受け方 | 窓のローカル監視（`NSEvent.addLocalMonitorForEvents`）→ ビューモデル | SwiftUI の `onKeyPress`（⌘ 付き・Tab の扱いが TextField と取り合う。テストからも駆動しにくい）。監視で受けてモデルに渡せば、キーの処理を単体テストで確かめられる |
+| 日本語検索 | メモリの中で正規化（NFKC・カタカナ→ひらがな・NFC）+ UTF-8 のバイト列で探す | SQLite の FTS（日本語の分かち書きが要る・スキーマ版が上がる）、`String.range(of:options:)`（打鍵ごとに数千件 × 1000 文字で遅い）。正規化した文字列をキャッシュすれば 5000 件で 15 ms |
+| アイコン | SF Symbols | 試作の線画を SVG で持つ（アセットが増える・ダークの色を別に持つ）。リッチテキストの `textformat` だけ英語の字形に固定（日本語の環境で「あぁ」になる） |
+| 見た目の検証 | `NSHostingView` を枠なしの窓に載せて `cacheDisplay`（画面ロック中でも描ける） | `ImageRenderer`（TextField・ScrollView など AppKit 由来の部品を描けない）、実機のスクショ（画面ロック中は真っ黒） |
+
 ## 変更時の波及
 
 - DB スキーマを変える: `ClipStore.migrate()` に版を足し、`.agent/api.md` の「DB スキーマ」と `MetadataDump` を同時に直す
 - 種類の判定を変える: `KindClassifierTests` に入力例を足し、`.agent/conventions.md` の「判定の限界」を見直す
-- UI を差し替える（フェーズ2）: `Sources/MakuripUI/` を置き換え、`HistoryUIFactory.make(actions:)` を同じ名前で用意する。E2E（`scripts/e2e/paste.sh`）は `debugState` の `rowCount` / `query` と `-MakuripPanelScreen` を使っているので、新しい UI でも同じ鍵を返すか、スクリプトを直す
+- UI を差し替える: `Sources/MakuripUI/` を置き換え、`HistoryUIFactory.make(actions:)` を同じ名前で用意する。E2E（`scripts/e2e/paste.sh`）は `debugState` の `rowCount` / `query` と `-MakuripPanelScreen` を使っているので、新しい UI でも同じ鍵を返すか、スクリプトを直す（案 B のパネルは同じ鍵を返す）
+- キーを足す・変える: `KeyAction`（ID・既定のキー・説明文）に足す。`KeymapTests` の「既定のキーに重なりがない」が守る。画面のヒントはキーマップから引くので直さなくてよい
+- 検索を変える: `SearchTextTests` に例を足し、`.agent/conventions.md` の「検索」の限界を見直す。試作（`core.js`）と振る舞いを変えるときは理由を書く
+- 見た目を変える: `make ui-compare` で試作と並べて確かめ、`design/ui-compare/README.md` の「意図して変えたところ」を直す
 - 表示名・バンドル ID・版を変える: `Sources/Makurip/Info.plist` の 1 か所だけ

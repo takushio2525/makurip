@@ -10,3 +10,5 @@
 - 次: GitHub の許可 → push・起票・PR、Makurip のアクセシビリティ許可 → `scripts/e2e/paste.sh`
 - master がリポジトリを作って push。Issue #1〜#9 を起票（#8 候補窓、#9 フェーズ1 の実機確認）、下書きを削除。候補窓の追加決定（カーソルの横・確定時に貼るアプリ）を要件に反映
 - アイコン B の組み込み（#11）: `design/icon/` に原稿と再生成・検証スクリプト、`Resources/` に AppIcon.icon と MenuBarIcon、build-app.sh で actool → Assets.car。署名の DR は入れ直しても不変。実機のメニューバー・Dock の目視は画面ロック中で未検証（#9 に追記）
+- フェーズ2（#2）: 案 B のパネル（nonactivating NSPanel）・種類/コピー方法/アプリ/ピン留めの絞り込み・日本語検索（NFKC・かな・ローマ字）・⌘Y のプレビュー・キーマップ（KeyAction）・位置の部品（AX → 枠 → マウス）
+- 試作をヘッドレス Chrome、SwiftUI をオフスクリーン描画で撮って並べ、CSS の line-height と 13px の等幅を再現（`design/ui-compare/`）。5000 件で開く 7 ms・ストア 23 ms・検索 15 ms。単体 110 件（ほかに環境変数で動く描画・速さの 3 件）・隔離 E2E 51 項目が緑

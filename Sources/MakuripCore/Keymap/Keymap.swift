@@ -1,0 +1,287 @@
+import Foundation
+
+/// キーの組み合わせ 1 つ。キーは物理キーの位置（仮想キーコード）で持つ（`HotKey` と同じ考え方。JIS 配列でも英字・数字の位置は同じ）
+public struct KeyCombo: Codable, Hashable, Sendable {
+    public enum Key: Codable, Hashable, Sendable {
+        /// 仮想キーコード（`kVK_ANSI_K` = 40 など）
+        case code(UInt16)
+        /// 数字の 1〜9（「番号の項目をすぐ貼り付け」のように、押した番号で動くもの）
+        case digits
+    }
+
+    public var key: Key
+    public var modifiers: HotKey.Modifiers
+
+    public init(_ key: Key, _ modifiers: HotKey.Modifiers = []) {
+        self.key = key
+        self.modifiers = modifiers
+    }
+
+    public init(_ hotKey: HotKey) {
+        self.init(.code(UInt16(hotKey.keyCode)), hotKey.modifiers)
+    }
+
+    /// 押されたキーに合えば true。数字のキーなら `digit` に 1〜9 が入る
+    public func matches(_ press: KeyStroke) -> (matched: Bool, digit: Int?) {
+        guard press.modifiers == modifiers else { return (false, nil) }
+        switch key {
+        case .code(let code):
+            return (KeyCodes.canonical(code) == KeyCodes.canonical(press.keyCode), nil)
+        case .digits:
+            guard let digit = KeyCodes.digit(of: press.keyCode) else { return (false, nil) }
+            return (true, digit)
+        }
+    }
+
+    /// 2 つの組み合わせが同じキーで発火しうるか（重なりの検出に使う）
+    public func overlaps(_ other: KeyCombo) -> Bool {
+        guard modifiers == other.modifiers else { return false }
+        switch (key, other.key) {
+        case (.digits, .digits): return true
+        case (.code(let a), .code(let b)): return KeyCodes.canonical(a) == KeyCodes.canonical(b)
+        case (.digits, .code(let code)), (.code(let code), .digits): return KeyCodes.digit(of: code) != nil
+        }
+    }
+
+    /// 画面に出す表記（例: ⌘K・⇧⇥・⌘1–9・esc）。修飾キーは macOS の慣習の順（⌃⌥⇧⌘）
+    public var displayString: String { modifierSymbols + keySymbol }
+
+    public var modifierSymbols: String {
+        var result = ""
+        if modifiers.contains(.control) { result += "⌃" }
+        if modifiers.contains(.option) { result += "⌥" }
+        if modifiers.contains(.shift) { result += "⇧" }
+        if modifiers.contains(.command) { result += "⌘" }
+        return result
+    }
+
+    /// キーの部分の表記。Return は UI 側で記号（SF Symbols の return）に置き換える
+    public var keySymbol: String {
+        switch key {
+        case .digits: "1–9"
+        case .code(let code): KeyCodes.names[KeyCodes.canonical(code)] ?? "#\(code)"
+        }
+    }
+
+    public var isReturn: Bool { key == .code(KeyCodes.returnKey) }
+
+    /// 全体のキー（Carbon のホットキー）として登録するときの形。数字の範囲は登録できないので nil
+    public var hotKey: HotKey? {
+        guard case .code(let code) = key else { return nil }
+        return HotKey(keyCode: UInt32(code), modifiers: modifiers)
+    }
+}
+
+/// 押されたキー（`NSEvent` から作る。AppKit に依存しないよう値だけを持つ）
+public struct KeyStroke: Hashable, Sendable {
+    public var keyCode: UInt16
+    public var modifiers: HotKey.Modifiers
+
+    public init(keyCode: UInt16, modifiers: HotKey.Modifiers = []) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+}
+
+/// 仮想キーコードの表（US 配列の位置の名前）
+public enum KeyCodes {
+    public static let returnKey: UInt16 = 36
+    public static let keypadEnter: UInt16 = 76
+    public static let tab: UInt16 = 48
+    public static let delete: UInt16 = 51
+    public static let escape: UInt16 = 53
+    public static let leftArrow: UInt16 = 123
+    public static let rightArrow: UInt16 = 124
+    public static let downArrow: UInt16 = 125
+    public static let upArrow: UInt16 = 126
+
+    /// 数字キー 1〜9 の仮想キーコード（並びは 1, 2, …, 9）
+    public static let digitCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+
+    /// テンキーの Enter は Return と同じに扱う（試作も Enter と NumpadEnter を同じにしている）
+    public static func canonical(_ code: UInt16) -> UInt16 {
+        code == keypadEnter ? returnKey : code
+    }
+
+    public static func digit(of code: UInt16) -> Int? {
+        digitCodes.firstIndex(of: code).map { $0 + 1 }
+    }
+
+    /// 表示名。英字は大文字、特殊キーは試作の表記（esc・⇥・⌫ など）
+    public static let names: [UInt16: String] = [
+        0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V", 11: "B", 12: "Q", 13: "W",
+        14: "E", 15: "R", 16: "Y", 17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 24: "=", 25: "9",
+        26: "7", 27: "-", 28: "8", 29: "0", 30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P", 37: "L", 38: "J",
+        39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".", 50: "`",
+        36: "↩", 48: "⇥", 49: "space", 51: "⌫", 53: "esc", 117: "⌦", 115: "home", 119: "end", 116: "pgup",
+        121: "pgdn", 123: "←", 124: "→", 125: "↓", 126: "↑",
+    ]
+}
+
+/// キーで呼べる操作の一覧。**全操作はここから定義する**（ID・既定のキー・説明文）。
+///
+/// フェーズ4で設定スキーマにそのまま載せ、設定画面・CLI・AI（MCP）が同じ ID と説明文で付け替えられるようにする。
+/// ID（rawValue）は試作（`makurip-design/ui/shared/core.js` の `Mk.ACTIONS`）と同じにしてある。
+/// 定型文・秘密の表示・設定を開く操作は、それぞれのフェーズ（#7・#5・#4）で足す。
+public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
+    case openHistory = "open"
+    case close
+    case previous = "prev"
+    case next
+    case paste
+    case pastePlain
+    case copyOnly
+    case quickPaste = "quick"
+    case kindNext
+    case kindPrevious = "kindPrev"
+    case cycleMethod = "method"
+    case chooseApp = "app"
+    case pinnedOnly = "pinned"
+    case togglePin = "pin"
+    case preview = "look"
+    case openSource = "source"
+    case delete
+
+    /// どこで効くキーか
+    public enum Scope: String, Sendable, Codable {
+        /// どのアプリからでも効く（Carbon のホットキーとして登録する）
+        case global
+        /// 一覧（パネル）が開いている間だけ効く
+        case panel
+    }
+
+    public var scope: Scope { self == .openHistory ? .global : .panel }
+
+    /// 設定画面で並べるときのまとまり
+    public var group: String {
+        switch self {
+        case .openHistory, .close: "呼び出す"
+        case .previous, .next, .paste, .pastePlain, .copyOnly, .quickPaste: "選ぶ・貼る"
+        case .kindNext, .kindPrevious, .cycleMethod, .chooseApp, .pinnedOnly: "絞り込み"
+        case .togglePin, .preview, .openSource, .delete: "項目の操作"
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .openHistory: "履歴を呼び出す（どこからでも）"
+        case .close: "検索を消す／閉じる"
+        case .previous: "前の項目"
+        case .next: "次の項目"
+        case .paste: "貼り付け"
+        case .pastePlain: "プレーンテキストで貼り付け"
+        case .copyOnly: "コピーだけする（貼り付けない）"
+        case .quickPaste: "番号の項目をすぐ貼り付け"
+        case .kindNext: "種類：次へ"
+        case .kindPrevious: "種類：前へ"
+        case .cycleMethod: "コピー方法を切り替え"
+        case .chooseApp: "コピー元アプリを選ぶ"
+        case .pinnedOnly: "ピン留めだけ表示"
+        case .togglePin: "ピン留めする／外す"
+        case .preview: "大きくプレビュー"
+        case .openSource: "コピー元のページを開く"
+        case .delete: "履歴から削除"
+        }
+    }
+
+    /// 設定画面と AI 向けの設定一覧に出す説明文
+    public var summary: String {
+        switch self {
+        case .openHistory: "どのアプリからでも履歴の一覧を開く。開いているときに押すと閉じる。"
+        case .close: "検索語があれば消し、なければ一覧を閉じる。"
+        case .previous: "一覧で 1 つ前の項目を選ぶ。"
+        case .next: "一覧で 1 つ次の項目を選ぶ。"
+        case .paste: "選んだ項目を、一覧を開く前に使っていたアプリに貼る。"
+        case .pastePlain: "太字やリンクなどの書式を外し、文字だけを貼る。"
+        case .copyOnly: "クリップボードに入れるだけで、貼り付けはしない。"
+        case .quickPaste: "一覧の上から 1〜9 番目を、選ばずにそのまま貼る。"
+        case .kindNext: "種類の絞り込み（テキスト・画像・コードなど）を次に進める。"
+        case .kindPrevious: "種類の絞り込みを 1 つ前に戻す。"
+        case .cycleMethod: "コピーの方法で絞る。すべて → キー操作 → ボタンなど の順に切り替わる。"
+        case .chooseApp: "コピー元のアプリを一覧から選んで絞る。"
+        case .pinnedOnly: "ピン留めした項目だけを表示する。もう一度押すと戻る。"
+        case .togglePin: "選んだ項目を固定し、古くなっても消えないようにする。"
+        case .preview: "選んだ項目を大きく表示する（画像やコードの確認用）。"
+        case .openSource: "コピーした元のページ（ブラウザや AI チャット）を開く。"
+        case .delete: "選んだ項目を履歴から消す。"
+        }
+    }
+
+    /// 既定のキー（試作と同じ。先頭のものを画面のヒントに出す）
+    public var defaultCombos: [KeyCombo] {
+        switch self {
+        case .openHistory: [KeyCombo(.defaultOpenHistory)]
+        case .close: [KeyCombo(.code(KeyCodes.escape))]
+        case .previous: [KeyCombo(.code(KeyCodes.upArrow)), KeyCombo(.code(35), .control)]  // ↑・⌃P
+        case .next: [KeyCombo(.code(KeyCodes.downArrow)), KeyCombo(.code(45), .control)]  // ↓・⌃N
+        case .paste: [KeyCombo(.code(KeyCodes.returnKey))]
+        case .pastePlain: [KeyCombo(.code(KeyCodes.returnKey), .shift)]
+        case .copyOnly: [KeyCombo(.code(KeyCodes.returnKey), .command)]
+        case .quickPaste: [KeyCombo(.digits, .command)]
+        case .kindNext: [KeyCombo(.code(KeyCodes.tab))]
+        case .kindPrevious: [KeyCombo(.code(KeyCodes.tab), .shift)]
+        case .cycleMethod: [KeyCombo(.code(40), .command)]  // ⌘K
+        case .chooseApp: [KeyCombo(.code(14), .command)]  // ⌘E
+        case .pinnedOnly: [KeyCombo(.code(35), [.command, .shift])]  // ⌘⇧P
+        case .togglePin: [KeyCombo(.code(35), .command)]  // ⌘P
+        case .preview: [KeyCombo(.code(16), .command)]  // ⌘Y
+        case .openSource: [KeyCombo(.code(31), .command)]  // ⌘O
+        case .delete: [KeyCombo(.code(KeyCodes.delete), .command)]  // ⌘⌫
+        }
+    }
+}
+
+/// 操作 → キーの割り当て。既定は `KeyAction.defaultCombos`。フェーズ4でユーザーと AI が付け替える
+public struct Keymap: Hashable, Sendable {
+    public private(set) var bindings: [KeyAction: [KeyCombo]]
+
+    public init(bindings: [KeyAction: [KeyCombo]]) {
+        self.bindings = bindings
+    }
+
+    public static let `default` = Keymap(
+        bindings: Dictionary(uniqueKeysWithValues: KeyAction.allCases.map { ($0, $0.defaultCombos) }))
+
+    public func combos(for action: KeyAction) -> [KeyCombo] {
+        bindings[action] ?? []
+    }
+
+    /// 画面のヒントに出すキー（先頭の 1 つ）
+    public func primary(_ action: KeyAction) -> KeyCombo? {
+        combos(for: action).first
+    }
+
+    public mutating func set(_ combos: [KeyCombo], for action: KeyAction) {
+        bindings[action] = combos
+    }
+
+    /// 押されたキーに当たる操作（範囲 `scope` の中だけを見る）。数字のキーなら番号も返す
+    public func action(for press: KeyStroke, scope: KeyAction.Scope = .panel) -> (action: KeyAction, digit: Int?)? {
+        for action in KeyAction.allCases where action.scope == scope {
+            for combo in combos(for: action) {
+                let result = combo.matches(press)
+                if result.matched { return (action, result.digit) }
+            }
+        }
+        return nil
+    }
+
+    /// 重なっているキー（同じキーで 2 つ以上の操作が発火しうる組）。全体のキーとパネルのキーは同じ範囲として見る
+    /// （パネルを開いている間もどこからでも効くキーは届くため）
+    public func conflicts() -> [KeyConflict] {
+        var result: [KeyConflict] = []
+        let entries = KeyAction.allCases.flatMap { action in combos(for: action).map { (action, $0) } }
+        for (i, a) in entries.enumerated() {
+            for b in entries[(i + 1)...] where a.0 != b.0 && a.1.overlaps(b.1) {
+                result.append(KeyConflict(first: a.0, second: b.0, combo: a.1))
+            }
+        }
+        return result
+    }
+}
+
+public struct KeyConflict: Hashable, Sendable {
+    public var first: KeyAction
+    public var second: KeyAction
+    public var combo: KeyCombo
+}
