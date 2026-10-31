@@ -209,6 +209,27 @@ struct CandidateCoordinatorTests {
         #expect(h.editor.string == "メモ：")
     }
 
+    @Test("複数行のコード・改行を含むコマンドも、範囲を選び直して差し替え、取り消しで消える")
+    func multilineContent() async {
+        let code = "func greet() {\n    print(\"やあ\")\n}\n"
+        let h = CandidateHarness(
+            items: [(.text, .text("最新")), (.code, .text(code)), (.command, .text("$ a\n$ b"))],
+            editor: FakeEditor("前\n後", selection: AXTextRange(location: 2, length: 0)))
+        h.coordinator.start()
+        await h.coordinator.waitUntilIdle()
+        h.tap.press(KeyCodes.upArrow)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "前\n\(code)後")
+        h.tap.press(KeyCodes.upArrow)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "前\n$ a\n$ b後")
+        #expect(!h.host.sent.contains(.undo))
+        h.tap.press(KeyCodes.escape)
+        await h.coordinator.waitUntilIdle()
+        #expect(h.editor.string == "前\n後")
+        #expect(h.editor.selection == AXTextRange(location: 2, length: 0))
+    }
+
     @Test("画像を受け付けない入力欄: 貼れなかった画像は仮貼りなしのまま、次の文字は普通に差し替える")
     func imageRejected() async {
         let editor = FakeEditor("メモ：")
