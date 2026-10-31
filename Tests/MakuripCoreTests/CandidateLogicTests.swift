@@ -87,19 +87,18 @@ struct CandidateSessionTests {
         #expect(CandidateLayout.windowHeight(rowCount: 3, hasNote: true) == 6 + 92 + 37.25 + 32.5 + 6)
     }
 
-    @Test("見えている 8 行は、選んでいる行が見える範囲でなるべく動かさない（scrollIntoView の nearest）")
+    @Test("見えている 8 行は、選んでいる行が見えるところまで上から送る（試作と同じ。8 行目より下ならいちばん下の行）")
     func visibleWindow() {
-        // ターミナル式・25 件: 最新（いちばん下の行 24）を選んで始める → 17〜24 が見える
-        #expect(CandidateLayout.initialFirstVisibleRow(selectedRow: 24, rowCount: 25) == 17)
-        // 上へたどっても 17 行目までは動かない
-        #expect(CandidateLayout.firstVisibleRow(previous: 17, selectedRow: 18, rowCount: 25) == 17)
-        #expect(CandidateLayout.firstVisibleRow(previous: 17, selectedRow: 17, rowCount: 25) == 17)
-        // 見えている範囲の外へ出たら 1 行ずつ送る
-        #expect(CandidateLayout.firstVisibleRow(previous: 17, selectedRow: 16, rowCount: 25) == 16)
-        #expect(CandidateLayout.firstVisibleRow(previous: 0, selectedRow: 9, rowCount: 25) == 2)
+        // ターミナル式・25 件: 最新（いちばん下の行 24）→ 17〜24 が見え、選んだ行はいちばん下
+        #expect(CandidateLayout.firstVisibleRow(selectedRow: 24, rowCount: 25) == 17)
+        // ↑ でたどっても選んだ行はいちばん下のまま（窓は動かず一覧が流れる）
+        #expect(CandidateLayout.firstVisibleRow(selectedRow: 21, rowCount: 25) == 14)
+        #expect(CandidateLayout.firstVisibleRow(selectedRow: 7, rowCount: 25) == 0)
+        // 上の 8 行の中では、選んだ行が上へ動く
+        #expect(CandidateLayout.firstVisibleRow(selectedRow: 3, rowCount: 25) == 0)
         // 行が少なければ全部見える
-        #expect(CandidateLayout.initialFirstVisibleRow(selectedRow: 2, rowCount: 3) == 0)
-        #expect(CandidateLayout.firstVisibleRow(previous: 5, selectedRow: 0, rowCount: 3) == 0)
+        #expect(CandidateLayout.firstVisibleRow(selectedRow: 2, rowCount: 3) == 0)
+        #expect(CandidateLayout.firstVisibleRow(selectedRow: 0, rowCount: 0) == 0)
     }
 
     @Test("行の中心までの距離（窓の上端から）")
@@ -316,5 +315,47 @@ struct CandidateSettingsTests {
         let broken = CandidateSettings.load(from: defaults)
         #expect(broken.hotKeyMode == .candidate)
         #expect(broken.idleTimeout == 10)
+    }
+}
+
+/// タップに届いたイベントの読み取り（CGEvent はメモリの中で作るだけで、どこにも送らない）
+@Suite("横取りのタップの入力")
+struct KeyTapInputTests {
+    func key(_ code: CGKeyCode, down: Bool = true, flags: CGEventFlags = []) throws -> CGEvent {
+        let event = try #require(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
+        event.flags = flags
+        return event
+    }
+
+    @Test("キーと修飾キー（矢印に付くテンキー・fn の印は見ない）")
+    func keys() throws {
+        let up = try key(CGKeyCode(KeyCodes.upArrow), flags: [.maskNumericPad, .maskSecondaryFn])
+        #expect(KeyTapInput.make(type: .keyDown, event: up) == .event(.keyDown(KeyStroke(keyCode: KeyCodes.upArrow))))
+        let expand = try key(9, flags: [.maskControl, .maskCommand, .maskAlphaShift])
+        #expect(
+            KeyTapInput.make(type: .keyDown, event: expand)
+                == .event(.keyDown(KeyStroke(keyCode: 9, modifiers: [.control, .command]))))
+        let tabUp = try key(CGKeyCode(KeyCodes.tab), down: false)
+        #expect(KeyTapInput.make(type: .keyUp, event: tabUp) == .event(.keyUp(keyCode: KeyCodes.tab)))
+    }
+
+    @Test("Makurip が送ったキーは印で見分けて素通し・タップが止められたら disabled")
+    func syntheticAndDisabled() throws {
+        let paste = try key(9, flags: .maskCommand)
+        paste.setIntegerValueField(.eventSourceUserData, value: SyntheticEventMarker.userData)
+        #expect(KeyTapInput.make(type: .keyDown, event: paste) == .synthetic)
+        let any = try key(0)
+        #expect(KeyTapInput.make(type: .tapDisabledByTimeout, event: any) == .disabled)
+        #expect(KeyTapInput.make(type: .tapDisabledByUserInput, event: any) == .disabled)
+        #expect(KeyTapInput.make(type: .flagsChanged, event: any) == .ignored)
+    }
+
+    @Test("マウスのクリックは位置を渡す")
+    func mouse() throws {
+        let click = try #require(
+            CGEvent(
+                mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: CGPoint(x: 120, y: 340),
+                mouseButton: .left))
+        #expect(KeyTapInput.make(type: .leftMouseDown, event: click) == .event(.mouseDown(CGPoint(x: 120, y: 340))))
     }
 }

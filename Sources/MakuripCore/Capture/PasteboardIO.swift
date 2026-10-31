@@ -44,6 +44,27 @@ public enum PasteboardReader {
     }
 }
 
+/// 候補窓で取り消したときに、貼る前のペーストボードへ戻すための控え
+public enum PasteboardStash {
+    /// 全項目・全型を読む。除外の印（パスワード等）が付いていても読む（戻せないと取り消しでクリップボードが変わるため）。
+    /// **メモリの中だけで持ち、保存も記録もしない**。合計が `maxTotalBytes` を超えたら控えない（nil）
+    public static func read(_ pasteboard: NSPasteboard, maxTotalBytes: Int) -> PasteboardSnapshot? {
+        var total = 0
+        var items: [PasteboardItemSnapshot] = []
+        for item in pasteboard.pasteboardItems ?? [] {
+            var representations: [PasteboardRepresentation] = []
+            for type in item.types {
+                guard let data = item.data(forType: type) else { continue }
+                total += data.count
+                if total > maxTotalBytes { return nil }
+                representations.append(PasteboardRepresentation(type: type.rawValue, data: data))
+            }
+            if !representations.isEmpty { items.append(PasteboardItemSnapshot(representations: representations)) }
+        }
+        return PasteboardSnapshot(items: items)
+    }
+}
+
 /// 保存したものをペーストボードへ書き戻す（全項目・全型を元の順で）
 public enum PasteboardWriter {
     /// 書いたあとの changeCount を返す。監視側はこれを `acknowledgeOwnWrite` に渡し、新しい履歴として拾わない

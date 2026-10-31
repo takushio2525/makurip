@@ -53,10 +53,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         guard let controller else { return }
 
-        let open = addItem("履歴を開く", action: #selector(openHistory))
-        let hotKey = HotKey.defaultOpenHistory
+        // メニューは一覧を開く（⌃⌘V は既定で候補窓なので、一覧を開くキー ⌃⌥⌘V を添える）
+        let open = addItem("履歴の一覧を開く", action: #selector(openHistory))
+        let hotKey = controller.keymap.primary(.openList)?.hotKey ?? .defaultOpenList
         open.keyEquivalent = "v"
-        open.keyEquivalentModifierMask = [.control, .command]
+        open.keyEquivalentModifierMask = [.control, .option, .command]
         open.toolTip = hotKey.displayString
 
         menu.addItem(.separator())

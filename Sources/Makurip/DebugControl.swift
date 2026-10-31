@@ -12,8 +12,12 @@ final class DebugControl {
     static let prefix = "com.takushio2525.makurip.debug."
 
     enum Command: String, CaseIterable {
-        /// ⌃⌘V を押したときと同じ処理（一覧を開く / 閉じる）
+        /// 一覧を開く / 閉じる（メニューの「履歴の一覧を開く」と同じ）
         case toggleHistory
+        /// ⌃⌘V を押したときと同じ（動きは hotkeyMode。既定は候補窓）
+        case pressOpenKey
+        /// ⌃⌥⌘V を押したときと同じ
+        case pressOpenListKey
         /// ⌘C を見たときと同じ信号を入れる（コピー方法の判定の配線を確かめる用）
         case simulateCopyShortcut
         /// 貼り付けの宛先を pid で固定する（userInfo["pid"]）
@@ -55,6 +59,10 @@ final class DebugControl {
         switch command {
         case .toggleHistory:
             controller.toggleHistory()
+        case .pressOpenKey:
+            controller.hotKeyPressed(.open)
+        case .pressOpenListKey:
+            controller.hotKeyPressed(.openList)
         case .simulateCopyShortcut:
             let front = NSWorkspace.shared.frontmostApplication
             controller.monitor?.noteCopyShortcut(
@@ -92,6 +100,7 @@ final class DebugControl {
             "itemCount": controller.itemCount,
             "historyVisible": controller.history?.isVisible ?? false,
             "historyUI": controller.history?.debugState ?? [:],
+            "candidate": controller.candidate?.debugState ?? [:],
             "pasteTargetOverride": controller.pasteTargetOverride.map { Int($0) } ?? NSNull(),
             "lastPasteOutcome": controller.lastPasteOutcome ?? NSNull(),
         ]

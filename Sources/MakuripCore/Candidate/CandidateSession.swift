@@ -76,19 +76,14 @@ public enum CandidateLayout {
     /// 下段のキーのヒント（`.cd-foot { margin-top: 6px; padding: 7px 4px 1px; border-top: .5px }` + キー 18px）
     public static let footerHeight: CGFloat = 6 + 0.5 + 7 + 18 + 1
 
-    /// 見えている行の先頭。選んでいる行が見える範囲で、前の位置からなるべく動かさない（scrollIntoView の nearest と同じ）
-    public static func firstVisibleRow(previous: Int, selectedRow: Int, rowCount: Int) -> Int {
+    /// 見えている行の先頭。試作と同じく、毎回いちばん上から選んでいる行が見えるところまで送る
+    /// （試作は動かすたびに一覧を描き直して scrollTop 0 から scrollIntoView の nearest で送るため）。
+    /// なので選んでいる行が 8 行目より下にあれば、いつも見えている範囲のいちばん下に来る。ターミナル式では
+    /// 最新から ↑ でたどる間、窓は動かずに一覧だけが流れ、選んでいる行がカーソルの行にとどまる
+    public static func firstVisibleRow(selectedRow: Int, rowCount: Int) -> Int {
         let visible = min(rowCount, maxVisibleRows)
         guard visible > 0 else { return 0 }
-        var first = min(max(0, previous), rowCount - visible)
-        if selectedRow < first { first = selectedRow }
-        if selectedRow >= first + visible { first = selectedRow - visible + 1 }
-        return first
-    }
-
-    /// 始めたときの見えている範囲（選んでいる行が見える、いちばん上寄りの位置。試作は scrollTop 0 から nearest で送る）
-    public static func initialFirstVisibleRow(selectedRow: Int, rowCount: Int) -> Int {
-        firstVisibleRow(previous: 0, selectedRow: selectedRow, rowCount: rowCount)
+        return min(max(0, selectedRow - visible + 1), rowCount - visible)
     }
 
     public static func visibleRowCount(_ rowCount: Int) -> Int {

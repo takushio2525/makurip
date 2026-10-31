@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Makurip 候補窓 harness</title>
+<!-- 試作（@DESIGN@ の candidate.*）を読むだけ。候補窓を (40, 40) に固定し、ぼかしを切って単色の背景に置く -->
+<link rel="stylesheet" href="file://@DESIGN@/shared/base.css">
+<link rel="stylesheet" href="file://@DESIGN@/shared/panel-b.css">
+<link rel="stylesheet" href="file://@DESIGN@/shared/candidate.css">
+<style>
+  body { background: var(--flat) !important; }
+  :root { --flat: #dfe6f0; }
+  :root[data-theme="dark"] { --flat: #10131c; }
+  .glass { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  .desk, .closed-hint, .mk-toast, .mk-proto, .pb { display: none !important; }
+  .mk-cand { left: 40px !important; top: 40px !important; transition: none !important; animation: none !important; }
+</style>
+<script src="file://@DESIGN@/shared/data.js"></script>
+<script>
+  // Swift 側の架空の履歴と同じにする（秘密の 2 件は #5 の範囲なので除く）。count で件数を絞る
+  (function () {
+    const p = new URLSearchParams(location.search);
+    let items = window.MK_DATA.items.filter((i) => !i.secret);
+    if (p.has('count')) items = items.slice(0, +p.get('count'));
+    window.MK_DATA.items = items;
+  })();
+</script>
+<script src="file://@DESIGN@/shared/core.js"></script>
+<script src="file://@DESIGN@/shared/panel-b.js"></script>
+<script src="file://@DESIGN@/shared/candidate.js"></script>
+</head>
+<body>
+<script>
+  Mk.buildDesktop('cand');
+  // 並びは撮るたびに明示する（同じ Chrome のプロファイルで撮るので、前の設定が残らないように）
+  Mk.setPref('candOrder', Mk.params.get('order') || 'terminal');
+  Mk.start(Mk.designs.b.mount(), { integrated: true, startClosed: true });
+  Mk.cand.start();
+  const target = +(Mk.params.get('idx') || 0);
+  for (let i = 1; i <= target; i++) Mk.cand.go(i);
+</script>
+</body>
+</html>

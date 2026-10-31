@@ -8,7 +8,10 @@ import MakuripCore
 @MainActor
 final class HotKeyCenter {
     enum Action: UInt32 {
+        /// 履歴を呼び出す（⌃⌘V。動きは設定の hotkeyMode）
         case openHistory = 1
+        /// 一覧を開く（⌃⌥⌘V）
+        case openList = 2
     }
 
     private var handlers: [UInt32: () -> Void] = [:]
