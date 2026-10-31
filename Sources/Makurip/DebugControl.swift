@@ -1,0 +1,96 @@
+import AppKit
+import ApplicationServices
+import MakuripCore
+
+/// E2E 用の遠隔操作（`--debug-control`）。**`--data-dir` で隔離したときだけ**有効にする（AppController が守る）。
+///
+/// 分散通知 `com.takushio2525.makurip.debug.<命令>` を、object = データフォルダのパスで受け取る
+/// （別のデータフォルダで動く別インスタンスには届かない）。状態は `<データフォルダ>/debug-status.json` に書く。
+/// 状態に中身（平文・データ）は入れない。
+@MainActor
+final class DebugControl {
+    static let prefix = "com.takushio2525.makurip.debug."
+
+    enum Command: String, CaseIterable {
+        /// ⌃⌘V を押したときと同じ処理（一覧を開く / 閉じる）
+        case toggleHistory
+        /// ⌘C を見たときと同じ信号を入れる（コピー方法の判定の配線を確かめる用）
+        case simulateCopyShortcut
+        /// 貼り付けの宛先を pid で固定する（userInfo["pid"]）
+        case setPasteTarget
+        /// 状態を書く
+        case writeStatus
+        case quit
+    }
+
+    private weak var controller: AppController?
+    private var observers: [NSObjectProtocol] = []
+    private let statusURL: URL
+
+    init(controller: AppController) {
+        self.controller = controller
+        statusURL = controller.dataDirectory.appendingPathComponent("debug-status.json")
+        let center = DistributedNotificationCenter.default()
+        let object = controller.dataDirectory.path
+        for command in Command.allCases {
+            let observer = center.addObserver(
+                forName: Notification.Name(Self.prefix + command.rawValue), object: object, queue: .main
+            ) { [weak self] notification in
+                let pid =
+                    (notification.userInfo?["pid"] as? NSNumber)?.int32Value
+                    ?? (notification.userInfo?["pid"] as? String).flatMap { Int32($0) }
+                MainActor.assumeIsolated { self?.handle(command, pid: pid) }
+            }
+            observers.append(observer)
+        }
+        writeStatus()
+        Log.app.info("検証用の遠隔操作を有効にした")
+    }
+
+    private func handle(_ command: Command, pid: Int32?) {
+        guard let controller else { return }
+        switch command {
+        case .toggleHistory:
+            controller.toggleHistory()
+        case .simulateCopyShortcut:
+            let front = NSWorkspace.shared.frontmostApplication
+            controller.monitor?.noteCopyShortcut(
+                CopyShortcutSignal(
+                    at: Date(),
+                    frontmostApp: front.map { SourceApp(bundleID: $0.bundleIdentifier, name: $0.localizedName) }))
+        case .setPasteTarget:
+            controller.pasteTargetOverride = pid
+        case .writeStatus:
+            break
+        case .quit:
+            writeStatus()
+            NSApp.terminate(nil)
+            return
+        }
+        // 一覧の表示などが落ち着いてから書く
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            MainActor.assumeIsolated { self?.writeStatus() }
+        }
+    }
+
+    func writeStatus() {
+        guard let controller else { return }
+        var status: [String: Any] = [
+            "pid": ProcessInfo.processInfo.processIdentifier,
+            "accessibilityTrusted": AXIsProcessTrusted(),
+            "keyMonitorActive": controller.detector?.isActive ?? false,
+            "hotKeys": controller.hotKeys.registered.values.map(\.displayString).sorted(),
+            "pasteboard": controller.options.pasteboardName == nil ? "general" : "named",
+            "paused": controller.isPaused,
+            "itemCount": controller.itemCount,
+            "historyVisible": controller.history?.isVisible ?? false,
+            "historyUI": controller.history?.debugState ?? [:],
+            "pasteTargetOverride": controller.pasteTargetOverride.map { Int($0) } ?? NSNull(),
+            "lastPasteOutcome": controller.lastPasteOutcome ?? NSNull(),
+        ]
+        status["writtenAt"] = ISO8601DateFormatter().string(from: Date())
+        if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: statusURL, options: .atomic)
+        }
+    }
+}
