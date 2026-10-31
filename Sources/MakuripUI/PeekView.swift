@@ -132,19 +132,17 @@ private struct PreviewBody: View {
         case .text, .other:
             VStack(alignment: .leading, spacing: 10) {
                 Text(Highlight.attributed(text, query: query, mark: palette.mark))
-                    .font(.system(size: 15))
-                    .lineSpacing(8)
+                    .css(CSS.previewText)
                     .textSelection(.enabled)
                 truncatedNote
             }
         case .richText:
             VStack(alignment: .leading, spacing: 10) {
                 if let rich = detail.richText {
-                    Text(rich).lineSpacing(8).textSelection(.enabled).tint(palette.accentInk)
+                    Text(rich).css(CSS.previewRich).textSelection(.enabled).tint(palette.accentInk)
                 } else {
                     Text(Highlight.attributed(text, query: query, mark: palette.mark))
-                        .font(.system(size: 14.5))
-                        .lineSpacing(8)
+                        .css(CSS.previewRich)
                         .textSelection(.enabled)
                 }
                 truncatedNote
@@ -153,8 +151,7 @@ private struct PreviewBody: View {
             CodePreview(text: text, query: query)
         case .command:
             Text(CommandText.attributed(text, query: query, palette: palette))
-                .font(.system(size: 13, design: .monospaced))
-                .lineSpacing(6)
+                .css(CSS.previewCommand)
                 .textSelection(.enabled)
         case .url:
             urlBody
@@ -167,7 +164,7 @@ private struct PreviewBody: View {
 
     @ViewBuilder private var truncatedNote: some View {
         if detail.textTruncated {
-            Text("長いので先頭の \(ClipContentLoader.previewCharacterLimit) 文字だけを表示しています（貼るときは全文が入ります）")
+            Text(verbatim: "長いので先頭の \(ClipContentLoader.previewCharacterLimit) 文字だけを表示しています（貼るときは全文が入ります）")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.text2)
         }
@@ -212,9 +209,8 @@ private struct PreviewBody: View {
                     }
                 }
                 Text(Highlight.attributed(trimmed, query: query, mark: palette.mark))
-                    .font(.system(size: 11.5, design: .monospaced))
+                    .css(CSS.previewURL)
                     .foregroundStyle(palette.accentInk)
-                    .lineSpacing(3)
                     .textSelection(.enabled)
             }
             .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
@@ -252,7 +248,7 @@ private struct PreviewBody: View {
                             .truncationMode(.middle)
                         if !file.displayPath.isEmpty {
                             Text(file.displayPath)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(CSSText.mono(11))
                                 .foregroundStyle(palette.text3)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -287,14 +283,14 @@ private struct PreviewBody: View {
                 }
             }
         } else {
-            Text(text).font(.system(size: 14, design: .monospaced))
+            Text(text).font(CSSText.mono(14))
         }
     }
 
     private func colorRow(_ label: String, _ value: String) -> some View {
         GridRow {
             Text(label).font(.system(size: 11)).foregroundStyle(palette.text3).frame(width: 34, alignment: .leading)
-            Text(value).font(.system(size: 14, design: .monospaced)).textSelection(.enabled)
+            Text(value).font(CSSText.mono(14)).textSelection(.enabled)
         }
     }
 }
@@ -322,8 +318,7 @@ private struct CodePreview: View {
             }
             .scrollIndicators(.never)
         }
-        .font(.system(size: 12.5, design: .monospaced))
-        .lineSpacing(5.6)
+        .css(CSS.previewCode)
     }
 }
 
@@ -356,7 +351,8 @@ private struct DetailsGrid: View {
             GridRow {
                 cell("日時") {
                     Text(DisplayText.absolute(item.lastUsedAt, now: now))
-                    Text("（\(DisplayText.relative(item.lastUsedAt, now: now))）").foregroundStyle(palette.text3)
+                    Text(verbatim: "（\(DisplayText.relative(item.lastUsedAt, now: now))）").foregroundStyle(
+                        palette.text3)
                 }
                 cell("内容") {
                     Text(DisplayText.info(for: item, detail: detail)).lineLimit(1)
@@ -381,8 +377,8 @@ private struct DetailsGrid: View {
 
     private func cell<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 11)).foregroundStyle(palette.text3)
-            HStack(spacing: 6) { content() }.font(.system(size: 12))
+            Text(title).css(CSS.detailTitle).foregroundStyle(palette.text3)
+            HStack(spacing: 6) { content() }.css(CSS.detailValue)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

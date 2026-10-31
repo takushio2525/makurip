@@ -23,7 +23,7 @@ struct CardView: View {
                 Spacer(minLength: 6)
                 if index < 9, let quickCombo {
                     KeyChip(
-                        modifiers: quickCombo.modifierSymbols, key: "\(index + 1)",
+                        modifiers: quickCombo.modifierSymbols, key: String(index + 1),
                         style: isSelected ? .cardSelected : (quickHeld ? .cardHeld : .card))
                 }
             }
@@ -33,13 +33,18 @@ struct CardView: View {
         }
         .padding(EdgeInsets(top: 9, leading: 11, bottom: 7, trailing: 11))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(shape.fill(palette.card).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
+        .background {
+            // 試作の box-shadow は枠の外側にだけ描く（半透明のカードの内側に影が透けないように、内側をくり抜く）
+            OuterShadow(
+                shape: shape, color: isSelected ? palette.accent.opacity(0.45) : .black.opacity(0.05),
+                radius: isSelected ? 7 : 1, y: isSelected ? 4 : 1)
+            shape.fill(palette.card)
+        }
         .overlay {
             // 試作は枠の外側に線を引く（box-shadow 0 0 0 .5px / 選択中は 2px）
             let width: CGFloat = isSelected ? 2 : 0.5
             shape.inset(by: -width / 2).stroke(isSelected ? palette.accent : palette.sep, lineWidth: width)
         }
-        .shadow(color: isSelected ? palette.accent.opacity(0.35) : .clear, radius: 6, y: 4)
         .contentShape(shape)
     }
 }
@@ -55,9 +60,8 @@ struct CardBody: View {
         switch item.kind {
         case .text:
             Text(Highlight.attributed(item.previewText ?? "", query: query, mark: palette.mark))
-                .font(.system(size: 13))
-                .lineSpacing(2.5)
                 .lineLimit(3)
+                .css(CSS.cardText)
                 .foregroundStyle(palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .richText:
@@ -68,9 +72,8 @@ struct CardBody: View {
             CodeCardBody(text: item.previewText ?? "", query: query)
         case .command:
             Text(CommandText.attributed(item.previewText ?? "", query: query, palette: palette))
-                .font(.system(size: 11.5, design: .monospaced))
-                .lineSpacing(4)
                 .lineLimit(3)
+                .css(CSS.cardMono)
                 .foregroundStyle(palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .url:
@@ -84,7 +87,7 @@ struct CardBody: View {
                 Image(systemName: PanelSymbols.kind(.other))
                 Text("その他のデータ · " + DisplayText.bytes(item.totalBytes))
             }
-            .font(.system(size: 13))
+            .css(CSS.cardText)
             .foregroundStyle(palette.text2)
         }
     }
@@ -108,9 +111,8 @@ struct RichCardBody: View {
                         mark: palette.mark))
             }
         }
-        .font(.system(size: 13))
-        .lineSpacing(2.5)
         .lineLimit(3)
+        .css(CSS.cardText)
         .foregroundStyle(palette.text)
         .tint(palette.accentInk)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -131,10 +133,10 @@ struct CodeCardBody: View {
                 Text(Highlight.attributed(line.isEmpty ? " " : String(line), query: query, mark: palette.mark))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
-                    .frame(height: 17.8, alignment: .leading)
+                    .frame(height: CSS.cardMono.lineHeight, alignment: .leading)
             }
         }
-        .font(.system(size: 11.5, design: .monospaced))
+        .font(CSS.cardMono.font)
         .foregroundStyle(palette.text)
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
@@ -154,28 +156,28 @@ struct ImageCardBody: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            palette.fill2
-            if let thumb {
-                Image(decorative: thumb.image, scale: 1)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                DimensionBadge(size: thumb.pixelSize).padding(8)
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 22))
-                    .foregroundStyle(palette.text3)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 枠（高さ 96）を先に決め、画像はその中に object-fit: cover で敷く（画像の大きさで枠が伸びないように）
+        palette.fill2
+            .frame(maxWidth: .infinity)
+            .frame(height: 96)
+            .overlay {
+                if let thumb {
+                    Image(decorative: thumb.image, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .foregroundStyle(palette.text3)
+                }
             }
-        }
-        .frame(height: 96)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .task(id: item.contentHash) {
-            if thumb == nil { thumb = await loader.thumbnail(for: item) }
-        }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(alignment: .bottomTrailing) {
+                if let thumb { DimensionBadge(size: thumb.pixelSize).padding(8) }
+            }
+            .task(id: item.contentHash) {
+                if thumb == nil { thumb = await loader.thumbnail(for: item) }
+            }
     }
 }
 
@@ -184,7 +186,7 @@ struct DimensionBadge: View {
     let size: CGSize
 
     var body: some View {
-        Text("\(Int(size.width)) × \(Int(size.height))")
+        Text(verbatim: "\(Int(size.width)) × \(Int(size.height))")
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
@@ -207,21 +209,21 @@ struct URLCardBody: View {
         VStack(alignment: .leading, spacing: 0) {
             // 題名が取れないとき（ブラウザによっては載せない）は URL そのものを題名の行に出す
             Text(Highlight.attributed(title ?? Self.withoutScheme(text), query: query, mark: palette.mark))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.text)
                 .lineLimit(1)
+                .css(CSS.urlTitle)
+                .foregroundStyle(palette.text)
             HStack(spacing: 4) {
-                Image(systemName: "link").font(.system(size: 10.5))
+                Image(systemName: "link").font(.system(size: 10))
                 Text(url?.host ?? text).lineLimit(1)
             }
-            .font(.system(size: 11.5))
+            .css(CSS.urlDomain)
             .foregroundStyle(palette.kind(.url))
             .padding(.top, 2)
             if title != nil, !path.isEmpty {
                 Text(path)
-                    .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(palette.text3)
                     .lineLimit(2)
+                    .css(CSS.urlPath)
+                    .foregroundStyle(palette.text3)
                     .padding(.top, 4)
             }
         }
@@ -253,16 +255,16 @@ struct FileCardBody: View {
                         .foregroundStyle(palette.text)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .css(CSS.cardText)
                 }
             }
             if total > 3 {
-                Text("他 \(total - 3) 件")
-                    .font(.system(size: 11.5))
+                Text(verbatim: "他 \(total - 3) 件")
+                    .css(CSS.small)
                     .foregroundStyle(palette.text3)
                     .padding(.leading, 20)
             }
         }
-        .font(.system(size: 13))
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -279,13 +281,13 @@ struct ColorCardBody: View {
                 .fill(color?.color ?? palette.fill2)
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.black.opacity(0.2), lineWidth: 0.5))
                 .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(color?.hex ?? (item.previewText ?? "色"))
-                    .font(.system(size: 13, design: .monospaced))
+                    .css(CSS.colorHex)
                     .foregroundStyle(palette.text)
                 if let color {
                     Text("RGB " + color.rgb.map(String.init).joined(separator: ", "))
-                        .font(.system(size: 11.5))
+                        .css(CSS.small)
                         .foregroundStyle(palette.text2)
                 }
             }
@@ -320,7 +322,7 @@ struct MetaLine: View {
             Text(DisplayText.relative(item.lastUsedAt, now: now)).fixedSize()
             if let method = DisplayText.methodShort(item.copyMethod) {
                 HStack(spacing: 3) {
-                    Image(systemName: PanelSymbols.method(item.copyMethod)).font(.system(size: 9.5))
+                    Image(systemName: PanelSymbols.method(item.copyMethod)).font(.system(size: 10.5))
                     Text(method).font(.system(size: 10.5))
                 }
                 .foregroundStyle(palette.text3)
@@ -374,5 +376,24 @@ enum CommandText {
             result += Highlight.attributed(body, query: query, mark: palette.mark)
         }
         return result
+    }
+}
+
+/// 枠の外側にだけ落とす影（CSS の box-shadow と同じ。内側はくり抜くので半透明の面に透けない）
+struct OuterShadow<S: InsettableShape>: View {
+    let shape: S
+    let color: Color
+    let radius: CGFloat
+    let y: CGFloat
+
+    var body: some View {
+        shape.fill(Color.black)
+            .shadow(color: color, radius: radius, y: y)
+            .mask {
+                Rectangle().padding(-(radius * 3 + abs(y)))
+                    .overlay(shape.blendMode(.destinationOut))
+                    .compositingGroup()
+            }
+            .allowsHitTesting(false)
     }
 }

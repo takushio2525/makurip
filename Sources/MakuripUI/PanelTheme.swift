@@ -30,6 +30,7 @@ struct PanelPalette: Sendable {
     let hairline: Color
     let kindColors: [ClipKind: Color]
     let kindAll: Color
+    var isDark = false
 
     func kind(_ kind: ClipKind?) -> Color {
         guard let kind else { return kindAll }
@@ -68,7 +69,7 @@ struct PanelPalette: Sendable {
             .command: hex(0x4CD774), .url: hex(0x5AAEFF), .file: hex(0xFFAF4D), .color: hex(0xFFD42E),
             .other: hex(0xA8A8AE),
         ],
-        kindAll: hex(0xA8A8AE))
+        kindAll: hex(0xA8A8AE), isDark: true)
 
     static func rgba(_ r: Double, _ g: Double, _ b: Double, _ a: Double) -> Color {
         Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: a)
@@ -149,10 +150,12 @@ enum KindNames {
 
 /// 背景のぼかし（実機用）。パネルはアクティブでないアプリの窓なので、state を .active に固定する
 struct VisualEffectBackground: NSViewRepresentable {
+    var withinWindow = false
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .popover
-        view.blendingMode = .behindWindow
+        view.blendingMode = withinWindow ? .withinWindow : .behindWindow
         view.state = .active
         return view
     }
@@ -165,6 +168,8 @@ struct GlassSurface: ViewModifier {
     @Environment(\.palette) private var palette
     @Environment(\.surfaceStyle) private var style
     let cornerRadius: CGFloat
+    /// 同じ窓の中に重ねる面（⌘E のアプリ選択）。後ろのパネルの中身をぼかして透かす
+    var withinWindow = false
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -172,8 +177,8 @@ struct GlassSurface: ViewModifier {
             .background {
                 ZStack {
                     switch style {
-                    case .live: VisualEffectBackground()
-                    case .flat(let backdrop): backdrop
+                    case .live: VisualEffectBackground(withinWindow: withinWindow)
+                    case .flat(let backdrop): if !withinWindow { backdrop }
                     }
                     palette.glass
                 }
@@ -191,11 +196,102 @@ struct GlassSurface: ViewModifier {
                 }
                 .allowsHitTesting(false)
             }
+            .background {
+                // 実機は窓の影（NSWindow.hasShadow）。見比べ用の平らな描画では試作の --shadow を描く
+                if case .flat = style {
+                    shape.fill(Color.black.opacity(0.01))
+                        .shadow(color: .black.opacity(palette.isDark ? 0.75 : 0.34), radius: 26, y: 30)
+                        .shadow(color: .black.opacity(palette.isDark ? 0.5 : 0.18), radius: 10, y: 10)
+                }
+            }
     }
 }
 
 extension View {
-    func glassSurface(cornerRadius: CGFloat = 22) -> some View {
-        modifier(GlassSurface(cornerRadius: cornerRadius))
+    func glassSurface(cornerRadius: CGFloat = 22, withinWindow: Bool = false) -> some View {
+        modifier(GlassSurface(cornerRadius: cornerRadius, withinWindow: withinWindow))
     }
+}
+
+/// 試作の CSS の文字の指定（大きさ・行の高さ）。SwiftUI には line-height がないので、
+/// 書体の本来の行の高さとの差を行間に足し、1 行目の上と最後の行の下に半分ずつ足して同じ高さにする
+struct CSSText {
+    let size: CGFloat
+    /// 行の高さ（pt）。CSS の倍率 × 大きさ
+    let lineHeight: CGFloat
+    var weight: Font.Weight = .regular
+    var mono = false
+
+    init(_ size: CGFloat, lineHeight multiple: CGFloat, weight: Font.Weight = .regular, mono: Bool = false) {
+        self.size = size
+        self.lineHeight = (size * multiple * 100).rounded() / 100
+        self.weight = weight
+        self.mono = mono
+    }
+
+    /// 等幅は NSFont の SF Mono をそのまま使う（SwiftUI の .monospaced は小さい大きさで字幅が 1 割ほど広くなり、
+    /// 試作の行の折り返しとずれるため）
+    var font: Font {
+        mono
+            ? Font(NSFont.monospacedSystemFont(ofSize: size, weight: weight == .semibold ? .semibold : .regular))
+            : .system(size: size, weight: weight)
+    }
+
+    /// 行の高さの指定がいらないところの等幅
+    static func mono(_ size: CGFloat) -> Font {
+        Font(NSFont.monospacedSystemFont(ofSize: size, weight: .regular))
+    }
+
+    /// 本来の行の高さとの差（大きさごとに 1 回だけ測る）
+    var extra: CGFloat {
+        max(0, lineHeight - Self.naturalLineHeights.value(size: size, mono: mono))
+    }
+
+    private static let naturalLineHeights = NaturalLineHeights()
+}
+
+/// 書体の本来の行の高さ（大きさごとに 1 回だけ測る）
+private final class NaturalLineHeights: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: CGFloat] = [:]
+
+    func value(size: CGFloat, mono: Bool) -> CGFloat {
+        let key = "\(size)-\(mono)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = values[key] { return cached }
+        let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular) : NSFont.systemFont(ofSize: size)
+        let natural = NSLayoutManager().defaultLineHeight(for: font)
+        values[key] = natural
+        return natural
+    }
+}
+
+extension View {
+    func css(_ style: CSSText) -> some View {
+        let extra = style.extra
+        return font(style.font).lineSpacing(extra).padding(.vertical, extra / 2)
+    }
+}
+
+/// 試作の文字の指定（base.css・panel-b.css から。行の高さは body の 1.45 を受け継ぐもの以外を明記）
+enum CSS {
+    static let cardText = CSSText(13, lineHeight: 1.45)
+    /// カードのコード・コマンドは `.pb .card .cb { font-size: 13px }` が効いて 13px の等幅
+    static let cardMono = CSSText(13, lineHeight: 1.55, mono: true)
+    static let urlTitle = CSSText(13, lineHeight: 1.45, weight: .semibold)
+    static let urlDomain = CSSText(11.5, lineHeight: 1.45)
+    static let urlPath = CSSText(10.5, lineHeight: 1.45, mono: true)
+    static let small = CSSText(11.5, lineHeight: 1.45)
+    static let colorHex = CSSText(13, lineHeight: 1.45, mono: true)
+    static let group = CSSText(11, lineHeight: 1.45, weight: .semibold)
+    static let emptyTitle = CSSText(13.5, lineHeight: 1.45, weight: .semibold)
+    static let emptyText = CSSText(12, lineHeight: 1.45)
+    static let previewText = CSSText(15, lineHeight: 1.75)
+    static let previewRich = CSSText(14.5, lineHeight: 1.7)
+    static let previewCommand = CSSText(13, lineHeight: 1.7, mono: true)
+    static let previewCode = CSSText(12.5, lineHeight: 1.65, mono: true)
+    static let previewURL = CSSText(11.5, lineHeight: 1.5, mono: true)
+    static let detailTitle = CSSText(11, lineHeight: 1.45)
+    static let detailValue = CSSText(12, lineHeight: 1.45)
 }

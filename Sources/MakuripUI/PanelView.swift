@@ -103,7 +103,8 @@ private struct TabButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13.5))
+                .font(.system(size: 12.5))
+                .environment(\.locale, Locale(identifier: "en_US"))
                 .foregroundStyle(iconColor)
                 .frame(width: 29, height: 30)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(background))
@@ -126,7 +127,7 @@ private struct CaptionRow: View {
             Text(KindNames.label(model.kind))
                 .fontWeight(.semibold)
                 .foregroundStyle(palette.kind(model.kind))
-            Text("\(model.items.count) 件")
+            Text(verbatim: "\(model.items.count) 件")
                 .monospacedDigit()
                 .foregroundStyle(palette.text3)
             Spacer(minLength: 0)
@@ -260,7 +261,7 @@ private struct CardList: View {
                             switch row {
                             case .header(let group):
                                 Text(group.rawValue)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .css(CSS.group)
                                     .foregroundStyle(palette.text3)
                                     .padding(EdgeInsets(top: 6, leading: 4, bottom: 0, trailing: 4))
                                     .id(row.id)
@@ -282,6 +283,10 @@ private struct CardList: View {
                     .padding(EdgeInsets(top: 4, leading: 10, bottom: 10, trailing: 10))
                 }
                 .scrollIndicators(.automatic)
+                .onAppear {
+                    let index = model.selectedIndex
+                    DispatchQueue.main.async { scroll(proxy, to: index) }
+                }
                 .onChange(of: model.selectedIndex) { _, index in scroll(proxy, to: index) }
                 .onChange(of: model.rows.first?.id) { _, _ in scroll(proxy, to: model.selectedIndex) }
             }
@@ -383,7 +388,7 @@ private struct AppPickerView: View {
         }
         .padding(6)
         .frame(width: 280)
-        .glassSurface(cornerRadius: 14)
+        .glassSurface(cornerRadius: 14, withinWindow: true)
         .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
     }
 }
@@ -410,7 +415,7 @@ private struct PickerRow: View {
             Text(Highlight.attributed(option.name, query: query, mark: palette.mark))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text("\(option.count)")
+            Text(verbatim: "\(option.count)")
                 .font(.system(size: 12))
                 .monospacedDigit()
                 .foregroundStyle(selected ? Color.white.opacity(0.8) : palette.text3)

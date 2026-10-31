@@ -51,12 +51,14 @@ struct KeyChip: View {
     }
 
     var body: some View {
-        HStack(spacing: 1) {
-            if !modifiers.isEmpty { Text(modifiers) }
+        Group {
             if isReturn {
-                Image(systemName: "return").font(.system(size: fontSize - 1, weight: .medium))
+                HStack(spacing: 1) {
+                    if !modifiers.isEmpty { Text(modifiers) }
+                    Image(systemName: "return").font(.system(size: fontSize - 1.5, weight: .medium))
+                }
             } else {
-                Text(key)
+                Text(verbatim: modifiers + key)
             }
         }
         .font(.system(size: fontSize, weight: .medium))
@@ -204,14 +206,14 @@ struct EmptyStateView: View {
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.fill1))
                 .padding(.bottom, 6)
             Text(content.title)
-                .font(.system(size: 13.5, weight: .semibold))
+                .css(CSS.emptyTitle)
                 .foregroundStyle(palette.text)
                 .multilineTextAlignment(.center)
             Text(content.message)
-                .font(.system(size: 12))
+                .css(CSS.emptyText)
                 .foregroundStyle(palette.text2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
+                .frame(maxWidth: 330)
                 .fixedSize(horizontal: false, vertical: true)
             if let (action, label) = content.hint, let combo = model.keymap.primary(action) {
                 HStack(spacing: 5) {
