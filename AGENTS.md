@@ -56,9 +56,10 @@ makurip/
 | .app を組み立てて署名 | `make app`（→ `.app-build/Makurip.app`） |
 | 決まった場所へ入れる | `make install`（→ `~/Applications/Makurip.app`） |
 | 隔離 E2E（取り込み・永続化） | `make e2e`（一般ペーストボードに触らない） |
+| 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
 | メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]` |
 
-完了報告の前に `make lint test` を通すこと。署名の設定は `Config/signing.local.env`（雛形を写して作る）。
+完了報告の前に `make check`（lint・ビルド・テスト）を通すこと。署名の設定は `Config/signing.local.env`（雛形を写して作る）。
 
 ## 安全規則（最重要・全フェーズ共通）
 

@@ -96,9 +96,14 @@ final class ProvisionalHistoryPanel: NSObject, HistoryPresenting, NSWindowDelega
         actions?.historyDidClose()
     }
 
+    /// マウスのある画面の中央より少し上に出す。検証では起動引数 `-MakuripPanelScreen <画面名>` で
+    /// 出す画面を固定できる（E2E が仮想ディスプレイに出すため。ユーザーの画面に窓を出さない）
     private func placeOnActiveScreen() {
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        let preferred = UserDefaults.standard.string(forKey: "MakuripPanelScreen")
+        let screen =
+            NSScreen.screens.first { preferred != nil && $0.localizedName == preferred }
+            ?? NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
         let size = panel.frame.size
         panel.setFrameOrigin(
