@@ -1,5 +1,5 @@
 # Makurip のよく使うコマンド。詳細は AGENTS.md の「コマンド」節
-.PHONY: build test lint format check app install e2e e2e-settings e2e-secrets e2e-snippets ui-compare clean
+.PHONY: build test lint format check app install e2e e2e-settings e2e-secrets e2e-snippets e2e-ai ui-compare clean
 
 build:
 	swift build
@@ -37,6 +37,10 @@ e2e-secrets:
 # 定型文の隔離 E2E（snippets.json を書いて登録し、置き換えた文字を名前付きペーストボードへ書き戻す。窓を出さず、キーも送らない）
 e2e-snippets:
 	scripts/e2e/snippets.sh
+
+# AI の口の隔離 E2E（目印入りの履歴に MCP の全道具を JSON-RPC で呼び、応答に目印が 0 件か。動いているアプリへの反映・オフ・巨大な要求も）
+e2e-ai:
+	scripts/e2e/ai.sh
 
 # 試作（案 B）と SwiftUI のパネルを同じ状態で描いて並べる（画面ロック中でも動く。出力は .ui-compare/）
 ui-compare:
