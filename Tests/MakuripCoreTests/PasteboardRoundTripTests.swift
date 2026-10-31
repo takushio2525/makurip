@@ -198,7 +198,8 @@ struct PasteboardRoundTripTests {
         second.setString("part 2", forType: .string)
         board.pasteboard.writeObjects([second])
 
-        try await Task.sleep(for: .milliseconds(400))
+        // 0.05 秒後の確かめはメインのキューで走る。ほかのテストやマシンが混んでいるとメインが遅れるので、決まった時間でなく条件で待つ
+        #expect(await waitUntil(timeout: 3) { events.count == 1 })
         #expect(events.count == 1)
         let item = try #require(try store.items().first)
         #expect(item.pasteboardItemCount == 2)
