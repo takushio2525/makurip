@@ -60,6 +60,11 @@ final class HistoryPanelModel {
     private(set) var now = Date()
     /// ⌘ を押している間、カードの番号（⌘1〜9）を強調する
     var quickModifierHeld = false
+    /// 「隠した内容を表示」のキー（既定 ⌥）を押している間だけ、秘密の中身を出す
+    var revealHeld = false
+    /// ⌘Y のプレビューの「押している間だけ表示」を押している間
+    var revealPressed = false
+    var isRevealing: Bool { revealHeld || revealPressed }
     /// 0 件で貼ろうとしたときなどにパネルを揺らす（値が変わるたびに 1 回）
     private(set) var shakeCount = 0
     /// 検索欄へフォーカスを戻す合図（値が変わるたびに）
@@ -122,6 +127,8 @@ final class HistoryPanelModel {
         isPreviewOpen = false
         isPickerOpen = false
         pickerQuery = ""
+        revealHeld = false
+        revealPressed = false
         now = clock()
         reload(keepSelection: false)
         if let itemID, let index = items.firstIndex(where: { $0.id == itemID }) { selectedIndex = index }
@@ -231,6 +238,8 @@ final class HistoryPanelModel {
             togglePin()
         case .preview:
             isPreviewOpen.toggle()
+        case .reveal:
+            break  // 押している間だけ効く（修飾キーの変化で PanelController が `revealHeld` を変える）
         case .openSource:
             openSource()
         case .delete:
@@ -372,6 +381,8 @@ final class HistoryPanelModel {
             "pinnedOnly": String(pinnedOnly),
             "previewOpen": String(isPreviewOpen),
             "pickerOpen": String(isPickerOpen),
+            "revealing": String(isRevealing),
+            "selectedSecret": String(selected?.isSecretLikely ?? false),
         ]
     }
 }

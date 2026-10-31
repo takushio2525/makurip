@@ -30,6 +30,8 @@ struct PanelPalette: Sendable {
     let hairline: Color
     let kindColors: [ClipKind: Color]
     let kindAll: Color
+    /// 秘密（試作の --k-secret）
+    let secret: Color
     /// コードの配色（試作の --s-kw・--s-str など。Xcode の既定に寄せたもの）
     let syntax: [SyntaxTokenKind: Color]
     var isDark = false
@@ -56,7 +58,7 @@ struct PanelPalette: Sendable {
             .command: hex(0x1A8F42), .url: hex(0x0A6FE8), .file: hex(0xC46A00), .color: hex(0x9A7200),
             .other: hex(0x6E6E73),
         ],
-        kindAll: hex(0x6E6E73),
+        kindAll: hex(0x6E6E73), secret: hex(0xC4361F),
         syntax: [
             .keyword: hex(0xAD3DA4), .string: hex(0xC41A16), .comment: hex(0x6C7986), .number: hex(0x272AD8),
             .type: hex(0x703DAA), .function: hex(0x326D74), .attribute: hex(0x815F03), .flag: hex(0x0F68A0),
@@ -75,7 +77,7 @@ struct PanelPalette: Sendable {
             .command: hex(0x4CD774), .url: hex(0x5AAEFF), .file: hex(0xFFAF4D), .color: hex(0xFFD42E),
             .other: hex(0xA8A8AE),
         ],
-        kindAll: hex(0xA8A8AE),
+        kindAll: hex(0xA8A8AE), secret: hex(0xFF8A75),
         syntax: [
             .keyword: hex(0xFF7AB2), .string: hex(0xFF8170), .comment: hex(0x8A96A3), .number: hex(0xD9C97C),
             .type: hex(0xDABAFF), .function: hex(0x78C2B3), .attribute: hex(0xFFA14F), .flag: hex(0x6BDFFF),

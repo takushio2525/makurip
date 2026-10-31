@@ -69,7 +69,7 @@ final class CandidateBridge: CandidateHost {
             let item = try? store.item(id: itemID)
         else { return nil }
         // 一覧から貼るときと同じく、コマンドはプロンプトを外す。差し替えで選び直す長さも外した後の文字で数える
-        let (snapshot, content) = PastePipeline.candidatePaste(stored, kind: item.kind)
+        let (snapshot, content) = PastePipeline.candidatePaste(stored, kind: item.kind, secret: item.isSecretLikely)
         let changeCount = PasteboardWriter.write(snapshot, to: app.pasteboard)
         app.monitor?.acknowledgeOwnWrite(changeCount: changeCount)
         return content

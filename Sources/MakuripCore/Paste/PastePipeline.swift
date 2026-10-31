@@ -5,23 +5,37 @@ import Foundation
 /// - `.plainText`: 文字の型だけ（平文の型がなければ全型）。コマンドのプロンプトは外さない（元のまま貼る逃げ道。試作どおり）
 /// - `.normal`・`.copyOnly`: 全型。コマンドなら、文字の型（UTF-8・UTF-16）の中身だけプロンプトを外す。
 ///   RTF・HTML などほかの型と、項目・型の並びは元のまま（書き手の書式を壊さないため）
+/// - 秘密（`secret`）は、どの貼り方でも ConcealedType の印を足して書く（ほかのクリップボード履歴アプリに記録させないため）
 public enum PastePipeline {
-    public static func prepare(_ stored: PasteboardSnapshot, kind: ClipKind?, mode: PasteMode) -> PasteboardSnapshot {
+    public static func prepare(_ stored: PasteboardSnapshot, kind: ClipKind?, mode: PasteMode, secret: Bool = false)
+        -> PasteboardSnapshot
+    {
+        let prepared: PasteboardSnapshot
         switch mode {
         case .plainText:
-            return stored.plainTextOnly() ?? stored
+            prepared = stored.plainTextOnly() ?? stored
         case .normal, .copyOnly:
-            guard kind == .command else { return stored }
-            return strippingPrompts(stored)
+            prepared = kind == .command ? strippingPrompts(stored) : stored
         }
+        return secret ? markedConcealed(prepared) : prepared
+    }
+
+    /// 最初の項目に `org.nspasteboard.ConcealedType`（中身は空）を足した写し。nspasteboard.org の取り決めで、
+    /// これの付いたコピーはクリップボード履歴アプリ（Makurip 自身も）が保存しない
+    public static func markedConcealed(_ snapshot: PasteboardSnapshot) -> PasteboardSnapshot {
+        guard !snapshot.items.isEmpty, !snapshot.allTypes.contains(PasteboardMarkers.concealed) else { return snapshot }
+        var result = snapshot
+        result.items[0].representations.append(
+            PasteboardRepresentation(type: PasteboardMarkers.concealed, data: Data()))
+        return result
     }
 
     /// 候補窓から仮に貼るときの中身（一覧から貼るときと同じく、コマンドはプロンプトを外す）と、
     /// 入力欄に増えるはずの文字の長さ。長さは外した後の文字で数える（↑↓ で差し替えるとき、この長さで範囲を選び直すため）
-    public static func candidatePaste(_ stored: PasteboardSnapshot, kind: ClipKind)
+    public static func candidatePaste(_ stored: PasteboardSnapshot, kind: ClipKind, secret: Bool = false)
         -> (snapshot: PasteboardSnapshot, content: PastedContent)
     {
-        let snapshot = prepare(stored, kind: kind, mode: .normal)
+        let snapshot = prepare(stored, kind: kind, mode: .normal, secret: secret)
         return (snapshot, PastedContent(textLength: pastedTextLength(kind: kind, snapshot: snapshot)))
     }
 

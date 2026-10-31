@@ -76,6 +76,8 @@ final class CandidatePanelController: NSObject, CandidatePresenting, NSWindowDel
 
     func dismiss() {
         window.orderOut(nil)
+        // 読んだ秘密の中身はメモリから捨てる
+        loader.purgeSecrets()
     }
 
     func keymapDidChange(_ keymap: Keymap) {

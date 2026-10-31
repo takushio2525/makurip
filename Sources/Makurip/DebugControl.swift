@@ -97,6 +97,7 @@ final class DebugControl {
         for id in [
             SettingID.hotKeyMode, SettingID.candidateOrder, SettingID.maxItems, SettingID.maxTotalMegabytes,
             SettingID.keys(.openHistory), SettingID.keys(.openList), SettingID.excludedApps,
+            SettingID.secretAutoDelete,
         ] {
             summary[id] = SettingsSchema.value(id, in: settings.settings)?.compactText
         }
@@ -127,6 +128,7 @@ final class DebugControl {
             "candidateHotKeyMode": controller.candidate?.settings.hotKeyMode.rawValue ?? "",
             "settings": Self.settingsSummary(controller),
             "settingsVisible": controller.isSettingsVisible,
+            "secrets": controller.secretStatus,
         ]
         status["writtenAt"] = ISO8601DateFormatter().string(from: Date())
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
