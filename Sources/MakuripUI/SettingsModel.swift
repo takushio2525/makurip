@@ -265,6 +265,14 @@ final class SettingsModel {
         editingID = nil
     }
 
+    /// 数の単位（件・MB・秒）
+    func unit(_ id: String) -> String {
+        switch item(id)?.kind {
+        case .integer(_, _, _, let unit), .number(_, _, _, let unit): unit
+        default: ""
+        }
+    }
+
     /// 単位付きの値（「1000 件」）
     func valueText(_ id: String) -> String {
         guard let item = item(id), let value = SettingsSchema.value(id, in: settings)?.doubleValue else { return "" }

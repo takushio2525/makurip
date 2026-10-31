@@ -119,6 +119,7 @@ final class DebugControl {
             "pasteTargetOverride": controller.pasteTargetOverride.map { Int($0) } ?? NSNull(),
             "lastPasteOutcome": controller.lastPasteOutcome ?? NSNull(),
             "lastHotKeyRoute": controller.lastHotKeyRoute ?? NSNull(),
+            "openKeyRoute": controller.previewRoute(.open) ?? NSNull(),
             "storeLimits": [
                 "maxItems": controller.store?.limits.maxItems ?? 0,
                 "maxTotalBytes": controller.store?.limits.maxTotalBytes ?? 0,

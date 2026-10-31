@@ -1,7 +1,7 @@
 #!/bin/bash
 # tako:run design/ui-compare/shoot.sh
 #
-# 試作（~/dev/makurip-design/ui の案 B と候補窓）と SwiftUI のパネル・候補窓を同じ状態で描き、横に並べた比較画像を作る。
+# 試作（~/dev/makurip-design/ui の案 B・候補窓・設定シート）と SwiftUI のパネル・候補窓・設定画面を同じ状態で描き、横に並べた比較画像を作る。
 # 画面ロック中でも動く（試作はヘッドレス Chrome、SwiftUI はオフスクリーン描画）。窓は画面に出さない。
 #
 # 出力（git 管理外）: $OUT/compare/compare-<状態>.png（左が試作・右が SwiftUI。2 倍）・swift-*.png・open-speed.txt
@@ -91,9 +91,22 @@ shoot_cand candidate-ime light "&order=ime"
 shoot_cand candidate-empty light "&count=0"
 shoot_cand candidate-one light "&count=1"
 
+echo "== 試作の設定シート（統合版の ⌘,）をヘッドレス Chrome で撮る"
+sed "s#@DESIGN@#$DESIGN#g" "$HERE/settings-states.html" > "$OUT/work/settings-states.html"
+shoot_settings() { # 名前 テーマ [追加の引数]
+    "$CHROME" --headless=new --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check \
+        --user-data-dir="$OUT/work/chrome" --window-size=1440,900 --force-device-scale-factor=2 \
+        --virtual-time-budget=2500 --allow-file-access-from-files \
+        --screenshot="$OUT/proto/$1.png" "file://$OUT/work/settings-states.html?clean=1&theme=$2${3:-}" 2> /dev/null
+}
+shoot_settings settings-behavior-light light
+shoot_settings settings-behavior-dark dark
+shoot_settings settings-keys-light light "&state=keys"
+shoot_settings settings-keys-dark dark "&state=keys"
+
 echo "== SwiftUI のパネルをオフスクリーンで描き、試作と並べる"
 (cd "$ROOT" && MAKURIP_SNAPSHOT_DIR="$OUT/compare" MAKURIP_SNAPSHOT_ASSETS="$OUT/assets" \
-    MAKURIP_PROTO_SHOTS="$OUT/proto" swift test --filter "SnapshotTests|StoreSpeedTests|CandidateSnapshotTests|HighlightSpeedTests" 2>&1 |
+    MAKURIP_PROTO_SHOTS="$OUT/proto" swift test --filter "SnapshotTests|StoreSpeedTests|CandidateSnapshotTests|HighlightSpeedTests|SettingsSnapshotTests" 2>&1 |
     grep -E "件:|件を読む|行（|✔ Test run|✘" || true)
 rm -rf "$OUT/work"
 echo "比較画像: $OUT/compare/"

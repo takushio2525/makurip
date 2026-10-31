@@ -189,7 +189,7 @@ public enum SettingsSchema {
     static let behaviorItems: [SettingItem] = [
         SettingItem(
             id: SettingID.hotKeyMode, group: "動き", label: "呼び出しキーの動き",
-            summary: "履歴を呼び出すキー（既定は ⌃⌘V。keys.open）を押したときに何をするか。貼り付けのときに窓（候補窓・一覧）を出すかどうかも、これで決まる。",
+            summary: "履歴を呼び出すキーを押したときに何をするか。貼り付けのときに窓（候補窓・一覧）を出すかどうかも、これで決まる。",
             kind: .choice(HotKeyMode.allCases.map { SettingChoice($0.rawValue, $0.label, $0.summary) }),
             examples: [
                 .init("候補窓は出さないで", .string("paste")),
@@ -233,7 +233,7 @@ public enum SettingsSchema {
         SettingItem(
             id: SettingID.pasteTiming, group: "アプリごと", label: "確定まで貼らないアプリ",
             summary:
-                "候補窓を出したとき、すぐ仮に貼るか、確定（Tab・Enter）するまで貼らないかをアプリごとに決める。ターミナルとチャット（builtIn の一覧）は、何も書かなくても確定まで貼らない。ここに書いたものはその既定より優先する。",
+                "候補窓を出したとき、すぐ仮に貼るか、確定（Tab・Enter）するまで貼らないかをアプリごとに決める。ターミナルとチャット（Slack・Discord・LINE・メッセージなど）は、何も書かなくても確定まで貼らない。ここに書いたものはその既定より優先する。",
             kind: .appMap(pasteTimingChoices),
             examples: [
                 .init(
@@ -259,16 +259,11 @@ public enum SettingsSchema {
             advanced: true, shownInWindow: false),
     ]
 
+    /// キーの項目。説明は試作の文のまま（効く範囲は CLI の型・JSON の keyScope で別に出す）
     static func keyItem(_ action: KeyAction) -> SettingItem {
-        let scopeNote =
-            switch action.scope {
-            case .global: "どのアプリからでも効く（1 つだけ割り当てられる）。"
-            case .panel: "一覧が開いている間だけ効く。"
-            case .candidate: "候補窓が出ている間だけ効く。"
-            }
-        return SettingItem(
+        SettingItem(
             id: SettingID.keys(action), section: .keys, group: action.group, label: action.label,
-            summary: action.summary + scopeNote, kind: .keys(action), examples: keyExamples[action] ?? [])
+            summary: action.summary, kind: .keys(action), examples: keyExamples[action] ?? [])
     }
 
     static let keyExamples: [KeyAction: [SettingItem.Example]] = [

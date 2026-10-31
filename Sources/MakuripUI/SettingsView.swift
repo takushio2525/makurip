@@ -307,14 +307,17 @@ struct SettingsNumberField: View {
             }
             Group {
                 if editing {
-                    TextField("", text: $model.editText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12).monospacedDigit())
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 64)
-                        .focused($focused)
-                        .onSubmit { model.commitEditing() }
-                        .onAppear { focused = true }
+                    HStack(spacing: 4) {
+                        TextField("", text: $model.editText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12).monospacedDigit())
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 52)
+                            .focused($focused)
+                            .onSubmit { model.commitEditing() }
+                            .onAppear { focused = true }
+                        Text(model.unit(id)).font(.system(size: 12)).foregroundStyle(palette.text2)
+                    }
                 } else {
                     Text(model.valueText(id))
                         .font(.system(size: 12, weight: .semibold).monospacedDigit())

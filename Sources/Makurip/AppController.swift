@@ -186,6 +186,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         }
     }
 
+    /// いま呼び出しキーを押したら何をするか（押さずに計算する。検証の状態出力用）
+    func previewRoute(_ key: HotKeyRouter.Key) -> String? {
+        guard let candidate, let history else { return nil }
+        return String(
+            describing: HotKeyRouter.route(
+                key, mode: candidate.settings.hotKeyMode, candidateActive: candidate.isActive,
+                listVisible: history.isVisible))
+    }
+
     func toggleHistory() {
         guard let history else { return }
         if history.isVisible {
