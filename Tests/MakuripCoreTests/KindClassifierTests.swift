@@ -106,9 +106,23 @@ struct KindClassifierTests {
             "git commit -m \"[機能追加] 日本語のメッセージ\"",
             "% ls -la",
             "pip install -r requirements.txt\npython main.py",
+            // PS1・oh-my-zsh・root の「# 」（フェーズ3）
+            "user@host:~/app$ make build",
+            "sample@MacBook-Pro ~ % brew update",
+            "[user@host app]$ ls",
+            "➜  makurip git:(main) ✗ make check",
+            "# apt update\n# apt install -y nginx",
+            "$ npm run build\n> makurip@1.0.0 build\n> vite build",
         ])
     func command(_ input: String) {
         #expect(KindClassifier.classify(Fixtures.text(input)) == .command)
+    }
+
+    @Test(
+        "コマンドではないもの（見出し・コメントだけ・プロンプトだけ）",
+        arguments: ["# Makurip の使い方", "# Install\nRun the script.", "$", "% ", "# install deps\n# run tests"])
+    func notCommand(_ input: String) {
+        #expect(KindClassifier.classify(Fixtures.text(input)) != .command)
     }
 
     @Test(
@@ -124,9 +138,27 @@ struct KindClassifierTests {
             "SELECT id, name FROM users WHERE id = 1;",
             "```swift\nlet a = 1\n```",
             "if (a == b) {\n  doSomething();\n}",
+            // SQL・YAML・HTML（フェーズ3。言語の判定へ渡すため）
+            "select * from users;",
+            "UPDATE clip SET pinned = 1 WHERE id = 'x'",
+            "name: build\non:\n  push:\n    branches: [main]",
+            "- uses: actions/checkout@v4\n- run: make check",
+            "<div class=\"card\">\n  <p>本文</p>\n</div>",
+            "<?xml version=\"1.0\"?>\n<plist><dict/></plist>",
+            "title: こんにちは、世界\nbody:\n  text: 履歴をまくる",
         ])
     func code(_ input: String) {
         #expect(KindClassifier.classify(Fixtures.text(input)) == .code)
+    }
+
+    @Test(
+        "コードではないもの（SQL や YAML に似た英文・日本語の「項目: 値」）",
+        arguments: [
+            "Select the best option from the list", "Note: this is important\nTODO: fix later",
+            "名前: 太郎\n場所: 会議室", "Update the table by Friday",
+        ])
+    func notCode(_ input: String) {
+        #expect(KindClassifier.classify(Fixtures.text(input)) != .code)
     }
 
     @Test("コードを含む Markdown 文書は文章として扱う（限界として明記）")
