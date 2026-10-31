@@ -61,17 +61,7 @@ func digest(_ snapshot: PasteboardSnapshot) -> String {
 
 func token() -> String { String(UUID().uuidString.prefix(8)) }
 
-/// 偽の秘密の本体（実行のたびに作る乱数の英数字。実在しない値。ソースに本物の形式どおりの値を書かないため）
-func fakeSecretBody(_ count: Int, alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
-    -> String
-{
-    let characters = Array(alphabet)
-    var result = ""
-    // ランダムらしさの判定（数字 2 つ以上・大文字と小文字）に必ず通るよう、頭に決まった並びを置く
-    if count >= 8 { result = "Zx8Qm4" }
-    while result.count < count { result.append(characters.randomElement()!) }
-    return result
-}
+// 偽の秘密の本体（fakeSecretBody・fakeBase64Line）は FakeSecret.swift
 
 func bitmap(width: Int, height: Int) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(
@@ -221,9 +211,7 @@ func fixture(_ name: String, fileDirectory: String?, probeToken: String?) throws
             """
         return [item([text(env)])]
     case "secret-pem":
-        let body = (0..<5).map { _ in
-            fakeSecretBody(64, alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
-        }
+        let body = (0..<5).map { _ in fakeBase64Line(64) }
         let pem =
             "-----BEGIN " + "OPENSSH PRIVATE KEY-----\n" + body.joined(separator: "\n") + "\n-----END "
             + "OPENSSH PRIVATE KEY-----"

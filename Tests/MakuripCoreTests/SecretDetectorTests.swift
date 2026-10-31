@@ -179,6 +179,78 @@ struct SecretDetectorPositiveTests {
     }
 }
 
+/// 確度「中」のランダムな文字列の条件の境目（`.agent/conventions.md` の「確度「中」」）。
+/// E2E の偽の秘密が一様な乱数でこの境目の外に出て、まれに落ちていた（#21）。値は決まった並びから実行時に作る
+@Suite("秘密の判定（ランダムな文字列の境目）")
+struct SecretDetectorRandomTokenBoundaryTests {
+    static let uppers = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    static let lowers = Array("abcdefghijklmnopqrstuvwxyz")
+    static let digits = Array("0123456789")
+
+    /// 大文字 → 小文字 → 数字と巡る決まった並び（英字が 3 つ以上続かない）
+    static func cycled(_ count: Int) -> String {
+        String(
+            (0..<count).map { index in
+                let step = index / 3
+                switch index % 3 {
+                case 0: return uppers[(step * 5 + 6) % 26]
+                case 1: return lowers[(step * 7 + 3) % 26]
+                default: return digits[(step * 3 + 1) % 10]
+                }
+            })
+    }
+
+    /// 大文字と小文字を交互に並べ、`digitCount` 個だけ数字を混ぜた並び
+    static func alternating(_ count: Int, digitCount: Int) -> String {
+        String(
+            (0..<count).map { index in
+                if index % 9 == 4, index / 9 < digitCount { return digits[(index * 7) % 10] }
+                return index % 2 == 0 ? uppers[(index * 5 + 6) % 26] : lowers[(index * 11 + 2) % 26]
+            })
+    }
+
+    /// 見つけた種類（`#expect` には値ではなくこれを渡す。落ちたときに値が展開して表示されないように）
+    static func kinds(_ text: String) -> [SecretKind] { SecretDetector.findings(in: text).map(\.kind) }
+
+    @Test("長さ: 19 文字は拾わず、20 文字ちょうどと 512 文字は拾い、513 文字は拾わない")
+    func length() {
+        let kinds = [19, 20, 512, 513].map { Self.kinds(Self.cycled($0)) }
+        #expect(kinds == [[], [.randomToken], [.randomToken], []])
+    }
+
+    @Test("同じ大きさの英字の 5 文字以上の連続: 35% ちょうどは拾い、超えると拾わない（識別子を外すため）")
+    func sameCaseRun() {
+        let consonants = "bcdfghjklmnpqrstvwz"
+        let atBoundary = String(consonants.prefix(14)) + Self.cycled(26)
+        let over = String(consonants.prefix(15)) + Self.cycled(25)
+        let lengths = [atBoundary.count, over.count]
+        let kinds = [Self.kinds(atBoundary), Self.kinds(over)]
+        let random = [atBoundary, over].map { SecretDetector.looksRandom($0) }
+        #expect(lengths == [40, 40])
+        #expect(kinds == [[.randomToken], []])
+        #expect(random == [true, false])
+    }
+
+    @Test("数字: 2 つは拾い、1 つ・0 は拾わない（英単語をつないだ名前を外すため）")
+    func digitCount() {
+        let values = [2, 1, 0].map { Self.alternating(40, digitCount: $0) }
+        let kinds = values.map(Self.kinds)
+        let random = values.map { SecretDetector.looksRandom($0) }
+        #expect(kinds == [[.randomToken], [], []])
+        #expect(random == [true, false, false])
+    }
+
+    @Test("文字の種類が偏ったもの（小文字と数字だけ・大文字と数字だけ）は拾わない")
+    func oneSidedCase() {
+        let value = Self.cycled(40)
+        let values = [value, value.lowercased(), value.uppercased()]
+        let kinds = values.map(Self.kinds)
+        let mixedCase = values.map { SecretDetector.hasMixedCase($0) }
+        #expect(kinds == [[.randomToken], [], []])
+        #expect(mixedCase == [true, false, false])
+    }
+}
+
 @Suite("秘密の判定（陰性: 紛らわしいもの）")
 struct SecretDetectorNegativeTests {
     static func pngBase64(_ length: Int) -> String {

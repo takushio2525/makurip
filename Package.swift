@@ -51,6 +51,11 @@ let package = Package(
             name: "MakuripCoreTests",
             dependencies: ["MakuripCore"]
         ),
+        // 検証用 CLI のテストデータ（E2E の偽の秘密が判定の条件を必ず満たすこと。#21）
+        .testTarget(
+            name: "MakuripDevToolTests",
+            dependencies: ["MakuripDevTool", "MakuripCore"]
+        ),
         // 一覧 UI のビューモデル（キー操作）と、オフスクリーン描画の検証（MAKURIP_SNAPSHOT_DIR を付けたときだけ）
         .testTarget(
             name: "MakuripUITests",

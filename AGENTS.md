@@ -44,6 +44,7 @@ makurip/
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
+├── Tests/MakuripDevToolTests/ ← 検証用 CLI のテストデータ（E2E の偽の秘密が判定の条件を必ず満たすこと）
 ├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口）
 ├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）・ai-mcp.md（Claude Code への登録・道具・頼みと道具の対応・限界）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
