@@ -8,6 +8,10 @@ struct HistoryPanelView: View {
     @Environment(\.colorScheme) private var scheme
 
     static let size = CGSize(width: 372, height: 528)
+    /// カードの一覧の左右の余白（試作の .pb-list の padding）
+    static let listInset: CGFloat = 10
+    /// カードに渡る幅（パネルの幅から左右の余白を引いたもの）。カードはこの幅を超えない（#16）
+    static var cardWidth: CGFloat { size.width - listInset * 2 }
 
     var body: some View {
         PanelContent(model: model, loader: loader)
@@ -280,7 +284,10 @@ private struct CardList: View {
                             }
                         }
                     }
-                    .padding(EdgeInsets(top: 4, leading: 10, bottom: 10, trailing: 10))
+                    .padding(
+                        EdgeInsets(
+                            top: 4, leading: HistoryPanelView.listInset, bottom: 10,
+                            trailing: HistoryPanelView.listInset))
                 }
                 .scrollIndicators(.automatic)
                 .onAppear {

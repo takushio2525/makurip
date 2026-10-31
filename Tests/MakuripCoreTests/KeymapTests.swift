@@ -154,4 +154,10 @@ struct KeymapTests {
         #expect(map.primary(.openHistory)?.hotKey == .defaultOpenHistory)
         #expect(map.primary(.quickPaste)?.hotKey == nil)
     }
+
+    @Test("プレーンテキストで貼る説明文は、コマンドのプロンプトを外さないことを書く（PastePipeline の振る舞いと合わせる）")
+    func plainPasteSummaryMentionsPrompt() {
+        #expect(KeyAction.pastePlain.summary.contains("プロンプト"))
+        #expect(KeyAction.pastePlain.summary.contains("外さず"))
+    }
 }

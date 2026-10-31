@@ -128,18 +128,24 @@ struct CodeCardBody: View {
 
     var body: some View {
         let lines = loader.codeCardLines(for: item, palette: palette, query: query)
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(line.characters.isEmpty ? AttributedString(" ") : line)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(height: CSS.cardMono.lineHeight, alignment: .leading)
+        // 幅はパネルが渡した幅で決め（中身の幅に引っぱられない土台）、行はその上に重ねて内側で切る。
+        // 行を土台にすると、折り返さない長い行の幅でカードがパネルの右へはみ出す（#16）
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: CSS.cardMono.lineHeight * CGFloat(max(lines.count, 1)))
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line.characters.isEmpty ? AttributedString(" ") : line)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(height: CSS.cardMono.lineHeight, alignment: .leading)
+                    }
+                }
+                .font(CSS.cardMono.font)
+                .foregroundStyle(palette.text)
             }
-        }
-        .font(CSS.cardMono.font)
-        .foregroundStyle(palette.text)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
+            .clipped()
     }
 }
 

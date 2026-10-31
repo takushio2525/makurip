@@ -215,7 +215,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .previous: "一覧で 1 つ前の項目を選ぶ。"
         case .next: "一覧で 1 つ次の項目を選ぶ。"
         case .paste: "選んだ項目を、一覧を開く前に使っていたアプリに貼る。"
-        case .pastePlain: "太字やリンクなどの書式を外し、文字だけを貼る。"
+        case .pastePlain: "太字やリンクなどの書式を外し、文字だけを貼る。コマンドの先頭のプロンプト（「$ 」など）は外さず、そのまま貼る。"
         case .copyOnly: "クリップボードに入れるだけで、貼り付けはしない。"
         case .quickPaste: "一覧の上から 1〜9 番目を、選ばずにそのまま貼る。"
         case .kindNext: "種類の絞り込み（テキスト・画像・コードなど）を次に進める。"
