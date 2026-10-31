@@ -22,7 +22,7 @@ let package = Package(
             name: "MakuripCore",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
-        // 仮の一覧。フェーズ2で丸ごと差し替える
+        // 一覧 UI（案 B のパネル）。本体とは HistoryPresenting / HistoryActions だけでやりとりする
         .target(
             name: "MakuripUI",
             dependencies: ["MakuripCore"]
@@ -50,6 +50,11 @@ let package = Package(
         .testTarget(
             name: "MakuripCoreTests",
             dependencies: ["MakuripCore"]
+        ),
+        // 一覧 UI のビューモデル（キー操作）と、オフスクリーン描画の検証（MAKURIP_SNAPSHOT_DIR を付けたときだけ）
+        .testTarget(
+            name: "MakuripUITests",
+            dependencies: ["MakuripUI", "MakuripCore"]
         ),
     ]
 )

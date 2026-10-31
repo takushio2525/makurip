@@ -22,7 +22,7 @@ public struct KeyCombo: Codable, Hashable, Sendable {
     }
 
     /// 押されたキーに合えば true。数字のキーなら `digit` に 1〜9 が入る
-    public func matches(_ press: KeyPress) -> (matched: Bool, digit: Int?) {
+    public func matches(_ press: KeyStroke) -> (matched: Bool, digit: Int?) {
         guard press.modifiers == modifiers else { return (false, nil) }
         switch key {
         case .code(let code):
@@ -73,7 +73,7 @@ public struct KeyCombo: Codable, Hashable, Sendable {
 }
 
 /// 押されたキー（`NSEvent` から作る。AppKit に依存しないよう値だけを持つ）
-public struct KeyPress: Hashable, Sendable {
+public struct KeyStroke: Hashable, Sendable {
     public var keyCode: UInt16
     public var modifiers: HotKey.Modifiers
 
@@ -256,7 +256,7 @@ public struct Keymap: Hashable, Sendable {
     }
 
     /// 押されたキーに当たる操作（範囲 `scope` の中だけを見る）。数字のキーなら番号も返す
-    public func action(for press: KeyPress, scope: KeyAction.Scope = .panel) -> (action: KeyAction, digit: Int?)? {
+    public func action(for press: KeyStroke, scope: KeyAction.Scope = .panel) -> (action: KeyAction, digit: Int?)? {
         for action in KeyAction.allCases where action.scope == scope {
             for combo in combos(for: action) {
                 let result = combo.matches(press)

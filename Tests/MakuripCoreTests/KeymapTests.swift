@@ -36,7 +36,7 @@ struct KeymapTests {
     func lookup() {
         let map = Keymap.default
         func action(_ code: UInt16, _ modifiers: HotKey.Modifiers = []) -> KeyAction? {
-            map.action(for: KeyPress(keyCode: code, modifiers: modifiers))?.action
+            map.action(for: KeyStroke(keyCode: code, modifiers: modifiers))?.action
         }
         #expect(action(KeyCodes.upArrow) == .previous)
         #expect(action(35, .control) == .previous)  // ⌃P
@@ -62,19 +62,19 @@ struct KeymapTests {
         // 全体のキーはパネルの範囲では引かない
         #expect(action(9, [.control, .command]) == nil)
         #expect(
-            map.action(for: KeyPress(keyCode: 9, modifiers: [.control, .command]), scope: .global)?.action
+            map.action(for: KeyStroke(keyCode: 9, modifiers: [.control, .command]), scope: .global)?.action
                 == .openHistory)
     }
 
     @Test("⌘1〜9 は押した番号を返す")
     func digits() {
         for (index, code) in KeyCodes.digitCodes.enumerated() {
-            let hit = Keymap.default.action(for: KeyPress(keyCode: code, modifiers: .command))
+            let hit = Keymap.default.action(for: KeyStroke(keyCode: code, modifiers: .command))
             #expect(hit?.action == .quickPaste)
             #expect(hit?.digit == index + 1)
         }
-        #expect(Keymap.default.action(for: KeyPress(keyCode: 29, modifiers: .command)) == nil)  // ⌘0
-        #expect(Keymap.default.action(for: KeyPress(keyCode: 18)) == nil)  // 1 だけは文字の入力
+        #expect(Keymap.default.action(for: KeyStroke(keyCode: 29, modifiers: .command)) == nil)  // ⌘0
+        #expect(Keymap.default.action(for: KeyStroke(keyCode: 18)) == nil)  // 1 だけは文字の入力
     }
 
     @Test("重なりを見つける（同じキー・数字の範囲と数字のキー・テンキーの Enter）")
