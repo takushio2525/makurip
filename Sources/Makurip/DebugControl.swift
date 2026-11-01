@@ -185,6 +185,7 @@ final class DebugControl {
             "candidateHotKeyMode": controller.candidate?.settings.hotKeyMode.rawValue ?? "",
             "settings": Self.settingsSummary(controller),
             "settingsVisible": controller.isSettingsVisible,
+            "statusItem": controller.statusItemState,
             "snippets": Self.snippetSummary(controller),
             "secrets": controller.secretStatus,
             "ai": Self.aiSummary(controller),

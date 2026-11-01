@@ -47,7 +47,8 @@
 `secrets`（`count` 秘密の件数・`knownFormat` 自動消去の対象の件数・`autoDeleted` 起動してから自動で消した件数・`retentionSeconds`・`nextSweepAt` 次に消す時刻。中身は出さない）・
 `settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・
 `snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない。秘密の形の値を含んだときはどちらも `"hidden"`）・
-`ai`（`enabled` AI の口がオンか・`externalHistoryChanges` MCP・CLI が履歴を変えたと知らされた回数・`activityCount` AI の操作の記録の件数・`lastTool`・`lastOutcome`。#6）・`writtenAt`。
+`ai`（`enabled` AI の口がオンか・`externalHistoryChanges` MCP・CLI が履歴を変えたと知らされた回数・`activityCount` AI の操作の記録の件数・`lastTool`・`lastOutcome`。#6）・
+`statusItem`（`autosaveName`・`visibility`（`visible` / `behindNotch` / `unknown`）・`seededPosition` 今回の起動で保存位置の種をまいたか。#35）・`writtenAt`。
 `historyUI` には `showsSnippets`・`snippetCount` もある。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
@@ -88,6 +89,7 @@ AI の口の門の外（シェルを使えるエージェントなら、口が�
     var isVisible: Bool { get }
     func show()
     func show(selecting itemID: UUID?)            // 候補窓から広げたとき。既定の実装は show()
+    func showSnippets()                           // 定型文の表示で開く（メニューの「定型文の一覧を開く」）。既定の実装は show()
     func hide()
     func historyDidChange()
     var debugState: [String: String] { get }   // 既定は空
@@ -323,6 +325,22 @@ UI 側（`Sources/MakuripUI/`）: `SnippetCardView`・`SnippetPeekContent`（パ
 | `PanelPlacement.frame(size:anchor:screens:side:mouse:)` | 手がかり（`PanelAnchor`: 文字カーソル → 入力欄の枠 → マウス → なし）から窓の枠を決める。`.below` はカーソルの下（入らなければ上。案 B）、`.beside(rowOffset:)` はカーソルの右（候補窓 #8） |
 | `PanelPlacement.peekFrame(panel:width:screens:)` | ⌘Y のプレビューの枠（右に入らなければ左） |
 | `PanelPlacement.appKitRect(fromAX:primaryScreenHeight:)` | AX の座標（左上原点）を AppKit の座標（左下原点）へ |
+
+## メニューバーの項目とメニュー（`Placement/StatusItemPlacement.swift`・`Menu/StatusMenuModel.swift`・#35）
+
+macOS は新しい状態の項目をいちばん左に置くので、ノッチのある内蔵画面でメニューバーが混んでいると、ノッチの裏や左に押し出されて描かれない。
+そこで項目を作る前に、保存位置（UserDefaults の `NSStatusItem Preferred Position <保存名>`）が**まだ無いときだけ** `StatusItemPlacement.seedPosition`（1000）を書く。
+値が大きいほど左で、システムの項目は 100〜400 台。1000 は「保存位置のない他社アプリの項目の右・システムの項目の左」に入る（macOS 26 の実測）。
+利用者が ⌘ を押しながらドラッグして動かすと macOS が同じ鍵を書き換えるので、以後はそちらを使う（種は 2 度まかない）。
+
+| 型・値 | 役割 |
+|---|---|
+| `StatusItemPlacement.autosaveName(isolated:)` | 保存名。本番は `MakuripStatusItem`、隔離したインスタンスは `MakuripStatusItemIsolated`。UserDefaults はバンドル ID ごとで `--data-dir` では分かれないので、名前を分けて本番の位置に触れない（隔離の検証を流すと、この鍵が 1 つだけ本番のドメインに残る） |
+| `StatusItemPlacement.positionToSeed(saved:)` | 保存位置が無ければ種の値、あれば nil |
+| `StatusItemPlacement.visibility(itemFrame:screenFrame:rightOfNotchWidth:)` | 項目の窓がノッチの右の領域（`auxiliaryTopRightArea` の幅を画面の右端から取る）に収まっているか。`visible` / `behindNotch` / `unknown`（ノッチのない画面）。遮蔽状態は画面ロック中に当てにならないので使わない。起動の 1 秒後にログ（「メニューバーの項目 visibility=…」）と `debug-status.json` の `statusItem` に出す |
+| `StatusMenuModel.entries(_:)` | メニューの並び。履歴の一覧を開く（`keys.openList`）・定型文の一覧を開く（`keys.snippets`。一覧を定型文の表示で開く）・定型文を編集…（`keys.editSnippet`）・設定…（`keys.settings`）／記録を一時停止（再開）・履歴を消去…／アクセシビリティを許可…（許可がないときだけ）・状態の行／終了（⌘Q）。右のキーはいまのキーマップから引き、1 文字で書けないキーはヒントにだけ出す |
+
+アイコンが隠れていても画面へ行けるように、動いている Makurip をもう一度開く（Spotlight・Finder・`open`）と設定を開く（`applicationShouldHandleReopen`）。
 
 ## ストア（`ClipStore`）
 

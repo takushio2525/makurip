@@ -11,6 +11,8 @@ public protocol HistoryPresenting: AnyObject {
     func show()
     /// 項目を選んだ状態で開く（候補窓から広げたとき）。実装しなければ `show()`
     func show(selecting itemID: UUID?)
+    /// 定型文の表示で開く（メニューの「定型文の一覧を開く」。一覧の ⌘S と同じ表示）。実装しなければ `show()`
+    func showSnippets()
     func hide()
     /// 履歴が変わった（取り込み・消去）。開いていれば読み直す
     func historyDidChange()
@@ -25,6 +27,7 @@ public protocol HistoryPresenting: AnyObject {
 extension HistoryPresenting {
     public var debugState: [String: String] { [:] }
     public func show(selecting itemID: UUID?) { show() }
+    public func showSnippets() { show() }
     public func keymapDidChange(_ keymap: Keymap) {}
     public func snippetsDidChange() {}
 }

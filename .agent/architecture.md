@@ -12,9 +12,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルの位置（`Placement/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`）・AI の口（オン・オフ・道具・MCP の JSON-RPC・`--ai` の CLI・操作の記録。`AI/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルとメニューバーの項目の位置（`Placement/`）・メニューバーのメニューの並び（`Menu/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`）・AI の口（オン・オフ・道具・MCP の JSON-RPC・`--ai` の CLI・操作の記録。`AI/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
 | `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・定型文の窓（ふつうの窓）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)`・`SnippetEditorUIFactory.make(controller:environment:)` | MakuripCore |
-| `Makurip` | AppDelegate（`AppController`）・メニューバー・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・起動引数・`--settings`・`--mcp`・`--ai` の入口・AI の口の知らせの受け取り・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
+| `Makurip` | AppDelegate（`AppController`）・メニューバー（`StatusMenuController`。置き場所の種まきと、`StatusMenuModel` の並びを NSMenu に写す。もう一度開かれたら設定を開く）・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・起動引数・`--settings`・`--mcp`・`--ai` の入口・AI の口の知らせの受け取り・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
 
 依存の向き: `Makurip` → `MakuripUI` → `MakuripCore`。逆向き（Core が UI・アプリを知る、UI がアプリを知る）は禁止。
@@ -31,7 +31,7 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 ### 呼び出しと貼り付け
 
-1. 一覧を開くキー（`HotKeyCenter`。キーは設定の `keys.openList`、既定 ⌃⌥⌘V）・メニュー → `AppController.openList` — 前面のアプリを `previousApp` に控えて一覧を開く
+1. 一覧を開くキー（`HotKeyCenter`。キーは設定の `keys.openList`、既定 ⌃⌥⌘V）・メニュー → `AppController.openList`（メニューの「定型文の一覧を開く」は `openSnippetList` → `HistoryPresenting.showSnippets`）— 前面のアプリを `previousApp` に控えて一覧を開く
 2. `PanelController.show` — 窓を出す**前に**前面のアプリの文字カーソルを AX で取り（`InsertionPointLocator`）、`PanelPlacement` で位置を決める。
    パネルは nonactivating なので Makurip は前面にならず、元のアプリが前面のままキーだけを受け取る
 3. キーはパネルの窓のローカル監視 → `HistoryPanelModel.handle`（キーマップで操作を引く。日本語入力の変換中は横取りしない）

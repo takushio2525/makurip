@@ -69,6 +69,22 @@ struct SnippetPanelModelTests {
         #expect(!model.showsSnippets)
     }
 
+    @Test("メニューの「定型文の一覧を開く」は定型文の表示で開く。ふつうに開き直せば履歴から（#35）")
+    func openFromMenu() {
+        model.select(3)
+        model.open(snippets: true)
+        #expect(model.showsSnippets)
+        #expect(model.rowCount == 6)
+        #expect(model.selectedIndex == 0)
+        #expect(model.selectedSnippet?.name == "あいさつ（社外）")
+        #expect(press(Self.keyS, .command))
+        #expect(!model.showsSnippets)
+        model.open(snippets: true)
+        model.open()
+        #expect(!model.showsSnippets)
+        #expect(model.rowCount == history.items.count)
+    }
+
     @Test("↑↓ は定型文の数で止まり、Enter で選んだ定型文を貼る（⇧↩・⌘↩ も）")
     func moveAndPaste() {
         toSnippets()

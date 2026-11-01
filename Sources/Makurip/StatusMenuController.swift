@@ -1,15 +1,27 @@
 import AppKit
 import MakuripCore
 
-/// メニューバーのアイコンとメニュー。アイコンは案 B「パラパラ」のテンプレート画像（Resources/Assets.xcassets の MenuBarIcon）
+/// メニューバーのアイコンとメニュー。アイコンは案 B「パラパラ」のテンプレート画像（Resources/Assets.xcassets の MenuBarIcon）。
+/// 置き場所は `StatusItemPlacement`、メニューの項目の並びは `StatusMenuModel`（どちらも Core の純粋関数）
 @MainActor
 final class StatusMenuController: NSObject, NSMenuDelegate {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem: NSStatusItem
     private let menu = NSMenu()
     private weak var controller: AppController?
+    /// 今回の起動で保存位置の種をまいたか（ログ・状態出力用）
+    private(set) var seededPosition = false
 
     init(controller: AppController) {
         self.controller = controller
+        // 保存位置がまだ無ければ、作る前に種をまく（混んだメニューバーでノッチの左へ押し出されないように。#35）
+        let name = StatusItemPlacement.autosaveName(isolated: controller.isolated)
+        let key = StatusItemPlacement.preferredPositionKey(autosaveName: name)
+        if let seed = StatusItemPlacement.positionToSeed(saved: UserDefaults.standard.object(forKey: key)) {
+            UserDefaults.standard.set(seed, forKey: key)
+            seededPosition = true
+        }
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.autosaveName = name
         super.init()
         if let button = statusItem.button {
             button.image = Self.makeStatusIcon()
@@ -19,6 +31,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
         statusItem.menu = menu
         rebuild()
+        // 置かれた位置は少し後に決まる。見える位置かをメタデータだけログに残す
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            MainActor.assumeIsolated { self?.logPlacement() }
+        }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -34,6 +50,27 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         image?.isTemplate = true
         image?.accessibilityDescription = AppIdentity.displayName
         return image
+    }
+
+    /// 項目がノッチの裏に隠れていないか（検証の状態出力にも使う）
+    var visibility: StatusItemPlacement.Visibility {
+        let window = statusItem.button?.window
+        return StatusItemPlacement.visibility(
+            itemFrame: window?.frame, screenFrame: window?.screen?.frame,
+            rightOfNotchWidth: window?.screen?.auxiliaryTopRightArea?.width)
+    }
+
+    private func logPlacement() {
+        let state = visibility
+        let x = statusItem.button?.window.map { Int($0.frame.minX) } ?? -1
+        if state == .behindNotch {
+            Log.app.error(
+                "メニューバーの項目がノッチの裏に隠れている x=\(x) seeded=\(self.seededPosition)。⌘ を押しながらドラッグして右へ移すか、もう一度開くと設定が開く"
+            )
+        } else {
+            Log.app.info(
+                "メニューバーの項目 visibility=\(state.rawValue, privacy: .public) x=\(x) seeded=\(self.seededPosition)")
+        }
     }
 
     /// 許可がなく貼り付けられなかったことを、アイコンで短く知らせる
@@ -52,53 +89,30 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private func rebuild() {
         menu.removeAllItems()
         guard let controller else { return }
-
-        // メニューは一覧を開く（呼び出しキーは既定で候補窓なので、一覧を開くキーを添える。キーは設定のキーマップから）
-        let open = addItem("履歴の一覧を開く", action: #selector(openHistory))
-        Self.setKeyEquivalent(open, controller.keymap.primary(.openList))
-        let settings = addItem("設定…", action: #selector(openSettings))
-        Self.setKeyEquivalent(settings, controller.keymap.primary(.settings))
-        addItem("定型文を編集…", action: #selector(openSnippets))
-
-        menu.addItem(.separator())
-        addItem(controller.isPaused ? "記録を再開" : "記録を一時停止", action: #selector(togglePause))
-        addItem("履歴を消去…", action: #selector(clearHistory))
-
-        menu.addItem(.separator())
-        if !controller.isAccessibilityTrusted {
-            addItem("アクセシビリティを許可…（貼り付けとコピー方法の記録に必要）", action: #selector(requestAccessibility))
+        let state = StatusMenuModel.State(
+            appName: AppIdentity.displayName, paused: controller.isPaused,
+            accessibilityTrusted: controller.isAccessibilityTrusted, itemCount: controller.itemCount,
+            isolated: controller.isolated)
+        for entry in StatusMenuModel.entries(state) {
+            switch entry {
+            case .separator:
+                menu.addItem(.separator())
+            case .info(let text):
+                let line = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+                line.isEnabled = false
+                menu.addItem(line)
+            case .item(let model):
+                let item = NSMenuItem(title: model.title, action: #selector(performCommand(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = model.command.rawValue
+                if let action = model.key {
+                    Self.setKeyEquivalent(item, controller.keymap.primary(action))
+                }
+                if model.command == .quit { item.keyEquivalent = "q" }
+                menu.addItem(item)
+            }
         }
-        var status = "履歴 \(controller.itemCount) 件"
-        if controller.isPaused { status += "・一時停止中" }
-        if controller.isolated { status += "・検証用フォルダ" }
-        let statusLine = NSMenuItem(title: status, action: nil, keyEquivalent: "")
-        statusLine.isEnabled = false
-        menu.addItem(statusLine)
-
-        menu.addItem(.separator())
-        let quit = addItem("\(AppIdentity.displayName) を終了", action: #selector(quit))
-        quit.keyEquivalent = "q"
         refreshIcon()
-    }
-
-    @discardableResult
-    private func addItem(_ title: String, action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        menu.addItem(item)
-        return item
-    }
-
-    @objc private func openHistory() {
-        controller?.toggleHistory()
-    }
-
-    @objc private func openSettings() {
-        controller?.openSettings()
-    }
-
-    @objc private func openSnippets() {
-        controller?.openSnippetEditor(.open)
     }
 
     /// メニューの右に出すキー。1 文字で書けるキー（英字・数字・記号）だけ。それ以外はヒントに表記を出す
@@ -117,13 +131,25 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         item.keyEquivalentModifierMask = flags
     }
 
-    @objc private func togglePause() {
-        guard let controller else { return }
-        controller.setPaused(!controller.isPaused)
-        refreshIcon()
+    @objc private func performCommand(_ sender: NSMenuItem) {
+        guard let controller, let raw = sender.representedObject as? String,
+            let command = StatusMenuModel.Command(rawValue: raw)
+        else { return }
+        switch command {
+        case .openList: controller.toggleHistory()
+        case .openSnippetList: controller.openSnippetList()
+        case .editSnippets: controller.openSnippetEditor(.open)
+        case .openSettings: controller.openSettings()
+        case .togglePause:
+            controller.setPaused(!controller.isPaused)
+            refreshIcon()
+        case .clearHistory: confirmClearHistory()
+        case .requestAccessibility: controller.requestAccessibility()
+        case .quit: NSApp.terminate(nil)
+        }
     }
 
-    @objc private func clearHistory() {
+    private func confirmClearHistory() {
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "履歴を消去しますか？"
@@ -134,13 +160,5 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         if alert.runModal() == .alertFirstButtonReturn {
             controller?.clearHistory()
         }
-    }
-
-    @objc private func requestAccessibility() {
-        controller?.requestAccessibility()
-    }
-
-    @objc private func quit() {
-        NSApp.terminate(nil)
     }
 }

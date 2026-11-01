@@ -141,15 +141,16 @@ final class HistoryPanelModel {
     // MARK: 開く・読み直す
 
     /// 開くたびに絞り込みを外し、検索欄を空にして最新を選ぶ（試作と同じ）。
-    /// 候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で開く（`itemID`）
-    func open(selecting itemID: UUID? = nil) {
+    /// 候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で開く（`itemID`）。
+    /// メニューの「定型文の一覧を開く」からは定型文の表示で開く（`snippets`。⌘S を押したのと同じ表示）
+    func open(selecting itemID: UUID? = nil, snippets: Bool = false) {
         query = ""
         searchQuery = .empty
         kind = nil
         method = .all
         app = nil
         pinnedOnly = false
-        showsSnippets = false
+        showsSnippets = snippets
         isPreviewOpen = false
         isPickerOpen = false
         pickerQuery = ""

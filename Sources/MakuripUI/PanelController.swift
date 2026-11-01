@@ -89,11 +89,19 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
     }
 
     func show(selecting itemID: UUID?) {
+        present { $0.open(selecting: itemID) }
+    }
+
+    func showSnippets() {
+        present { $0.open(snippets: true) }
+    }
+
+    private func present(_ open: (HistoryPanelModel) -> Void) {
         let front = NSWorkspace.shared.frontmostApplication
         let ownPID = ProcessInfo.processInfo.processIdentifier
         // 窓を出す前に、前面のアプリの文字カーソルを取る（出した後だと焦点がパネルに移る）
         let anchor = locateAnchor(pid: front?.processIdentifier == ownPID ? nil : front?.processIdentifier)
-        model.open(selecting: itemID)
+        open(model)
         place(anchor: anchor)
         panel.alphaValue = 0
         panel.makeKeyAndOrderFront(nil)
