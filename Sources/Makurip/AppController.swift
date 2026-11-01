@@ -173,6 +173,14 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         )
     }
 
+    /// 動いている Makurip をもう一度開いた（Spotlight・Finder・`open`）。メニューバーのアイコンが混雑で
+    /// 隠れていても画面へ行けるように、設定を開く（メニューバー常駐アプリの慣習。#35）
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Log.app.info("もう一度開かれたので設定を開く")
+        openSettings()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // 横取りを残さない（落ちたときは OS がタップを消す）
         candidate?.shutdown()
@@ -233,13 +241,23 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     /// 一覧を開く。候補窓から広げたときは、候補窓で選んでいた項目を選んだ状態で。
     /// 貼り付けの宛先は開くたびに決め直す。前面が Makurip 自身（定型文の窓・設定画面）なら宛先なしにして、
     /// 前に使った別のアプリへ ⌘V を送らない・閉じてもそのアプリへ切り替えない（#27）
-    func openList(selecting itemID: UUID?) {
+    func openList(selecting itemID: UUID?, snippets: Bool = false) {
         guard let history, !history.isVisible else { return }
         let front = NSWorkspace.shared.frontmostApplication
         let target = PasteTarget.pid(
             frontmost: front?.processIdentifier, own: ProcessInfo.processInfo.processIdentifier)
         previousApp = target == nil ? nil : front
-        history.show(selecting: itemID)
+        if snippets {
+            history.showSnippets()
+        } else {
+            history.show(selecting: itemID)
+        }
+    }
+
+    /// 一覧を定型文の表示で開く（メニューの「定型文の一覧を開く」）。履歴の表示で開いていれば開き直す
+    func openSnippetList() {
+        if history?.isVisible == true { history?.hide() }
+        openList(selecting: nil, snippets: true)
     }
 
     /// 候補窓を閉じるきっかけ（前面のアプリの切り替え・スペース・スリープ・画面の構成）を見張る
@@ -469,6 +487,15 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     }
 
     var isSettingsVisible: Bool { settingsWindow?.isVisible ?? false }
+
+    /// メニューバーの項目（検証の状態出力用。保存名・見える位置か・今回の起動で種をまいたか）
+    var statusItemState: [String: Any] {
+        [
+            "autosaveName": StatusItemPlacement.autosaveName(isolated: isolated),
+            "visibility": statusMenu?.visibility.rawValue ?? "none",
+            "seededPosition": statusMenu?.seededPosition ?? false,
+        ]
+    }
 
     // MARK: AI の口（#6）
 
