@@ -34,6 +34,21 @@ final class DebugControl {
         case disableAIAccess
         /// 設定画面の「登録コマンドをコピー」と同じ（書き戻しが新しい履歴にならないかを E2E で確かめる用）
         case copyMCPRegisterCommand
+        /// 一覧を定型文の表示で開く（メニューの「定型文の一覧を開く」と同じ）
+        case openSnippetList
+        /// 一覧のカードを左クリックする（userInfo["index"] は上から 1 始まり。窓の中で作った出来事を窓へ送る。#38）
+        case clickCard
+        /// 一覧のカードを押したまま、カードの外へ出て離す（貼らないはず）
+        case clickCardReleaseOutside
+        /// 一覧のカードを右クリックしてメニューを出し、userInfo["hold"] 秒後（既定 1）に userInfo["action"] の項目
+        /// （キーマップの操作 ID。paste・copyOnly など）を選ぶ。action が無ければ何も選ばずに閉じる。
+        /// メニューを開いている間は分散通知が届かないので、選ぶ前に状態を 1 回書く（メニューの中でも回るタイマー）
+        case rightClickCard
+        /// 一覧のカードの上で下へスクロールする（貼らないはず）
+        case scrollCards
+        /// 一覧がキーの焦点を取らない / 取る（既定は取る）。取らないと、出しても使っている人の打鍵を横取りせず、外の操作でも閉じない
+        case panelKeyFocusOff
+        case panelKeyFocusOn
         /// 状態を書く
         case writeStatus
         case quit
@@ -57,7 +72,11 @@ final class DebugControl {
                     (info["pid"] as? NSNumber)?.int32Value ?? (info["pid"] as? String).flatMap { Int32($0) }
                 let index = (info["index"] as? NSNumber)?.intValue ?? (info["index"] as? String).flatMap { Int($0) }
                 let mode = (info["mode"] as? String).flatMap(PasteMode.init(rawValue:))
-                MainActor.assumeIsolated { self?.handle(command, pid: pid, index: index, mode: mode) }
+                let action = (info["action"] as? String).flatMap(KeyAction.init(rawValue:))
+                let hold = (info["hold"] as? NSNumber)?.doubleValue ?? (info["hold"] as? String).flatMap { Double($0) }
+                MainActor.assumeIsolated {
+                    self?.handle(command, pid: pid, index: index, mode: mode, action: action, hold: hold)
+                }
             }
             observers.append(observer)
         }
@@ -65,7 +84,10 @@ final class DebugControl {
         Log.app.info("検証用の遠隔操作を有効にした")
     }
 
-    private func handle(_ command: Command, pid: Int32?, index: Int? = nil, mode: PasteMode? = nil) {
+    private func handle(
+        _ command: Command, pid: Int32?, index: Int? = nil, mode: PasteMode? = nil, action: KeyAction? = nil,
+        hold: Double? = nil
+    ) {
         guard let controller else { return }
         switch command {
         case .toggleHistory:
@@ -99,6 +121,26 @@ final class DebugControl {
             controller.setAIAccess(false)
         case .copyMCPRegisterCommand:
             controller.copyMCPRegisterCommand()
+        case .openSnippetList:
+            controller.openSnippetList()
+        case .clickCard:
+            controller.history?.debugPerform(.click(row: index ?? 1, releaseInside: true))
+        case .clickCardReleaseOutside:
+            controller.history?.debugPerform(.click(row: index ?? 1, releaseInside: false))
+        case .rightClickCard:
+            let hold = min(max(hold ?? 1, 0.5), 5)
+            controller.history?.debugPerform(.rightClick(row: index ?? 1, choose: action, hold: hold))
+            // メニューを開いている間（選ぶ前）の状態を書く
+            let timer = Timer(timeInterval: hold * 0.6, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.writeStatus() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+        case .scrollCards:
+            controller.history?.debugPerform(.scroll(row: index ?? 1))
+        case .panelKeyFocusOff:
+            controller.history?.debugPerform(.takesKeyFocus(false))
+        case .panelKeyFocusOn:
+            controller.history?.debugPerform(.takesKeyFocus(true))
         case .writeStatus:
             break
         case .quit:

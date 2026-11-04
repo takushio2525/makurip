@@ -430,6 +430,8 @@ func run() throws {
         if let pid = option("--pid") { userInfo["pid"] = pid }
         if let index = option("--index") { userInfo["index"] = index }
         if let mode = option("--mode") { userInfo["mode"] = mode }
+        if let action = option("--action") { userInfo["action"] = action }
+        if let hold = option("--hold") { userInfo["hold"] = hold }
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("com.takushio2525.makurip.debug." + name), object: path,
             userInfo: userInfo.isEmpty ? nil : userInfo, deliverImmediately: true)
@@ -511,7 +513,7 @@ let usage = """
       pb-text --pasteboard NAME                名前付きペーストボードの平文（自作のテストデータの確認用。一般は読まない）
       pb-guess --pasteboard NAME               推す側が作れるハッシュと長さ（漏れの検査用。ファイルに書いて照らす。一般は読まない）
       post-keys --pid PID [--text S] [--key return|escape|up|down|cmd-v|cmd-c|cmd-a|cmd-s]   pid 宛てにキーを送る
-      notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|pasteSnippet|clearHistory|enableAIAccess|disableAIAccess|copyMCPRegisterCommand|writeStatus|quit> [--pid PID] [--index N --mode normal|plainText|copyOnly]
+      notify --data-dir DIR <toggleHistory|simulateCopyShortcut|setPasteTarget|pause|resume|pasteSnippet|clearHistory|enableAIAccess|disableAIAccess|copyMCPRegisterCommand|openSnippetList|clickCard|clickCardReleaseOutside|rightClickCard|scrollCards|panelKeyFocusOff|panelKeyFocusOn|writeStatus|quit> [--pid PID] [--index N --mode normal|plainText|copyOnly] [--action 操作ID --hold 秒]
       window-id --pid PID                      その pid のいちばん大きい窓の番号（screencapture -l 用）
       image-stats PATH                         画像が真っ黒でないかの確認用
       activate --pid PID                       その pid のアプリを前面に戻す

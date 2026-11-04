@@ -24,7 +24,7 @@
 ### 検証用の遠隔操作（`--debug-control`）
 
 分散通知 `com.takushio2525.makurip.debug.<命令>`、object = データフォルダの絶対パス（標準化したもの）。
-送るのは `MakuripDevTool notify --data-dir DIR <命令> [--pid PID]`。
+送るのは `MakuripDevTool notify --data-dir DIR <命令> [--pid PID] [--index N] [--mode M] [--action 操作ID]`。
 
 | 命令 | 動き |
 |---|---|
@@ -32,16 +32,21 @@
 | `pressOpenKey` | ⌃⌘V を押したのと同じ（動きは `hotkeyMode`。既定は候補窓。許可がなければ一覧を開く） |
 | `pressOpenListKey` | ⌃⌥⌘V を押したのと同じ |
 | `simulateCopyShortcut` | ⌘C を見たときと同じ信号を入れる |
-| `setPasteTarget` | 貼り付けの宛先を pid で固定する |
+| `setPasteTarget` | 貼り付けの宛先を pid で固定する（固定した pid のアプリが無ければどこにも貼らない。ユーザーの前面のアプリへは落とさない） |
 | `pause` / `resume` | 記録の一時停止 / 再開 |
 | `pasteSnippet` | 定型文を貼る（一覧の ↩ と同じ処理）。`userInfo["index"]` は 1 からの番号、`["mode"]` は `normal` / `plainText` / `copyOnly`（既定 `normal`）。番号の外は何もしない |
 | `clearHistory` | 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る） |
 | `enableAIAccess` / `disableAIAccess` | AI の口をオン / オフにする（設定画面の切り替えと同じ。`--debug-control` は隔離したときだけ効くので、本物の履歴の口は開けられない） |
 | `copyMCPRegisterCommand` | 設定画面の「登録コマンドをコピー」と同じ（監視しているペーストボードに書く。新しい履歴にならないことを `make e2e-ai` が確かめる） |
+| `openSnippetList` | 一覧を定型文の表示で開く（メニューの「定型文の一覧を開く」と同じ） |
+| `clickCard` / `clickCardReleaseOutside` | 一覧のカードを左クリックする / 押したままカードの外へ出て離す（#38）。`userInfo["index"]` は上から 1 始まり。窓の中で作った出来事をパネルへ送る（本物のマウスとほかのアプリには触れない）。作られていないカード（見えていない）は何もしない |
+| `rightClickCard` | 一覧のカードを右クリックしてメニューを出し（`index` は同上）、`userInfo["hold"]` 秒後（既定 1。0.5〜5）に `userInfo["action"]`（キーマップの操作 ID。`paste`・`copyOnly` など）の項目を選ぶ。`action` が無ければ何も選ばずに閉じる。**メニューを開いている間は分散通知が届かない**（メニューの追跡中は主スレッドが通知を受けない）ので、選ぶのも、選ぶ前（`hold` の 6 割の時点）に状態を書くのも、メニューの中でも回るタイマーで行う |
+| `scrollCards` | 一覧のカードの上で下へスクロールする（`index` のカードの上。トラックパッドの 2 本指と同じ出来事） |
+| `panelKeyFocusOff` / `panelKeyFocusOn` | 一覧がキーの焦点を取らない / 取る（既定は取る）。取らないと、出しても使っている人の打鍵を横取りせず、外の操作（ほかの窓のクリック）でも閉じない。E2E を人が Mac を使っている間に回すため |
 | `writeStatus` | 状態を `<データフォルダ>/debug-status.json` に書く（設定ファイルから読み直したときも自動で書く） |
 | `quit` | 終了する |
 
-`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`selectedSecret`・`revealing`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`revealed`・`selectedSecret`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・
+`debug-status.json` の鍵: `pid`・`accessibilityTrusted`・`keyMonitorActive`・`hotKeys`・`pasteboard`・`paused`・`itemCount`・`historyVisible`・`historyUI`（`query`・`rowCount`・`loadedCount`・`selectedIndex`・`selectedKind`・`selectedSecret`・`revealing`・`windowNumber`・`kindFilter`・`methodFilter`・`appFilter`・`pinnedOnly`・`previewOpen`・`pickerOpen`・`anchor`・`menuOpen`・`menuOpenCount`・`menuItems`（開いているカードのメニューの「操作 ID=文言(キー)」を `|` でつないだもの。区切りは `-`）・`menuLastRow`（直近にメニューを出したカードの番号。1 始まり）・`firstVisibleRow`（見えているいちばん上のカードの番号）・`panelKey`（一覧がいまキーの焦点を持っているか）・`takesKeyFocus`）・`candidate`（`active`・`tapActive`・`method`・`index`・`count`・`order`・`tentative`・`note`・`lastEnd`・`revealed`・`selectedSecret`・`candidateAnchor`・`candidateFirstRow`）・`pasteTargetOverride`・`lastPasteOutcome`（`pasted` / `noPermission` / `noTarget` / `copied`）・
 `lastHotKeyRoute`（直近に押した呼び出しキーの振り分け）・`openKeyRoute`（いま呼び出しキーを押したらどうなるか。押さずに `HotKeyRouter.route` で計算した値: `startCandidate` / `pasteLatest` / `openList` / `closeList` / `expandCandidate`）・
 `storeLimits`（`maxItems`・`maxTotalBytes`。ストアに当たっている上限）・`candidateHotKeyMode`（候補窓の流れが持っている呼び出しキーの動き）・
 `secrets`（`count` 秘密の件数・`knownFormat` 自動消去の対象の件数・`autoDeleted` 起動してから自動で消した件数・`retentionSeconds`・`nextSweepAt` 次に消す時刻。中身は出さない）・
@@ -95,6 +100,7 @@ AI の口の門の外（シェルを使えるエージェントなら、口が�
     var debugState: [String: String] { get }   // 既定は空
     func keymapDidChange(_ keymap: Keymap)        // 設定でキーが変わった（既定は何もしない）
     func snippetsDidChange()                      // 定型文が変わった（開いていれば読み直す。既定は何もしない）
+    func debugPerform(_ request: HistoryDebugRequest) // 検証用（.click(row:releaseInside:) / .rightClick(row:choose:hold:) / .scroll(row:) / .takesKeyFocus。既定は何もしない）
 }
 
 @MainActor public protocol HistoryActions: AnyObject {
@@ -176,6 +182,10 @@ public enum SnippetEditorUIFactory { @MainActor static func make(controller: Sni
 
 候補窓の範囲のキーは候補窓が出ている間だけ効くので、候補窓のキーどうしだけで重なりを見る（⌃⌘V が `open` と `candExpand` の両方にあるのはこのため）。
 候補窓の間に全体のキー（⌃⌘V・⌃⌥⌘V）が来たら、タップは素通しして Carbon のホットキーに任せ、`HotKeyRouter` が「広げる」に振り分ける。
+一覧のカードの右クリックのメニュー（#38）の項目は、`paste`・`pastePlain`・`copyOnly`・`pin`・`editSnippet`・`look`・`source`・`delete` の操作そのもので、
+選ぶとそのキーを押したのと同じ処理を通す（`HistoryPanelModel.performMenuAction`）。並びと出し分けは `CardMenuModel`（`Sources/MakuripCore/Menu/`。
+文字の有無・ページの有無・ピン留めの状態・秘密）、右に添えるキーはいまのキーマップの先頭の割り当てを `KeyCombo.menuKeyEquivalent` で NSMenu の表記にしたもの
+（↩・⌫・矢印・F キーも出せる。数字の範囲と修飾キーだけのキーは書けないので添えない）。カードのクリックで貼るのは `paste`（↩）と同じ処理。
 隠した内容の表示（⌥）は #5 で足した。定型文の一覧では `kindNext`・`kindPrev`・`method`・`app`・`pin`・`delete` は効かない（試作と同じ）。キーとして使える組み合わせの決まりは `KeyRules`（下の「設定」）。
 
 ## 候補窓（`Sources/MakuripCore/Candidate/`・#8）

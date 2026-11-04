@@ -23,8 +23,12 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
     private var peek: PeekPanel?
     let model: HistoryPanelModel
     private let loader: ClipContentLoader
+    /// カードの右クリックのメニュー（#38）
+    private let menus = CardMenus()
     private weak var actions: HistoryActions?
     private var keyMonitor: Any?
+    /// 出したときにキーの焦点を取るか（検証用。隔離した E2E だけが false にする）
+    private var takesKeyFocus = true
     /// 直近に出した位置の手がかりの種類（検証用。座標は出さない）
     private var lastAnchorKind = ""
 
@@ -46,7 +50,7 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
         panel.hasShadow = true
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
         panel.delegate = self
-        let host = NSHostingView(rootView: HistoryPanelView(model: model, loader: loader))
+        let host = NSHostingView(rootView: HistoryPanelView(model: model, loader: loader, menus: menus))
         host.frame = NSRect(origin: .zero, size: HistoryPanelView.size)
         panel.contentView = host
 
@@ -81,6 +85,11 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
         var state = model.debugState
         state["windowNumber"] = String(panel.windowNumber)
         state["anchor"] = lastAnchorKind
+        state.merge(menus.debugState) { _, new in new }
+        state["firstVisibleRow"] = firstVisibleRow().map { String($0 + 1) } ?? ""
+        state["menuLastRow"] = menus.lastRowID.flatMap(model.rowIndex(of:)).map { String($0 + 1) } ?? ""
+        state["panelKey"] = String(panel.isKeyWindow)
+        state["takesKeyFocus"] = String(takesKeyFocus)
         return state
     }
 
@@ -104,7 +113,11 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
         open(model)
         place(anchor: anchor)
         panel.alphaValue = 0
-        panel.makeKeyAndOrderFront(nil)
+        if takesKeyFocus {
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
         panel.invalidateShadow()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
@@ -134,6 +147,115 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
 
     func snippetsDidChange() {
         if panel.isVisible { model.reloadSnippets() }
+    }
+
+    // MARK: 検証用の操作（#38）
+
+    func debugPerform(_ request: HistoryDebugRequest) {
+        if case .takesKeyFocus(let takes) = request {
+            takesKeyFocus = takes
+            panel.allowsKey = takes
+            return
+        }
+        guard panel.isVisible else { return }
+        switch request {
+        case .click(let row, _), .rightClick(let row, _, _), .scroll(let row):
+            whenCardVisible(row: row, attempts: 5) { [weak self] in self?.performDebugMouse(request) }
+        case .takesKeyFocus:
+            break
+        }
+    }
+
+    /// カードの真ん中が見えていれば、すぐ `body` を呼ぶ。見えていなければ選んで見える位置まで送り、少し待って確かめ直す
+    private func whenCardVisible(row: Int, attempts: Int, _ body: @escaping @MainActor () -> Void) {
+        if cardView(row: row) != nil || attempts == 0 {
+            body()
+            return
+        }
+        model.select(row - 1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            MainActor.assumeIsolated { self?.whenCardVisible(row: row, attempts: attempts - 1, body) }
+        }
+    }
+
+    private func performDebugMouse(_ request: HistoryDebugRequest) {
+        switch request {
+        case .click(let row, let releaseInside):
+            guard let view = cardView(row: row) else { return }
+            let card = view.convert(view.bounds, to: nil)
+            let center = NSPoint(x: card.midX, y: card.midY)
+            // 外で離すときは、カードの下端よりさらに下（パネルの中の別の場所）で離す
+            let release = releaseInside ? center : NSPoint(x: card.midX, y: card.minY - 40)
+            panel.sendEvent(mouseEvent(.leftMouseDown, at: center))
+            panel.sendEvent(mouseEvent(.leftMouseUp, at: release))
+        case .rightClick(let row, let choose, let hold):
+            guard let view = cardView(row: row) else { return }
+            let card = view.convert(view.bounds, to: nil)
+            let event = mouseEvent(.rightMouseDown, at: NSPoint(x: card.midX, y: card.midY))
+            // メニューを開いている間は分散通知が届かないので、選ぶ・閉じるのはメニューの中でも回るタイマーで行う
+            let timer = Timer(timeInterval: hold, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if let choose { self.menus.choose(choose) } else { self.menus.dismiss() }
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            // メニューは閉じるまで戻らないので、遠隔操作の受け取りを先に終わらせてから出す
+            DispatchQueue.main.async { [panel] in panel.sendEvent(event) }
+        case .scroll(let row):
+            guard let view = cardView(row: row) else { return }
+            let card = view.convert(view.bounds, to: nil)
+            let point = panel.convertPoint(toScreen: NSPoint(x: card.midX, y: card.midY))
+            let height = NSScreen.screens.first?.frame.height ?? 0
+            guard
+                let cgEvent = CGEvent(
+                    scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -400, wheel2: 0, wheel3: 0)
+            else { return }
+            cgEvent.location = CGPoint(x: point.x, y: height - point.y)
+            // 窓の番号を入れておく（入れないと NSEvent の窓の中の位置が画面の座標のままになる）
+            cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(panel.windowNumber))
+            cgEvent.setIntegerValueField(
+                .mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(panel.windowNumber))
+            if let event = NSEvent(cgEvent: cgEvent) { panel.sendEvent(event) }
+        case .takesKeyFocus:
+            break
+        }
+    }
+
+    private func mouseEvent(_ type: NSEvent.EventType, at point: NSPoint) -> NSEvent {
+        NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+    }
+
+    /// 上から `row` 番目（1 始まり）のカードの上の NSView。真ん中が見えていなければ nil（押しても別のところに当たるため）
+    private func cardView(row: Int) -> CardMouseView? {
+        let ids = model.showsSnippets ? model.snippetItems.map(\.id) : model.items.map(\.id)
+        guard ids.indices.contains(row - 1) else { return nil }
+        let id = ids[row - 1]
+        return cardViews().first {
+            $0.rowID == id && !$0.isHiddenOrHasHiddenAncestor
+                && $0.visibleRect.contains(NSPoint(x: $0.bounds.midX, y: $0.bounds.midY))
+        }
+    }
+
+    private func cardViews() -> [CardMouseView] {
+        var found: [CardMouseView] = []
+        var stack: [NSView] = panel.contentView.map { [$0] } ?? []
+        while let view = stack.popLast() {
+            if let card = view as? CardMouseView { found.append(card) }
+            stack.append(contentsOf: view.subviews)
+        }
+        return found
+    }
+
+    /// 見えているいちばん上のカードの番号（0 始まり。スクロールの検証用）
+    private func firstVisibleRow() -> Int? {
+        guard panel.isVisible else { return nil }
+        let visible = Set(
+            cardViews().filter { !$0.visibleRect.isEmpty && !$0.isHiddenOrHasHiddenAncestor }.compactMap(\.rowID))
+        let ids = model.showsSnippets ? model.snippetItems.map(\.id) : model.items.map(\.id)
+        return ids.firstIndex { visible.contains($0) }
     }
 
     // ほかをクリックしてキーウィンドウでなくなったら閉じる（フォーカスは奪い返さない）
@@ -288,9 +410,10 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
     }
 }
 
-/// 枠なしでもキーウィンドウになれるパネル（検索欄に文字を打つため）
+/// 枠なしでもキーウィンドウになれるパネル（検索欄に文字を打つため）。`allowsKey` を false にするのは隔離した E2E だけ
 final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    var allowsKey = true
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
 }
 

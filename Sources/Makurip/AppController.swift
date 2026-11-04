@@ -416,7 +416,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
             debugControl?.writeStatus()
             return
         }
-        let target = pasteTargetOverride.flatMap(NSRunningApplication.init(processIdentifier:)) ?? previousApp
+        let target = pasteTarget
         Task { @MainActor in
             let outcome = await paster.paste(into: target)
             lastPasteOutcome = outcome.rawValue
@@ -455,6 +455,13 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
 
     func representationData(itemID: UUID, itemIndex: Int, type: String) -> Data? {
         try? store?.data(id: itemID, itemIndex: itemIndex, type: type)
+    }
+
+    /// 貼る宛先。検証で宛先を固定しているときはその pid だけにする（見つからなければどこにも貼らない。
+    /// 固定した宛先が消えたときに、ユーザーの前面のアプリ（`previousApp`）へ ⌘V が落ちないように）
+    private var pasteTarget: NSRunningApplication? {
+        if let pasteTargetOverride { return NSRunningApplication(processIdentifier: pasteTargetOverride) }
+        return previousApp
     }
 
     func historyDidClose() {
@@ -597,7 +604,7 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
             debugControl?.writeStatus()
             return
         }
-        let target = pasteTargetOverride.flatMap(NSRunningApplication.init(processIdentifier:)) ?? previousApp
+        let target = pasteTarget
         Task { @MainActor in
             // 貼る前の入力欄（一覧は前面を奪わないので、宛先のアプリの入力欄のまま）
             let before = target.flatMap { FocusedText.probe(pid: $0.processIdentifier) }

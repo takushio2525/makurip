@@ -146,6 +146,7 @@ Claude Code ──stdio（1 行 1 件の JSON-RPC）──> Makurip --mcp ─┐
 | `HistoryPanelView` / `CardView` / `PeekView` | 試作（`~/dev/makurip-design/ui/shared/panel-b.*`・`base.css`）の寸法と色を写した SwiftUI。文字の行の高さは `CSSText` で CSS の line-height を再現 |
 | `ClipContentLoader` | サムネイル・全文・ファイル・色・リッチテキストを、見えたカードと選んだ 1 件だけ読む。画像の縮小はメインスレッドの外。コードの言語・色付きのカード・プレビューの色付けの区間もここでキャッシュする |
 | `CodeStyler` / `CodeTextView` | コードとコマンドの色付け（フェーズ3）。カードと ⌘Y のコマンドは SwiftUI の Text（AttributedString）、⌘Y のコードは NSTextView（行番号は `LineNumberRuler`） |
+| `CardMouseArea` / `CardMouseView` / `CardMenus`（`CardMenu.swift`・#38） | カードの上に重ねた透明な NSView が、左クリック（押したカードの上で離したら `releaseRow` が貼る）と右クリック・⌃ クリック（`CardMenuModel` の並びを NSMenu に写す）を受ける。SwiftUI のタップでは離した位置と右クリックしたカードが取れないため。スクロールは受けずに外へ流す |
 
 ### コードの色付け（フェーズ3・#3）
 

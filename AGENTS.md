@@ -38,14 +38,14 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置（パネル・メニューバーの項目）・メニューバーのメニューの並び・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文・AI の口（MCP・--ai の CLI））。AppKit は NSPasteboard だけ使う
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置（パネル・メニューバーの項目）・メニューバーのメニューとカードの右クリックのメニューの並び・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文・AI の口（MCP・--ai の CLI））。AppKit は NSPasteboard だけ使う
 │   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー・定型文の一覧）と候補窓と設定画面（「AI の口」の行を含む）と定型文の窓。Core にだけ依存する
 │   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・起動引数・--settings・--mcp・--ai の入口）。Info.plist もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
 ├── Tests/MakuripDevToolTests/ ← 検証用 CLI のテストデータ（E2E の偽の秘密が判定の条件を必ず満たすこと）
-├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / secret-bench.sh（秘密の判定の見逃しと誤判定の計測）/ e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口）
+├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / secret-bench.sh（秘密の判定の見逃しと誤判定の計測）/ e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口、click.sh はカードのクリックと右クリックのメニュー）
 ├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）・ai-mcp.md（Claude Code への登録・道具・頼みと道具の対応・限界）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
 ├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
@@ -76,6 +76,7 @@ makurip/
 | 設定の CLI | `Makurip [--data-dir DIR] --settings list\|get\|set\|add\|remove\|reset\|schema [--json]`（`docs/ai-settings.md`） |
 | AI の口 | `Makurip [--data-dir DIR] --mcp`（MCP サーバー）・`Makurip [--data-dir DIR] --ai status\|add\|list\|delete-secrets\|delete\|snippet-add\|snippets\|snippet-delete\|log\|disable [--json]`（`docs/ai-mcp.md`） |
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
+| 隔離 E2E（カードのクリック・右クリックのメニュー） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-click`（一覧を tako-vd に出し、窓の中で作った出来事で押す。キーの焦点を取らない開き方で、使っている人の打鍵を横取りしない。画面ロック中・tako-vd が無ければ何もせず終了コード 3。`SHOTS=dir` でメニューを撮る） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
 | メタデータだけ書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata [--data-dir DIR]`（内容のハッシュは出さず、秘密の項目は大きさも伏せる） |
 | 秘密の判定の計測 | `scripts/secret-bench.sh`（乱数トークンの見逃しと、SDK・このリポジトリの文字列の誤判定の割合。判定を変える前と後で流して比べる。`.agent/conventions.md` の「計測」） |
