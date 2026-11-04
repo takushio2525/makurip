@@ -29,6 +29,8 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
     private var keyMonitor: Any?
     /// 出したときにキーの焦点を取るか（検証用。隔離した E2E だけが false にする）
     private var takesKeyFocus = true
+    /// 検証用のスクロールが当たったビューの型の名前（検証用）
+    private var lastScrollHit = ""
     /// 直近に出した位置の手がかりの種類（検証用。座標は出さない）
     private var lastAnchorKind = ""
 
@@ -87,6 +89,8 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
         state["anchor"] = lastAnchorKind
         state.merge(menus.debugState) { _, new in new }
         state["firstVisibleRow"] = firstVisibleRow().map { String($0 + 1) } ?? ""
+        state["listScrollY"] = listScrollY().map { String($0) } ?? ""
+        state["lastScrollHit"] = lastScrollHit
         state["menuLastRow"] = menus.lastRowID.flatMap(model.rowIndex(of:)).map { String($0 + 1) } ?? ""
         state["panelKey"] = String(panel.isKeyWindow)
         state["takesKeyFocus"] = String(takesKeyFocus)
@@ -203,20 +207,19 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
             // メニューは閉じるまで戻らないので、遠隔操作の受け取りを先に終わらせてから出す
             DispatchQueue.main.async { [panel] in panel.sendEvent(event) }
         case .scroll(let row):
-            guard let view = cardView(row: row) else { return }
+            guard let view = cardView(row: row), let content = panel.contentView else { return }
             let card = view.convert(view.bounds, to: nil)
-            let point = panel.convertPoint(toScreen: NSPoint(x: card.midX, y: card.midY))
-            let height = NSScreen.screens.first?.frame.height ?? 0
+            let center = NSPoint(x: card.midX, y: card.midY)
             guard
                 let cgEvent = CGEvent(
-                    scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -400, wheel2: 0, wheel3: 0)
+                    scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -400, wheel2: 0, wheel3: 0),
+                let event = NSEvent(cgEvent: cgEvent)
             else { return }
-            cgEvent.location = CGPoint(x: point.x, y: height - point.y)
-            // 窓の番号を入れておく（入れないと NSEvent の窓の中の位置が画面の座標のままになる）
-            cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(panel.windowNumber))
-            cgEvent.setIntegerValueField(
-                .mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(panel.windowNumber))
-            if let event = NSEvent(cgEvent: cgEvent) { panel.sendEvent(event) }
+            // 合成したスクロールは窓の中の位置が当てにならず、sendEvent では届かない。AppKit と同じく位置で当たるビューを探し、
+            // そこへ渡す（カードに重ねた NSView が受けて、一覧のスクロールまで流すかを確かめる）
+            let hit = content.hitTest(content.superview?.convert(center, from: nil) ?? center)
+            lastScrollHit = hit.map { String(describing: type(of: $0)) } ?? ""
+            hit?.scrollWheel(with: event)
         case .takesKeyFocus:
             break
         }
@@ -256,6 +259,12 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
             cardViews().filter { !$0.visibleRect.isEmpty && !$0.isHiddenOrHasHiddenAncestor }.compactMap(\.rowID))
         let ids = model.showsSnippets ? model.snippetItems.map(\.id) : model.items.map(\.id)
         return ids.firstIndex { visible.contains($0) }
+    }
+
+    /// カードの一覧のスクロールの位置（pt。スクロールの検証用。少ない件数では見えているいちばん上のカードが変わらないので位置で比べる）
+    private func listScrollY() -> Int? {
+        guard panel.isVisible, let scroll = cardViews().first?.enclosingScrollView else { return nil }
+        return Int(scroll.contentView.bounds.origin.y.rounded())
     }
 
     // ほかをクリックしてキーウィンドウでなくなったら閉じる（フォーカスは奪い返さない）

@@ -67,9 +67,10 @@ ui() {
     status_value ".historyUI.$1"
 }
 
-# 一覧での行の番号（1 始まり）。jq の条件に合う最初の項目（ダンプの並びは一覧と同じ新しい順）
+# 一覧での行の番号（1 始まり）。jq の条件（true / false を返す式）に合う最初の項目（ダンプの並びは一覧と同じ新しい順）。
+# 合う項目が無ければ 0（どのカードも押さない。null + 1 = 1 で 1 行目を押してしまわないように）
 row_where() {
-    dump | jq "[.items[] | ($1)] | index(true) + 1"
+    dump | jq "[.items[] | (($1) == true)] | (index(true) // -1) + 1"
 }
 
 # 名前付きペーストボードの型の名前を「,」でつないで（中身は出さない）
@@ -165,9 +166,14 @@ check "書き戻していない（ペーストボードはコマンドのまま�
 
 echo "== 3. スクロールでは貼らない"
 check "見えているいちばん上は 1 行目" "1" "$(ui firstVisibleRow)"
+SCROLL_BEFORE="$(ui listScrollY)"
 notify scrollCards --index 1
 sleep 0.6
-check "スクロールした（いちばん上のカードが下がった）" "[2-9]" "$(ui firstVisibleRow)"
+SCROLL_AFTER="$(ui listScrollY)"
+check "スクロールはカードに重ねた NSView に当たる" "CardMouseView" "$(ui lastScrollHit)"
+# 7 件では下まで送っても 1 行目の端が見えたままなので、見えているカードではなく一覧の位置で比べる
+check "スクロールした（一覧の位置が ${SCROLL_BEFORE} から動いた）" "true" \
+    "$([ -n "$SCROLL_AFTER" ] && [ "$SCROLL_AFTER" != "$SCROLL_BEFORE" ] && echo true || echo "false（${SCROLL_AFTER}）")"
 check "一覧は開いたまま" "true" "$(status_value .historyVisible)"
 check "書き戻していない" "git log --oneline -n *" "$(pb_text)"
 close_list
@@ -238,7 +244,7 @@ check "プレビュー中のメニューは「プレビューを閉じる」" "*
 check "プレビューが閉じた" "false" "$(ui previewOpen)"
 
 echo "== 10. 秘密のメニュー（定型文に登録は出ない）→ クリップボードにコピー（印を付ける・新しい履歴にしない）"
-ROW="$(row_where '.flags | index("secretLikely")')"
+ROW="$(row_where '.flags | any(. == "secretLikely")')"
 right_click "$ROW" copyOnly 1.6 menu-secret.png
 check "秘密のメニュー（定型文に登録なし）" \
     "paste=貼り付け(↩)|pastePlain=文字だけで貼り付け(⇧↩)|copyOnly=クリップボードにコピー(⌘↩)|-|pin=ピン留め(⌘P)|look=プレビュー(⌘Y)|-|delete=履歴から削除(⌘⌫)" \
@@ -315,3 +321,6 @@ notify panelKeyFocusOff
 echo "== 後片付けの前に"
 close_list
 check "最後まで前面のアプリは変わらない" "$USER_FRONT" "$("$DEVTOOL" frontmost)"
+
+# NG が 1 つでもあれば失敗で終える（結果の行は EXIT の trap が出す）
+[ "$FAIL" -eq 0 ]
