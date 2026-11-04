@@ -210,16 +210,19 @@ final class PanelController: NSObject, HistoryPresenting, NSWindowDelegate {
             guard let view = cardView(row: row), let content = panel.contentView else { return }
             let card = view.convert(view.bounds, to: nil)
             let center = NSPoint(x: card.midX, y: card.midY)
-            guard
-                let cgEvent = CGEvent(
-                    scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: -400, wheel2: 0, wheel3: 0),
-                let event = NSEvent(cgEvent: cgEvent)
-            else { return }
             // 合成したスクロールは窓の中の位置が当てにならず、sendEvent では届かない。AppKit と同じく位置で当たるビューを探し、
-            // そこへ渡す（カードに重ねた NSView が受けて、一覧のスクロールまで流すかを確かめる）
+            // そこへ渡す（カードに重ねた NSView が受けて、一覧のスクロールまで流すかを確かめる）。
+            // 合成した最初の 1 回は NSScrollView が動かないことがあるので、行単位で 3 回渡す（`CardScrollTests`）
             let hit = content.hitTest(content.superview?.convert(center, from: nil) ?? center)
             lastScrollHit = hit.map { String(describing: type(of: $0)) } ?? ""
-            hit?.scrollWheel(with: event)
+            for _ in 0..<3 {
+                guard
+                    let cgEvent = CGEvent(
+                        scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -5, wheel2: 0, wheel3: 0),
+                    let event = NSEvent(cgEvent: cgEvent)
+                else { return }
+                hit?.scrollWheel(with: event)
+            }
         case .takesKeyFocus:
             break
         }
