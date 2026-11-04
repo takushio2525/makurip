@@ -36,5 +36,5 @@ rm -rf "${DEST:?}"
 ditto "$BUILT" "$DEST"
 codesign --verify --strict "$DEST"
 echo "入れた: $DEST" >&2
-codesign -dv "$DEST" 2>&1 | grep -E "^(Identifier|Format|Authority|TeamIdentifier|Runtime|Signature)" | sed -E 's/(TeamIdentifier=).*/\1<非表示>/; s/(Authority=Apple Development: ).*/\1<非表示>/' >&2
+codesign -dv "$DEST" 2>&1 | grep -E "^(Identifier|Format|Authority|TeamIdentifier|Runtime|Signature)" | sed -E 's/(TeamIdentifier=).*/\1<非表示>/; s/(Authority=[^:]+: ).*/\1<非表示>/' >&2
 echo "$DEST"

@@ -49,11 +49,12 @@ struct SettingsModelTests {
         model.select(id)
     }
 
-    @Test("並び: 動き → 履歴 → 定型文 → アプリごと → 詳細 → キーのまとまり。画面に出さない項目は除く")
+    @Test("並び: 動き → 履歴 → 定型文 → アップデート → アプリごと → 詳細 → キーのまとまり。画面に出さない項目は除く")
     func sections() {
         #expect(
             model.sections.map(\.title) == [
-                "動き", "履歴", "定型文", "アプリごと", "詳細", "呼び出す", "選ぶ・貼る", "絞り込み", "項目の操作", "候補窓",
+                "動き", "履歴", "定型文", "アップデート", "アプリごと", "詳細", "呼び出す", "選ぶ・貼る", "絞り込み", "項目の操作",
+                "候補窓",
             ])
         #expect(model.rowIDs.first == SettingID.hotKeyMode)
         #expect(!model.rowIDs.contains(SettingID.replaceMethod))

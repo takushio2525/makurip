@@ -159,19 +159,22 @@ public struct SettingsEnvironment {
     public var recordingDidChange: @MainActor (Bool) -> Void
     /// AI の口（#6）。nil なら設定画面に出さない
     public var aiAccess: AIAccessEnvironment?
+    /// アップデート（#43）。nil なら設定画面に状態の行を出さない（自動の確認のオン・オフは設定の項目なので出る）
+    public var update: UpdateEnvironment?
 
     public init(
         appName: @escaping @MainActor (String) -> String? = { _ in nil },
         hotKeyRegistered: @escaping @MainActor (KeyAction) -> Bool? = { _ in nil },
         launchAtLoginNote: @escaping @MainActor () -> String? = { nil },
         recordingDidChange: @escaping @MainActor (Bool) -> Void = { _ in },
-        aiAccess: AIAccessEnvironment? = nil
+        aiAccess: AIAccessEnvironment? = nil, update: UpdateEnvironment? = nil
     ) {
         self.appName = appName
         self.hotKeyRegistered = hotKeyRegistered
         self.launchAtLoginNote = launchAtLoginNote
         self.recordingDidChange = recordingDidChange
         self.aiAccess = aiAccess
+        self.update = update
     }
 }
 

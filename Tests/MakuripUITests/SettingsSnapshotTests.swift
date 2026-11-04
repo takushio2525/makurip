@@ -29,6 +29,8 @@ struct SettingsSnapshotTests {
         var file: [String: JSONValue] = [:]
         /// AI の口（#6）の行を出す（nil なら出さない）。true ならオン
         var aiAccess: Bool?
+        /// アップデート（#43）の行を出す（nil なら出さない）
+        var update: UpdateStatus?
         let setUp: (SettingsModel) -> Void
     }
 
@@ -82,6 +84,14 @@ struct SettingsSnapshotTests {
             scroll($0, to: SettingsModel.aiAccessRowID)
             $0.setAIAccess(true)
         },
+        // アップデート（#43 で足した行。試作に無い）: 新しい版がある・入れ替えに失敗した
+        Scenario(name: "edge-settings-update-light", update: updateSample(phase: .idle)) {
+            scroll($0, to: SettingsModel.updateRowID)
+        },
+        Scenario(
+            name: "edge-settings-update-dark", dark: true,
+            update: updateSample(phase: .failed(UpdateFailure.checksumMismatch.message))
+        ) { scroll($0, to: SettingsModel.updateRowID) },
         // 変えた直後の知らせ（下の段）
         Scenario(name: "edge-settings-message") { $0.choose(SettingID.candidateOrder, "ime") },
         // 設定ファイルに読めない値があったときの注記（変えるとファイルを書き直すので、何も変えずに写す）
@@ -90,6 +100,17 @@ struct SettingsSnapshotTests {
             file: ["maxItems": .string("たくさん"), "keys.open": .array([.string("V")])]
         ) { _ in },
     ]
+
+    static func updateSample(phase: UpdateStatus.Phase) -> UpdateStatus {
+        let url = URL(string: "https://github.com/takushio2525/makurip/releases/download/v0.2.0/Makurip-0.2.0.zip")!
+        let release = UpdateRelease(
+            version: AppVersion(major: 0, minor: 2, patch: 0), tag: "v0.2.0", pageURL: nil, publishedAt: nil,
+            archive: ReleaseAsset(name: "Makurip-0.2.0.zip", url: url, size: nil, sha256: nil),
+            checksum: ReleaseAsset(name: "Makurip-0.2.0.zip.sha256", url: url, size: nil, sha256: nil))
+        return UpdateStatus(
+            currentVersion: "0.1.0", phase: phase, availability: .available(release),
+            lastCheckedAt: Date(timeIntervalSince1970: 1_793_419_380))
+    }
 
     static func recordMethod(_ model: SettingsModel) {
         scroll(model, to: SettingID.keys(.cycleMethod))
@@ -129,6 +150,9 @@ struct SettingsSnapshotTests {
                         AIAccessEnvironment.claudeRegisterCommand(
                             executablePath: "/Users/sample/Applications/Makurip.app/Contents/MacOS/Makurip")
                     })
+            }
+            if let update = scenario.update {
+                environment.update = UpdateEnvironment(status: { update }, check: {}, install: {}, skip: {})
             }
             let model = SettingsModel(controller: SettingsController(file: file), environment: environment)
             model.open()

@@ -15,6 +15,9 @@
 | `--settings <命令> ...` | 設定の CLI（下の「設定」）。後ろの引数は `--data-dir` を除いてすべて CLI に渡す。UI もロックも使わないので、動いているインスタンスがあっても使える |
 | `--mcp` | AI の口の MCP サーバー（標準入出力の JSON-RPC。下の「AI の口」）。UI もロックも使わない。標準入力が閉じたら終わる。`--pasteboard-name` を付けるとクリップボードに置く先もそれになる |
 | `--ai <命令> ...` | AI の口の CLI（MCP と同じ道具。下の「AI の口」）。後ろの引数は `--data-dir`・`--pasteboard-name` を除いてすべて CLI に渡す |
+| `--update <命令> ...` | アップデートの CLI（`status` / `check` / `apply`。下の「アップデート」）。後ろの引数は `--data-dir`・`--update-feed`・`--update-allow-unnotarized` を除いてすべて CLI に渡す。AI の口からは呼べない |
+| `--update-feed URL` | 版を問い合わせる先（Release の一覧の JSON。`file://`・`http(s)://`・パス）を差し替える。**`--data-dir` を指定したときだけ有効**（アプリはログに残して無視、CLI の `check`・`apply` は止める）。E2E 用 |
+| `--update-allow-unnotarized` | 公証のない版も入れる。**`--data-dir` と `--update-feed` がそろったときだけ有効**（署名・チーム・要件の確かめは外れない）。Developer ID がない間の E2E 用 |
 
 ~~`-hotkeyMode paste|candidate|list` ほか（候補窓の設定を UserDefaults の引数ドメインで起動のときだけ上書き）~~ は #4 でなくした。
 隔離したインスタンスの設定は、起動する前に `Makurip --data-dir DIR --settings set ...` で書く。
@@ -34,6 +37,9 @@
 | `simulateCopyShortcut` | ⌘C を見たときと同じ信号を入れる |
 | `setPasteTarget` | 貼り付けの宛先を pid で固定する（固定した pid のアプリが無ければどこにも貼らない。ユーザーの前面のアプリへは落とさない） |
 | `pause` / `resume` | 記録の一時停止 / 再開 |
+| `checkForUpdates` | アップデートを確かめる（メニューの「アップデートを確認…」と同じ。結果の窓は出さず、状態の `update` に書く。#43） |
+| `installUpdate` | 見つけた新しい版に入れ替えて起動し直す（メニューの「アップデートして再起動」と同じ。失敗の窓は出さない） |
+| `skipUpdate` | 見つけた新しい版を知らせないようにする（メニューの「この版は知らせない」と同じ） |
 | `pasteSnippet` | 定型文を貼る（一覧の ↩ と同じ処理）。`userInfo["index"]` は 1 からの番号、`["mode"]` は `normal` / `plainText` / `copyOnly`（既定 `normal`）。番号の外は何もしない |
 | `clearHistory` | 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る） |
 | `enableAIAccess` / `disableAIAccess` | AI の口をオン / オフにする（設定画面の切り替えと同じ。`--debug-control` は隔離したときだけ効くので、本物の履歴の口は開けられない） |
@@ -53,7 +59,8 @@
 `settings`（`hotkeyMode`・`candOrder`・`maxItems`・`maxTotalMB`・`keys.open`・`keys.openList`・`excludedApps` の値（JSON の文字列）と `reloadCount`・`issueCount`・`watching`）・`settingsVisible`・
 `snippets`（`count`・`reloadCount`・`issueCount`・`watching`・`editorVisible`・`dateFormat`・`lastPasteLength`（直近に書き戻した文字の長さ。UTF-16）・`lastCursorOffsetFromEnd`。中身は出さない。秘密の形の値を含んだときはどちらも `"hidden"`）・
 `ai`（`enabled` AI の口がオンか・`externalHistoryChanges` MCP・CLI が履歴を変えたと知らされた回数・`activityCount` AI の操作の記録の件数・`lastTool`・`lastOutcome`。#6）・
-`statusItem`（`autosaveName`・`visibility`（`visible` / `behindNotch` / `unknown`）・`seededPosition` 今回の起動で保存位置の種をまいたか。#35）・`writtenAt`。
+`statusItem`（`autosaveName`・`visibility`（`visible` / `behindNotch` / `unknown`）・`seededPosition` 今回の起動で保存位置の種をまいたか。#35）・
+`update`（`currentVersion`・`phase`（`idle` / `checking` / `installing:<段>` / `failed`）・`availability`（`upToDate` / `available` / `skipped`）・`latestVersion`・`skippedVersion`・`lastCheckedAt`・`lastError`・`autoCheck`・`timerActive`・`feedOverridden`・`notarizationRequired`・`installable`。版と結果だけで、署名の中身は出さない。#43）・`writtenAt`。
 `historyUI` には `showsSnippets`・`snippetCount` もある。
 
 `anchor` はパネルを出した手がかりの種類（`caret` 文字カーソル / `field` 入力欄の枠 / `mouse` マウス / `screen` 画面の指定）。座標は出さない。
@@ -258,6 +265,7 @@ public enum SnippetEditorUIFactory { @MainActor static func make(controller: Sni
 | `candIdleTimeout` | 数（詳細） | 10 | 2〜120 秒 |
 | `candReplaceMethod` | バンドル ID → 選択肢（詳細・画面に出さない） | なし | `selectRange` / `undo` / `deferred` |
 | `snippetDateFormat` | 選択肢 | `slash` | `slash`（2026/10/31）/ `hyphen`（2026-10-31）/ `japanese`（2026年10月31日）。定型文の `{{日付}}` |
+| `autoUpdateCheck` | オン・オフ | true | 起動したときと 1 日 1 回、GitHub の Release を確かめる（#43。知らせるだけで入れ替えない）。変えたらその場で時計を掛ける・止める（`SettingsApplying.applyAutoUpdateCheck`） |
 | `keys.<操作 ID>` | キーの並び | `KeyAction.defaultCombos` | `KeyRules` に通るもの。どこからでも効くキーは 1 つだけ。空の並びで未設定。`keys.reveal` は修飾キー 1 つだけ |
 
 ### CLI（`Makurip [--data-dir DIR] --settings ...`）
@@ -348,7 +356,7 @@ macOS は新しい状態の項目をいちばん左に置くので、ノッチ�
 | `StatusItemPlacement.autosaveName(isolated:)` | 保存名。本番は `MakuripStatusItem`、隔離したインスタンスは `MakuripStatusItemIsolated`。UserDefaults はバンドル ID ごとで `--data-dir` では分かれないので、名前を分けて本番の位置に触れない（隔離の検証を流すと、この鍵が 1 つだけ本番のドメインに残る） |
 | `StatusItemPlacement.positionToSeed(saved:)` | 保存位置が無ければ種の値、あれば nil |
 | `StatusItemPlacement.visibility(itemFrame:screenFrame:rightOfNotchWidth:)` | 項目の窓がノッチの右の領域（`auxiliaryTopRightArea` の幅を画面の右端から取る）に収まっているか。`visible` / `behindNotch` / `unknown`（ノッチのない画面）。遮蔽状態は画面ロック中に当てにならないので使わない。起動の 1 秒後にログ（「メニューバーの項目 visibility=…」）と `debug-status.json` の `statusItem` に出す |
-| `StatusMenuModel.entries(_:)` | メニューの並び。履歴の一覧を開く（`keys.openList`）・定型文の一覧を開く（`keys.snippets`。一覧を定型文の表示で開く）・定型文を編集…（`keys.editSnippet`）・設定…（`keys.settings`）／記録を一時停止（再開）・履歴を消去…／アクセシビリティを許可…（許可がないときだけ）・状態の行／終了（⌘Q）。右のキーはいまのキーマップから引き、1 文字で書けないキーはヒントにだけ出す |
+| `StatusMenuModel.entries(_:)` | メニューの並び。新しい版があれば先頭に知らせ（「新しい版 vX.Y.Z があります（今は vA.B.C）」・アップデートして再起動・この版は知らせない。#43）／履歴の一覧を開く（`keys.openList`）・定型文の一覧を開く（`keys.snippets`。一覧を定型文の表示で開く）・定型文を編集…（`keys.editSnippet`）・設定…（`keys.settings`）・アップデートを確認…（確かめている間は押せない）／記録を一時停止（再開）・履歴を消去…／アクセシビリティを許可…（許可がないときだけ）・状態の行／終了（⌘Q）。右のキーはいまのキーマップから引き、1 文字で書けないキーはヒントにだけ出す |
 
 アイコンが隠れていても画面へ行けるように、動いている Makurip をもう一度開く（Spotlight・Finder・`open`）と設定を開く（`applicationShouldHandleReopen`）。
 
@@ -423,6 +431,43 @@ AI がクリップボードにも置くときは `PasteboardMarkers.savedByMakur
 本体: `AppController.observeAIGateway`（知らせを受けて一覧の読み直し・秘密の自動消去の掛け直し）・`setAIAccess`・`mcpRegisterCommand`。
 設定画面: `SettingsEnvironment.aiAccess`（`AIAccessEnvironment`）→ `SettingsModel.aiAccessRowID` の行（`SettingsAIAccessRow`）。
 
+## アップデート（`Sources/MakuripCore/Update/`・#43）
+
+確かめと入れ替えの本体（`Updater`）は Core に置き、アプリ（`Sources/Makurip/UpdateController.swift`）と `--update` の CLI が同じものを使う。
+守ることと限界は `.agent/conventions.md` の「アップデート」、配布物の決まりは「版と配布」。
+
+| 型 | 役割 |
+|---|---|
+| `AppVersion` | 版（`X.Y.Z`・`vX.Y.Z`。数 3 つだけ）。比べられる。`tag` は `vX.Y.Z` |
+| `ReleaseFeed` | GitHub の `GET /repos/{owner}/{repo}/releases`（か `/releases/latest` の 1 件）の読み取り。draft・prerelease・tag の形が違うもの・添付（`Makurip-X.Y.Z.zip` と `.sha256`）がそろわないもの・アップロードの途中のものを除き、新しい版の順に `UpdateRelease` を返す |
+| `UpdateRelease` / `ReleaseAsset` | 入れられる Release（版・tag・ページ・zip・sha256 のファイル）/ 添付 1 つ（名前・URL・大きさ・GitHub の digest の sha256） |
+| `UpdateAvailability` | `upToDate` / `available(release)` / `skipped(release)`（「この版は知らせない」） |
+| `UpdateChecksum` | sha256 のファイルの 1 行（`<64 桁の 16 進>  Makurip-X.Y.Z.zip`）の読み取りと、ファイルの sha256 |
+| `UpdateSource` | 配信元。本番は GitHub（`production`）。差し替えは `resolve(override:isolated:)` で隔離したときだけ。`allowsDownload(from:)` は本番ならこのリポジトリの Release のダウンロードの場所だけ |
+| `UpdatePolicy` | 確かめの方針。本番はいつも公証まで（`production`）。公証だけを外せるのは隔離・差し替え・`--update-allow-unnotarized` がそろったとき |
+| `CodeSignature` / `CodeIdentity` | .app の署名の読み取り（Security.framework。バンドル ID・版・チーム ID・designated requirement・署名の可否・公証）と、要件を満たすかの確かめ |
+| `UpdateVerification.check` | 入れ替えてよいかの判断（純粋関数。署名 → バンドル ID → チーム → 要件 → 公証 → 版） |
+| `UpdateTransport` / `URLSessionUpdateTransport` | 問い合わせとダウンロード（GET だけ・ephemeral。`file://` は差し替えた配信元のときだけ届く） |
+| `Updater` | `fetchLatest`・`check(running:)`（結果を `update-state.json` に書く）・`install(_:replacing:running:progress:)`（落とす → sha256 → 展開 → 署名 → 置き換え。段は `Updater.Step`） |
+| `UpdateStateFile` / `UpdateState` | `<データフォルダ>/update-state.json`（`lastCheckedAt`・`latest`・`skippedVersion`・`lastError`）。設定ではない |
+| `UpdateStatus` / `UpdateEnvironment` | メニューと設定画面に出す状態と文言 / 設定画面の「アップデート」の行が本体に頼むこと（確認・入れ替え・知らせない） |
+| `UpdateCLI` | `--update` の本体 |
+| `UpdateInstalledSignal` | 分散通知 `com.takushio2525.makurip.updateInstalled`（object = データフォルダ）。`--update apply` が入れ替えたら送り、動いている Makurip がディスクの版を見て起動し直す |
+
+アプリ側: `UpdateController`（自動の確認の時計・手での確認・入れ替え・`open -n -g` で起動し直す sh・知らせの受け取り・結果の窓）、
+`LaunchOptions.relaunchArguments`（起動し直すときに渡す引数）、`BlockingTask`（CLI で async を待つ）。
+
+### CLI（`Makurip [--data-dir DIR] [--update-feed URL] --update status|check|apply [--json]`）
+
+| 命令 | 動き | `--json` の鍵 |
+|---|---|---|
+| `status` | 今の版・置き場所（置き換えられるか）・自動の確認・配信元・最後に確かめた結果（問い合わせない） | `currentVersion`・`appPath`・`installable`・`installBlockedReason`・`autoCheck`・`feed`（`github` / `overridden`）・`notarizationRequired`・`lastCheckedAt`・`latestVersion`・`available`・`skippedVersion`・`lastError` |
+| `check` | Release に新しい版があるかを確かめる（入れ替えない） | `result`（`upToDate` / `available` / `skipped`）・`currentVersion`・`latestVersion`・`available` |
+| `apply` | 新しい版があれば入れ替える（「この版は知らせない」でも入れる）。同じデータフォルダで Makurip が動いていれば `UpdateInstalledSignal` で起動し直してもらう | `result`（`installed` / `upToDate` / `failed`）・`version`・`previousVersion`・`relaunching`、失敗は `error`（`UpdateFailure.code`）・`message` |
+
+終了コード: 0 成功（新しい版がないときも）・1 使い方の誤り（`--data-dir` なしの `--update-feed` での `check`・`apply` を含む）・2 確かめに通らないので入れ替えなかった・3 通信やファイルの失敗。
+進み具合（「ダウンロード…」など）は標準エラーに 1 行ずつ。
+
 ## DB スキーマ（版 2・`PRAGMA user_version = 2`）
 
 ```sql
@@ -465,4 +510,4 @@ MCP・`--ai` の CLI のプロセスと動いているアプリは、同じ DB �
 
 `PRAGMA secure_delete = ON`（消した行をファイルの上でも 0 で上書きする）。秘密を消したあとは `wal_checkpoint(TRUNCATE)` で WAL を空にする。
 
-データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・`settings.json`（+ 壊れていたときの `settings.broken.json`）・`snippets.json`・`ai-activity.jsonl`（AI の操作の記録）・（検証時のみ）`debug-status.json`。
+データフォルダ: `history.sqlite`（+ `-wal` / `-shm`）・`blobs/<履歴ID>/<項目>-<順>.bin`・`instance.lock`・`settings.json`（+ 壊れていたときの `settings.broken.json`）・`snippets.json`・`ai-activity.jsonl`（AI の操作の記録）・`update-state.json`（最後に確かめた時刻・見つけた最新の Release・「この版は知らせない」の版。#43）・（検証時のみ）`debug-status.json`。

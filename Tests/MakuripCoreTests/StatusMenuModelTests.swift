@@ -27,9 +27,13 @@ struct StatusMenuModelTests {
     }
 
     @Test("許可がないときは、すべての操作が 1 回ずつ並ぶ（許可があれば許可の項目だけ出ない）")
-    func everyCommandOnce() {
+    func everyCommandOnce() throws {
         var state = base
         state.accessibilityTrusted = false
+        state.update = UpdateStatus(
+            currentVersion: "0.1.0",
+            availability: .available(
+                try #require(try ReleaseFeed.latest(in: FeedFixture.data([FeedFixture.release("0.2.0")])))))
         let commands = items(state).map(\.command)
         #expect(
             commands.sorted { $0.rawValue < $1.rawValue }
@@ -67,5 +71,86 @@ struct StatusMenuModelTests {
         for (a, b) in zip(entries, entries.dropFirst()) {
             #expect(!(a == .separator && b == .separator))
         }
+    }
+}
+
+/// メニューのアップデートの知らせ（#43）
+@Suite("メニューバーのメニュー: アップデート")
+struct StatusMenuUpdateTests {
+    static func release(_ version: String) throws -> UpdateRelease {
+        try #require(try ReleaseFeed.latest(in: FeedFixture.data([FeedFixture.release(version)])))
+    }
+
+    func state(_ update: UpdateStatus?) -> StatusMenuModel.State {
+        StatusMenuModel.State(
+            appName: "Makurip", paused: false, accessibilityTrusted: true, itemCount: 3, isolated: false, update: update
+        )
+    }
+
+    func items(_ update: UpdateStatus?) -> [StatusMenuModel.Item] {
+        StatusMenuModel.entries(state(update)).compactMap {
+            if case .item(let item) = $0 { item } else { nil }
+        }
+    }
+
+    @Test("新しい版があれば、先頭に知らせと「アップデートして再起動」「この版は知らせない」を出す")
+    func announcesAtTop() throws {
+        let update = UpdateStatus(currentVersion: "0.1.0", availability: .available(try Self.release("0.2.0")))
+        let entries = StatusMenuModel.entries(state(update))
+        #expect(entries.first == .info("新しい版 v0.2.0 があります（今は v0.1.0）"))
+        #expect(Array(items(update).prefix(2).map(\.command)) == [.installUpdate, .skipUpdate])
+        #expect(entries[3] == .separator)
+    }
+
+    @Test("最新・「この版は知らせない」にした版では、先頭に何も出さない")
+    func quietWhenNothingToAnnounce() throws {
+        for availability in [UpdateAvailability.upToDate, .skipped(try Self.release("0.2.0"))] {
+            let update = UpdateStatus(currentVersion: "0.1.0", availability: availability)
+            #expect(items(update).first?.command == .openList)
+            #expect(!items(update).contains { $0.command == .installUpdate || $0.command == .skipUpdate })
+        }
+    }
+
+    @Test("「アップデートを確認…」は設定の次。確かめている間・入れ替えている間は押せない")
+    func checkItem() throws {
+        let idle = items(UpdateStatus(currentVersion: "0.1.0"))
+        let index = try #require(idle.firstIndex { $0.command == .checkForUpdates })
+        #expect(idle[index - 1].command == .openSettings)
+        #expect(idle[index].title == "アップデートを確認…")
+        #expect(idle[index].enabled)
+
+        let checking = items(UpdateStatus(currentVersion: "0.1.0", phase: .checking))
+        #expect(checking.first { $0.command == .checkForUpdates }?.title == "アップデートを確かめています…")
+        #expect(checking.first { $0.command == .checkForUpdates }?.enabled == false)
+
+        let installing = UpdateStatus(
+            currentVersion: "0.1.0", phase: .installing(.download), availability: .available(try Self.release("0.2.0")))
+        #expect(StatusMenuModel.entries(state(installing)).first == .info("アップデートしています…（ダウンロード）"))
+        #expect(!items(installing).contains { $0.command == .installUpdate || $0.command == .skipUpdate })
+        #expect(items(installing).first { $0.command == .checkForUpdates }?.enabled == false)
+    }
+
+    @Test("失敗したら先頭に短く出し、もう一度入れ替える・知らせないを選べる")
+    func failed() throws {
+        let update = UpdateStatus(
+            currentVersion: "0.1.0", phase: .failed(UpdateFailure.checksumMismatch.message),
+            availability: .available(try Self.release("0.2.0")))
+        let entries = StatusMenuModel.entries(state(update))
+        #expect(entries.first == .info("アップデートできませんでした（今の版のままです。理由は設定画面）"))
+        #expect(Array(items(update).prefix(2).map(\.command)) == [.installUpdate, .skipUpdate])
+    }
+
+    @Test("置き換えられない場所では「アップデートして再起動」を出さず、理由の場所を示す")
+    func blocked() throws {
+        let update = UpdateStatus(
+            currentVersion: "0.1.0", availability: .available(try Self.release("0.2.0")),
+            blockedReason: UpdateFailure.translocated.message)
+        #expect(!items(update).contains { $0.command == .installUpdate })
+        #expect(StatusMenuModel.entries(state(update)).contains(.info("この場所からは入れ替えられません（理由は設定画面）")))
+    }
+
+    @Test("アップデートの状態を渡さなければ（古い呼び方）、アップデートの項目は出ない")
+    func absent() {
+        #expect(!items(nil).contains { $0.command == .checkForUpdates })
     }
 }

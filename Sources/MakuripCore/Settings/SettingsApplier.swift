@@ -17,6 +17,8 @@ public protocol SettingsApplying: AnyObject {
     func applyLaunchAtLogin(_ enabled: Bool)
     /// 秘密を自動で消すまでの秒数（短くしたら、時間を過ぎたものをその場で消す）
     func applySecretRetention(_ retention: TimeInterval)
+    /// アップデートを自動で確認するか（起動したときにも渡す。オンなら確かめて 1 日 1 回の時計を掛け、オフなら止める）
+    func applyAutoUpdateCheck(_ enabled: Bool)
 }
 
 /// 設定の変化を、変わった部分だけ反映先へ渡す
@@ -37,5 +39,6 @@ public enum SettingsApplier {
         if previous?.candidate != new.candidate { target.applyCandidateSettings(new.candidate) }
         if let previous, previous.launchAtLogin != new.launchAtLogin { target.applyLaunchAtLogin(new.launchAtLogin) }
         if previous?.secretRetention != new.secretRetention { target.applySecretRetention(new.secretRetention) }
+        if previous?.autoUpdateCheck != new.autoUpdateCheck { target.applyAutoUpdateCheck(new.autoUpdateCheck) }
     }
 }

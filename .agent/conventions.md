@@ -377,3 +377,54 @@ Base64 の画像（PNG・GIF・JPEG・PDF などの頭）や文章を符号化�
 - **大きさ**: 文字は 50 MB（型 1 つの上限）まで、画像のファイルも 50 MB まで、ファイルの参照は 100 個まで。MCP の要求 1 件は 128 MB まで（超えたら読まずに捨てて -32600）
 - **相手の名前**: `initialize` の `clientInfo.name` をそのまま（40 文字まで・制御文字を除く）コピー元アプリの名前と記録に使う。相手が名乗った名前なので、偽れる
 - **記録**: 500 件を超えたら古いものから捨てる。データフォルダがまだない（一度も起動していない）ときは書かない
+
+### アップデート（`Updater` / `UpdateController` / `UpdateCLI`・#43）
+
+**守ること**（変えるときは `UpdatePolicyTests`・`UpdateVerificationTests`・`UpdaterInstallTests`・`UpdateAIExclusionTests` と `make e2e-update` を通す）
+
+- 入れ替える前に、全部を確かめる: sha256（sha256 のファイルの 1 行と、Release の添付の digest があればそれとも）→ 展開した中にちょうど 1 つの .app →
+  署名が厳しい確かめに通る → 今の版と同じバンドル ID・同じチーム ID・**同じ designated requirement**（文字列が同じで、新しい版が今の版の要件を満たす）→
+  Apple の公証 → 中の .app の版が Release の版と同じで、今の版より新しい。どこかで外れたら置き換えず、理由（`UpdateFailure`）を返す
+- **署名の確かめを外す口を本番の経路に作らない**。外せるのは公証の確かめだけで、`--data-dir`・`--update-feed`・`--update-allow-unnotarized` の 3 つが
+  そろったときだけ（`UpdatePolicy.resolve`）。チーム・要件・署名・版の確かめは、どの方針でも外れない
+- 配信元の差し替え（`--update-feed`）は `--data-dir` で隔離したときだけ効く（`UpdateSource.resolve`）。隔離していないのに付けたら、
+  アプリはログに残して GitHub を見る。CLI の `check`・`apply` は止める（終了コード 1。本物の Makurip を置き換えうるため）
+- 本番の配信元は `https://api.github.com/repos/takushio2525/makurip/releases`。落とすのは、このリポジトリの Release のダウンロードの場所
+  （`https://github.com/takushio2525/makurip/releases/download/…`）だけ（`UpdateSource.allowsDownload`）。リダイレクト先（GitHub の配信の場所）は URLSession が追う
+- 外へ送るのは GET の問い合わせとダウンロードだけ。User-Agent は `Makurip/<版>`。クッキー・キャッシュ・認証は使わない（ephemeral）
+- **AI の口（MCP・`--ai`）に更新の道具を足さない**（`UpdateAIExclusionTests`）。設定の `autoUpdateCheck`（自動の確認のオン・オフ）だけは設定なので AI も変えられる
+- 状態の書き出し・CLI・ログ・誤りの文に、チーム ID・証明書の名前・designated requirement の中身を出さない（比べた結果だけ）
+- 検証では本番の .app を置き換えない。`.e2e/` の下に写した .app を `--data-dir` と file:// の配信元で入れ替える。本物の GitHub に試験用の Release を出さない
+
+**置き換えと起動し直し**
+
+- 作業場所は今の .app と同じボリューム（`itemReplacementDirectory`）。置き換えは `renamex_np` の `RENAME_SWAP` で一度に入れ替え、どの瞬間にも置き場所に .app がある
+  （使えなければ、今の版を脇へ動かしてから置き、置けなければ戻す）。古い版は作業場所ごと消す
+- 起動し直しは、自分が終わるのを待つ小さな sh を残して終了し、sh が `open -n -g` で同じ場所の .app を開く。隔離したインスタンスは
+  同じ起動引数（`--data-dir`・`--debug-control`・`--update-feed` など。`LaunchOptions.relaunchArguments`）で起き直す
+- `--update apply`（別のプロセス）が入れ替えたら、分散通知 `UpdateInstalledSignal` で動いている Makurip に知らせる。受けた側は、
+  ディスクの .app の版が動いている版と違うときだけ起動し直す（誰が送っても、入れ替わっていなければ何もしない）
+- 入れ替えたら `LSRegisterURL` で Launch Services に知らせる
+
+**限界**
+
+- 公証は **staple した票**で確かめる（`notarized` の要件。Apple への問い合わせはしない）。staple していない版は、公証済みでも「公証を通っていない」で断る。
+  配る zip は必ず staple する（`scripts/release.sh` が `stapler validate` で確かめる）
+- Apple Development で署名した版（自分でビルドした版・#41 より前の本番）から Developer ID の版へは、要件が違うので入れ替えない。最初の 1 回は Release の zip から手で入れ、
+  アクセシビリティを許可し直す
+- 「アプリケーション」フォルダに移さずに開いた版（App Translocation）・書けない場所の版・`.app` の外で動いている版（`swift run`）は置き換えない（理由を出す）
+- 自動の確認は起動の 5 秒後と、それから 24 時間ごと（時計のずれは 1 時間まで許す。スリープ中に時間が来たら起きてから）。通信できなければ、前に見つけた版は覚えたまま理由を出す
+- GitHub の API は認証なしで 1 時間に 60 回まで（同じ IP の合計）。超えたら「問い合わせの回数の上限」と出て、次の確認で戻る
+- 「この版は知らせない」は、その版だけ（さらに新しい版が出たら知らせる）。手での確認・`--update apply` は知らせない版でも入れられる
+- 置き換えの途中で電源が落ちたときは、置き場所に古い版か新しい版のどちらかが残る（swap なので壊れた .app は残らない）。作業場所は OS が後で消す
+- 配る .app は Apple シリコン（arm64）だけ（`swift build` の既定）。Intel の Mac 向けのユニバーサルは作っていない
+
+### 版と配布（`scripts/release.sh`・`scripts/bump-version.sh`・#41）
+
+- 版は `Sources/Makurip/Info.plist` の `CFBundleShortVersionString`（`X.Y.Z`）が正本。機能を足したら Y、直しだけなら Z を上げる（1.0.0 までは X は 0）。
+  `CFBundleVersion` は整数のビルド番号で、版を上げるたびに 1 つ上げる（`scripts/bump-version.sh X.Y.Z`）
+- 版の文字列は数 3 つだけ（`AppVersion`）。prerelease は版の後ろ書きではなく、GitHub の Release の印で区別する（アプリは prerelease と draft を見ない）
+- tag は annotated の `vX.Y.Z`（`scripts/release.sh` が main の push 済みの版から打つ）。Release の添付は `Makurip-X.Y.Z.zip`（公証して staple した .app を
+  `ditto -c -k --keepParent` で固めたもの）と `Makurip-X.Y.Z.zip.sha256`（`shasum -a 256` の 1 行）の 2 つ。名前と形は `ReleaseFeed` と同じ決まりで、変えるなら両方を同時に直す
+- 公証に出すものは、Developer ID Application の証明書・Hardened Runtime・Apple の時刻印で署名する。Release のノートは `--generate-notes`（PR の題名と番号）
+- チーム ID・証明書の名前・Apple ID は `Config/signing.local.env`（git 管理外）と鍵束にだけ置く。スクリプトの出力にも出さない

@@ -64,6 +64,8 @@ struct SettingsView: View {
                             ForEach(section.itemIDs, id: \.self) { id in
                                 if id == SettingsModel.aiAccessRowID {
                                     SettingsAIAccessRow(model: model).id(id)
+                                } else if id == SettingsModel.updateRowID {
+                                    SettingsUpdateRow(model: model).id(id)
                                 } else {
                                     SettingsRow(model: model, id: id).id(id)
                                 }
@@ -216,7 +218,7 @@ struct SettingsRow: View {
                         .foregroundStyle(palette.accentInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            case .toggle:
+            case .toggle where id == SettingID.launchAtLogin:
                 if let note = model.environment.launchAtLoginNote(), model.environmentRevision >= 0 {
                     Text(note).css(SettingsCSS.detail).foregroundStyle(colors.warning)
                 }
@@ -360,6 +362,66 @@ struct SettingsAIAccessRow: View {
             }
         let who = entry.client.map { "\($0)・" } ?? ""
         return "\(formatter.string(from: entry.at))　\(who)\(entry.tool)\(outcome)　\(entry.summary)"
+    }
+}
+
+/// アップデートの行（#43。試作に無い）。ほかの行と同じ形（左に名前と説明）に、状態の 1 行とボタンを足した。
+/// 入れ替える前に、sha256・署名（同じチーム・同じ要件）・公証を確かめる
+struct SettingsUpdateRow: View {
+    @Bindable var model: SettingsModel
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
+    static let label = "アップデート"
+
+    static func summary(_ status: UpdateStatus) -> String {
+        "今の版は v\(status.currentVersion) です。新しい版は GitHub の Release から入れます。入れ替える前に、sha256・署名・Apple の公証を確かめ、終わったら起動し直します（アクセシビリティの許可はそのまま）。"
+    }
+
+    var body: some View {
+        let id = SettingsModel.updateRowID
+        let selected = model.selectedID == id
+        let colors = SettingsPalette.of(scheme)
+        VStack(alignment: .leading, spacing: 1) {
+            Text(Self.label).css(SettingsCSS.label).foregroundStyle(palette.text)
+            if let status = model.updateStatus {
+                Text(Self.summary(status))
+                    .css(SettingsCSS.detail)
+                    .foregroundStyle(palette.text2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("いま：\(status.summary)")
+                    .css(SettingsCSS.detail)
+                    .foregroundStyle(status.summaryIsWarning ? colors.warning : palette.accentInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let blocked = status.blockedReason, status.announced != nil {
+                    Text(blocked)
+                        .css(SettingsCSS.detail)
+                        .foregroundStyle(colors.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 8) {
+                    if status.offersInstall {
+                        SettingsSmallButton(title: "アップデートして再起動") { model.installUpdate() }
+                    }
+                    if status.announced != nil, !status.isBusy {
+                        SettingsSmallButton(title: "この版は知らせない") { model.skipUpdate() }
+                    }
+                    if !status.isBusy {
+                        SettingsSmallButton(title: "今すぐ確認") { model.checkForUpdates() }
+                    }
+                }
+                .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 46)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(selected ? palette.accentSoft : .clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { model.select(id) }
     }
 }
 

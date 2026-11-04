@@ -92,7 +92,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let state = StatusMenuModel.State(
             appName: AppIdentity.displayName, paused: controller.isPaused,
             accessibilityTrusted: controller.isAccessibilityTrusted, itemCount: controller.itemCount,
-            isolated: controller.isolated)
+            isolated: controller.isolated, update: controller.updates?.status)
         for entry in StatusMenuModel.entries(state) {
             switch entry {
             case .separator:
@@ -105,6 +105,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                 let item = NSMenuItem(title: model.title, action: #selector(performCommand(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = model.command.rawValue
+                item.isEnabled = model.enabled
                 if let action = model.key {
                     Self.setKeyEquivalent(item, controller.keymap.primary(action))
                 }
@@ -145,6 +146,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             refreshIcon()
         case .clearHistory: confirmClearHistory()
         case .requestAccessibility: controller.requestAccessibility()
+        case .installUpdate: controller.updates?.install(presentFailure: true)
+        case .skipUpdate: controller.updates?.skip()
+        case .checkForUpdates: controller.updates?.check(presentResult: true)
         case .quit: NSApp.terminate(nil)
         }
     }

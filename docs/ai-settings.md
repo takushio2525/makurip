@@ -83,6 +83,8 @@ $MAKURIP --settings list
 | 隠した内容は ⌘ を押している間に見せて | `keys.reveal`（隠した内容を表示） | `⌘`（修飾キー 1 つ） | `set keys.reveal ⌘` |
 | 定型文の日付をハイフン区切りにして | `snippetDateFormat`（日付の書き方） | `hyphen`（2026-10-31） | `set snippetDateFormat hyphen` |
 | 日付は「2026年10月31日」のように | `snippetDateFormat` | `japanese` | `set snippetDateFormat japanese` |
+| アップデートの確認はしないで | `autoUpdateCheck`（アップデートを自動で確認） | `false` | `set autoUpdateCheck false` |
+| 新しい版が出たら教えて | `autoUpdateCheck` | `true`（既定） | `set autoUpdateCheck true` |
 | 定型文を開くキーを ⌘J にして | `keys.snippets`（定型文を表示） | `⌘J` | `set keys.snippets ⌘J` |
 
 補足:
@@ -166,7 +168,9 @@ $ Makurip --settings add candPasteTiming Slack=onCommit
 | `candIdleTimeout` | 候補窓を自動で閉じるまで（詳細） | 数 2〜120（秒） | 10 |
 | `candReplaceMethod` | 差し替え方式の決め打ち（詳細・画面には出さない） | バンドル ID → `selectRange` / `undo` / `deferred` | なし |
 | `snippetDateFormat` | 日付の書き方（定型文の `{{日付}}`） | `slash`（2026/10/31）/ `hyphen`（2026-10-31）/ `japanese`（2026年10月31日） | `slash` |
+| `autoUpdateCheck` | アップデートを自動で確認（起動したときと 1 日 1 回。知らせるだけで、勝手には入れ替えない） | true / false | true |
 | `keys.<操作 ID>` | 各操作のキー（27 個。秘密の `keys.reveal`、定型文の `keys.snippets`・`keys.editSnippet` を含む） | キーの並び | 試作どおり |
 
 設定にしないもの: パスワード等の印（ConcealedType）が付いたコピーを保存しない動き（プライバシーを守る振る舞いは、
 AI や他のアプリが設定ファイルを書き換えても弱められないようにしてある）・監視の間隔などの内部の定数。
+アップデートを入れること・確かめること（`Makurip --update`）は設定ではなく、AI の口（MCP・`--ai`）からはできない。頼まれたら、ユーザーにメニューの「アップデートを確認…」を使ってもらう。
