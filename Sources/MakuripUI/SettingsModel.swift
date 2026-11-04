@@ -63,8 +63,10 @@ final class SettingsModel {
         issues = controller.issues
         var sections: [Section] = []
         for group in SettingsSchema.behaviorGroups {
-            let ids = SettingsSchema.items.filter { $0.section == .behavior && $0.group == group && $0.shownInWindow }
+            var ids = SettingsSchema.items.filter { $0.section == .behavior && $0.group == group && $0.shownInWindow }
                 .map(\.id)
+            // アップデートの状態とボタン（#43。設定の項目ではない画面だけの行）を、自動の確認のオン・オフの前に置く
+            if group == Self.updateGroup, environment.update != nil { ids.insert(Self.updateRowID, at: 0) }
             if !ids.isEmpty { sections.append(Section(id: group, title: group, note: nil, itemIDs: ids)) }
         }
         // AI の口（#6）。設定のスキーマには載せない（AI・CLI から変えられないように）ので、画面だけの行
@@ -99,6 +101,7 @@ final class SettingsModel {
     func environmentDidChange() {
         environmentRevision += 1
         refreshAIAccess()
+        refreshUpdate()
     }
 
     // MARK: AI の口（#6。設定のスキーマの外。オンにできるのはこの画面だけ）
@@ -136,6 +139,42 @@ final class SettingsModel {
         message = "登録のコマンドをコピーしました。ターミナルに貼って実行すると、Claude Code から使えるようになります。"
     }
 
+    // MARK: アップデート（#43。状態とボタンは画面だけの行。自動の確認のオン・オフは設定の項目）
+
+    static let updateGroup = "アップデート"
+    /// アップデートの行の ID（設定項目の ID ではない）
+    static let updateRowID = "ui.update"
+
+    private(set) var updateStatus: UpdateStatus?
+
+    func refreshUpdate() {
+        updateStatus = environment.update?.status()
+    }
+
+    func checkForUpdates() {
+        guard let update = environment.update else { return }
+        select(Self.updateRowID)
+        update.check()
+        refreshUpdate()
+        message = nil
+    }
+
+    func installUpdate() {
+        guard let update = environment.update, updateStatus?.offersInstall == true else { return }
+        select(Self.updateRowID)
+        update.install()
+        refreshUpdate()
+        message = "アップデートしています。確かめて入れ替えたら、Makurip を起動し直します。"
+    }
+
+    func skipUpdate() {
+        guard let update = environment.update, let release = updateStatus?.announced else { return }
+        select(Self.updateRowID)
+        update.skip()
+        refreshUpdate()
+        message = "v\(release.version) は知らせないようにしました。もっと新しい版が出たら知らせます。"
+    }
+
     // MARK: 開く・選ぶ
 
     /// 開くたびに先頭を選び、記録と入力を止める（試作と同じ）
@@ -147,6 +186,7 @@ final class SettingsModel {
         settings = controller.settings
         issues = controller.issues
         refreshAIAccess()
+        refreshUpdate()
         scrollRequest += 1
     }
 
@@ -202,6 +242,9 @@ final class SettingsModel {
     /// ↩: 選択肢は次へ、数は打ち込み、アプリは足す、キーは記録
     func activateSelected() {
         if selectedID == Self.aiAccessRowID { return setAIAccess(!aiAccessEnabled) }
+        if selectedID == Self.updateRowID {
+            return updateStatus?.offersInstall == true ? installUpdate() : checkForUpdates()
+        }
         guard let id = selectedID, let item = item(id) else { return }
         switch item.kind {
         case .choice, .toggle: step(by: 1)
@@ -221,7 +264,7 @@ final class SettingsModel {
             let index = choices.firstIndex { $0.value == current } ?? 0
             choose(id, choices[(index + delta + choices.count) % choices.count].value)
         case .toggle:
-            choose(id, settings.launchAtLogin ? "false" : "true")
+            choose(id, SettingsSchema.value(id, in: settings)?.boolValue == true ? "false" : "true")
         case .integer(let min, let max, let step, _):
             let current = SettingsSchema.value(id, in: settings)?.intValue ?? min
             // 段の倍数にそろえる（1000 → 1100、950 → 1000）

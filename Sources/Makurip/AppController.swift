@@ -41,6 +41,8 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
     private var environmentObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private var statusMenu: StatusMenuController?
     private var debugControl: DebugControl?
+    /// アプリ内アップデート（#43。GitHub の Release を見て、置き換えと起動し直しまで）
+    private(set) var updates: UpdateController?
 
     /// 秘密（確度の高いもの）を自動で消すまでの秒数（設定の secretAutoDeleteMinutes）と、次に消す時刻のタイマー
     private var secretRetention = AppSettings.default.secretRetention
@@ -139,6 +141,12 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         candidate.onEvent = { event in Self.log(event) }
         self.candidate = candidate
         observeEnvironment()
+        let updates = UpdateController(options: options, dataDirectory: dataDirectory, isolated: isolated)
+        updates.onChange = { [weak self] in
+            self?.settingsWindow?.environmentDidChange()
+            self?.debugControl?.writeStatus()
+        }
+        self.updates = updates
         statusMenu = StatusMenuController(controller: self)
 
         detector.start()
@@ -488,7 +496,8 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
                         setEnabled: { [weak self] enabled in self?.setAIAccess(enabled) ?? false },
                         recentActivity: { [weak self] limit in self?.aiActivity.recent(limit: limit) ?? [] },
                         registerCommand: { [weak self] in self?.mcpRegisterCommand ?? "" },
-                        copyRegisterCommand: { [weak self] in self?.copyMCPRegisterCommand() })))
+                        copyRegisterCommand: { [weak self] in self?.copyMCPRegisterCommand() }),
+                    update: updates?.settingsEnvironment))
         }
         settingsWindow?.show()
     }
@@ -732,6 +741,10 @@ final class AppController: NSObject, NSApplicationDelegate, HistoryActions, Sett
         Log.capture.info("秘密を自動で消すまで seconds=\(Int(retention))")
         // 短くしたら、時間を過ぎたものをその場で消す
         scheduleSecretSweep()
+    }
+
+    func applyAutoUpdateCheck(_ enabled: Bool) {
+        updates?.setAutoCheck(enabled)
     }
 
     func applyLaunchAtLogin(_ enabled: Bool) {

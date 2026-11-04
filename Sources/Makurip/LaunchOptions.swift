@@ -19,6 +19,17 @@ struct LaunchOptions {
     var mcp = false
     /// `--ai <命令> ...`（AI の口の CLI。後ろの引数は `--data-dir`・`--pasteboard-name` を除いてすべて CLI に渡す）
     var aiArguments: [String]?
+    /// `--update <命令> ...`（アップデートの CLI。status / check / apply）
+    var updateArguments: [String]?
+    /// `--update-feed URL`（版を問い合わせる先の差し替え。`--data-dir` を指定したときだけ有効。検証用）
+    var updateFeed: String?
+    /// `--update-allow-unnotarized`（公証のない版も入れる。`--data-dir` と `--update-feed` がそろったときだけ有効。検証用）
+    var allowUnnotarizedUpdate = false
+    /// `-MakuripPanelScreen NAME`（UserDefaults の引数ドメインで読む。起動し直すときに渡し直すためだけに控える）
+    var panelScreen: String?
+
+    /// どれかの CLI の後ろか（後ろの引数はその CLI に渡す）
+    private var inCLI: Bool { settingsArguments != nil || aiArguments != nil || updateArguments != nil }
 
     static func parse(_ arguments: [String]) -> LaunchOptions {
         var options = LaunchOptions()
@@ -29,19 +40,39 @@ struct LaunchOptions {
             case "--pasteboard-name": options.pasteboardName = iterator.next()
             case "--dump-metadata": options.dumpMetadata = true
             case "--debug-control": options.debugControl = true
-            case "--settings" where options.aiArguments == nil:
+            case "--update-feed": options.updateFeed = iterator.next()
+            case "--update-allow-unnotarized": options.allowUnnotarizedUpdate = true
+            case "-MakuripPanelScreen" where !options.inCLI: options.panelScreen = iterator.next()
+            case "--settings" where options.aiArguments == nil && options.updateArguments == nil:
                 options.settingsArguments = options.settingsArguments ?? []
-            case "--mcp" where options.settingsArguments == nil && options.aiArguments == nil: options.mcp = true
-            case "--ai" where options.settingsArguments == nil: options.aiArguments = options.aiArguments ?? []
+            case "--mcp" where !options.inCLI: options.mcp = true
+            case "--ai" where options.settingsArguments == nil && options.updateArguments == nil:
+                options.aiArguments = options.aiArguments ?? []
+            case "--update" where options.settingsArguments == nil && options.aiArguments == nil:
+                options.updateArguments = options.updateArguments ?? []
             default:
-                // --settings・--ai の後ろは CLI の引数（--json などもそのまま渡す）
+                // --settings・--ai・--update の後ろは CLI の引数（--json などもそのまま渡す）
                 if options.settingsArguments != nil {
                     options.settingsArguments?.append(argument)
                 } else if options.aiArguments != nil {
                     options.aiArguments?.append(argument)
+                } else if options.updateArguments != nil {
+                    options.updateArguments?.append(argument)
                 }
             }
         }
         return options
+    }
+
+    /// アップデートの後に起動し直すとき渡す引数（隔離したインスタンスは、同じデータフォルダ・配信元・検証の口で起き直す）
+    var relaunchArguments: [String] {
+        var arguments: [String] = []
+        if let dataDirectory { arguments += ["--data-dir", dataDirectory] }
+        if let pasteboardName { arguments += ["--pasteboard-name", pasteboardName] }
+        if debugControl { arguments.append("--debug-control") }
+        if let updateFeed { arguments += ["--update-feed", updateFeed] }
+        if allowUnnotarizedUpdate { arguments.append("--update-allow-unnotarized") }
+        if let panelScreen { arguments += ["-MakuripPanelScreen", panelScreen] }
+        return arguments
     }
 }

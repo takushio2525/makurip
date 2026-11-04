@@ -136,6 +136,7 @@ public enum SettingID {
     public static let idleTimeout = CandidateSettings.Key.idleTimeout
     public static let replaceMethod = CandidateSettings.Key.replaceMethod
     public static let snippetDateFormat = "snippetDateFormat"
+    public static let autoUpdateCheck = "autoUpdateCheck"
     public static let keyPrefix = "keys."
 
     public static func keys(_ action: KeyAction) -> String { keyPrefix + action.rawValue }
@@ -175,7 +176,7 @@ public struct SettingChange: Sendable {
 
 /// 設定項目の一覧（スキーマ）と、値の読み書き・検証。**検証はここの 1 か所だけ**で行い、画面・CLI・ファイルの読み込みが同じ関数を通す
 public enum SettingsSchema {
-    public static let behaviorGroups = ["動き", "履歴", "定型文", "アプリごと", "詳細"]
+    public static let behaviorGroups = ["動き", "履歴", "定型文", "アップデート", "アプリごと", "詳細"]
 
     public static let items: [SettingItem] = behaviorItems + KeyAction.allCases.map(keyItem)
 
@@ -254,6 +255,15 @@ public enum SettingsSchema {
                 .init("日付は「2026年10月31日」のように", .string("japanese")),
             ]),
         SettingItem(
+            id: SettingID.autoUpdateCheck, group: "アップデート", label: "アップデートを自動で確認",
+            summary:
+                "起動したときと 1 日 1 回、GitHub の Release に新しい版があるかを確かめる。新しい版があれば、メニューバーのメニューの先頭と設定画面で知らせる（勝手には入れ替えない。入れ替えるのはメニューか設定画面の「アップデートして再起動」）。送るのは版の問い合わせだけで、履歴・設定・使い方の情報は送らない。オフにしても、メニューの「アップデートを確認…」でいつでも確かめられる。",
+            kind: .toggle,
+            examples: [
+                .init("アップデートの確認はしないで", .bool(false)),
+                .init("新しい版が出たら教えて", .bool(true), note: "既定でオン"),
+            ]),
+        SettingItem(
             id: SettingID.pasteTiming, group: "アプリごと", label: "確定まで貼らないアプリ",
             summary:
                 "候補窓を出したとき、すぐ仮に貼るか、確定（Tab・Enter）するまで貼らないかをアプリごとに決める。ターミナルとチャット（Slack・Discord・LINE・メッセージなど）は、何も書かなくても確定まで貼らない。ここに書いたものはその既定より優先する。",
@@ -327,6 +337,7 @@ public enum SettingsSchema {
         case SettingID.idleTimeout: return .number(settings.idleTimeout)
         case SettingID.replaceMethod: return .object(settings.replaceMethod.mapValues { .string($0.rawValue) })
         case SettingID.snippetDateFormat: return .string(settings.snippetDateFormat.rawValue)
+        case SettingID.autoUpdateCheck: return .bool(settings.autoUpdateCheck)
         default: return nil
         }
     }
@@ -361,6 +372,7 @@ public enum SettingsSchema {
         case SettingID.replaceMethod: settings.replaceMethod = map.compactMapValues(ReplaceMethod.init)
         case SettingID.snippetDateFormat:
             settings.snippetDateFormat = value.stringValue.flatMap(SnippetDateFormat.init) ?? .default
+        case SettingID.autoUpdateCheck: settings.autoUpdateCheck = value.boolValue ?? true
         default: break
         }
     }

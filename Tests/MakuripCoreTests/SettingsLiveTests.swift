@@ -16,6 +16,7 @@ final class FakeSettingsTarget: SettingsApplying {
     var candidate: CandidateSettings?
     var launchAtLogin: Bool?
     var secretRetention: TimeInterval?
+    var autoUpdateCheck: Bool?
 
     func applyLimits(_ limits: Limits) {
         calls.append("limits")
@@ -45,6 +46,10 @@ final class FakeSettingsTarget: SettingsApplying {
     func applySecretRetention(_ retention: TimeInterval) {
         calls.append("secretRetention")
         secretRetention = retention
+    }
+    func applyAutoUpdateCheck(_ enabled: Bool) {
+        calls.append("autoUpdateCheck")
+        autoUpdateCheck = enabled
     }
 }
 
@@ -151,7 +156,11 @@ struct SettingsLiveTests {
     func applierCallsOnlyChangedParts() {
         let target = FakeSettingsTarget()
         SettingsApplier.apply(.default, previous: nil, to: target)
-        #expect(target.calls == ["limits", "excluded", "globalKeys", "keymap", "candidate", "secretRetention"])
+        #expect(
+            target.calls == [
+                "limits", "excluded", "globalKeys", "keymap", "candidate", "secretRetention", "autoUpdateCheck",
+            ])
+        #expect(target.autoUpdateCheck == true)
         #expect(target.globalKeys?.open == .defaultOpenHistory)
         #expect(target.globalKeys?.openList == .defaultOpenList)
 
@@ -170,6 +179,8 @@ struct SettingsLiveTests {
         #expect(change { $0.launchAtLogin = true } == ["launchAtLogin"])
         #expect(change { $0.secretAutoDeleteMinutes = 60 } == ["secretRetention"])
         #expect(target.secretRetention == 3600)
+        #expect(change { $0.autoUpdateCheck = false } == ["autoUpdateCheck"])
+        #expect(target.autoUpdateCheck == false)
         #expect(change { $0.keymap.set([KeyCombo(.code(9), .option)], for: .openHistory) } == ["globalKeys", "keymap"])
         #expect(change { $0.keymap.set([KeyCombo(.code(38), .command)], for: .cycleMethod) } == ["keymap"])
         #expect(change { $0.keymap.set([], for: .openList) } == ["globalKeys", "keymap"])

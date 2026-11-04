@@ -75,6 +75,31 @@ if let arguments = options.aiArguments {
     exit(output.exitCode)
 }
 
+if let arguments = options.updateArguments {
+    // アップデートの CLI（tako の `tako update` と同じ並び）。AI の口からは呼べない
+    let (source, ignoredOverride) = UpdateSource.resolve(override: options.updateFeed, isolated: isolated)
+    let updater = Updater(
+        source: source,
+        policy: UpdatePolicy.resolve(
+            isolated: isolated, source: source, allowUnnotarized: options.allowUnnotarizedUpdate),
+        transport: URLSessionUpdateTransport(userAgent: "Makurip/\(AppIdentity.version)"),
+        stateFile: UpdateStateFile(directory: dataDirectory))
+    let directory = dataDirectory
+    let cli = UpdateCLI(
+        updater: updater,
+        environment: UpdateCLI.Environment(
+            running: AppVersion(AppIdentity.version), appURL: Bundle.main.bundleURL,
+            autoCheck: SettingsFile(directory: dataDirectory).load().settings.autoUpdateCheck,
+            command: commandPrefix() + " --update",
+            appRunning: { AppPresence.isRunning(directory: directory) },
+            notifyInstalled: { UpdateInstalledSignal.post(directory: directory) },
+            progress: { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }, ignoredOverride: ignoredOverride))
+    let output = BlockingTask.run { await cli.run(arguments) }
+    FileHandle.standardOutput.write(Data(output.stdout.utf8))
+    FileHandle.standardError.write(Data(output.stderr.utf8))
+    exit(output.exitCode)
+}
+
 if options.dumpMetadata {
     // メタデータだけを書き出して終わる（UI もロックも使わない。動いているインスタンスがあっても読める）
     let databaseExists = FileManager.default.fileExists(

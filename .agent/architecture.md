@@ -12,9 +12,9 @@ Makurip（実行ファイル）── MakuripUI（一覧: 案 B のパネル）
 
 | ターゲット | 責務 | 依存先 |
 |---|---|---|
-| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルとメニューバーの項目の位置（`Placement/`）・メニューバーのメニューの並び（`Menu/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`）・AI の口（オン・オフ・道具・MCP の JSON-RPC・`--ai` の CLI・操作の記録。`AI/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・libsqlite3 |
+| `MakuripCore` | モデル・判定（純粋関数）・ペーストボードの読み書き・監視・SQLite のストア・メタデータの書き出し・UI との約束（`HistoryPresenting` / `HistoryActions`）・日本語検索（`Search/`）・キーマップ（`Keymap/`）・パネルとメニューバーの項目の位置（`Placement/`）・メニューバーのメニューの並び（`Menu/`）・コードの言語と色付けの区間・プロンプト（`Syntax/`）・貼るときの中身（`Paste/`）・候補窓の流れと判断（`Candidate/`）・設定のスキーマ・検証・ファイル・監視・反映・CLI（`Settings/`）・秘密の判定・伏せ字・自動消去の決まり・当て直し（`Secret/`）・定型文の検証・置き換え・ファイル・監視（`Snippets/`）・AI の口（オン・オフ・道具・MCP の JSON-RPC・`--ai` の CLI・操作の記録。`AI/`）・アップデート（版・Release の読み取り・sha256・署名の確かめ・置き換え・`--update` の CLI。`Update/`） | Foundation・AppKit（NSPasteboard だけ）・ApplicationServices（AX）・CoreGraphics（CGEvent の読み取り）・CryptoKit・Security（署名の読み取り）・libsqlite3 |
 | `MakuripUI` | 一覧（案 B のパネル。nonactivating な NSPanel + SwiftUI）・⌘Y のプレビュー（子ウインドウ）・候補窓（キーの焦点を取らない NSPanel）・設定画面（ふつうの窓 + SwiftUI。キーの記録）・定型文の窓（ふつうの窓）・中身の遅延読み込み。入口は `HistoryUIFactory.make(actions:keymap:)`・`CandidateUIFactory.make(actions:keymap:)`・`SettingsUIFactory.make(controller:environment:)`・`SnippetEditorUIFactory.make(controller:environment:)` | MakuripCore |
-| `Makurip` | AppDelegate（`AppController`）・メニューバー（`StatusMenuController`。置き場所の種まきと、`StatusMenuModel` の並びを NSMenu に写す。もう一度開かれたら設定を開く）・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・起動引数・`--settings`・`--mcp`・`--ai` の入口・AI の口の知らせの受け取り・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
+| `Makurip` | AppDelegate（`AppController`）・メニューバー（`StatusMenuController`。置き場所の種まきと、`StatusMenuModel` の並びを NSMenu に写す。もう一度開かれたら設定を開く）・ホットキー（Carbon）・⌘C の監視・貼り付け（⌘V 送信）・候補窓の横取り（`KeyEventTap`）と本体側の実装（`CandidateBridge`）・設定の反映（`SettingsApplying`）・定型文の貼り付け（置き換え → 書き戻し → ⌘V → `{{カーソル}}` へ）・ログイン時の起動（ServiceManagement）・アップデートの司令塔（`UpdateController`。自動の確認の時計・手での確認・入れ替えと起動し直し）・起動引数・`--settings`・`--mcp`・`--ai`・`--update` の入口・AI の口の知らせの受け取り・検証用の遠隔操作 | MakuripCore・MakuripUI・Carbon・ServiceManagement |
 | `MakuripDevTool` | 検証用 CLI（テストデータ・型の一覧・一般ペーストボードの退避と復元・pid 宛てのキー） | MakuripCore |
 
 依存の向き: `Makurip` → `MakuripUI` → `MakuripCore`。逆向き（Core が UI・アプリを知る、UI がアプリを知る）は禁止。
@@ -136,6 +136,26 @@ Claude Code ──stdio（1 行 1 件の JSON-RPC）──> Makurip --mcp ─┐
 6. 知らせ: 書いたら `HistoryChangeSignal.post`（object = データフォルダ）。動いている `AppController.externalHistoryDidChange` が一覧を読み直し（`historyDidChange`）、
    `scheduleSecretSweep` で自動消去の時計を掛け直す。記録を足したら `postActivity`（設定画面の記録を描き直す）。定型文はファイルの監視で届く
 7. 記録: `AITools.record` が `ai-activity.jsonl` に 1 行（道具・結果・件数と種類の文）。読むだけの設定の道具と `status` は残さない。オフで断ったものは残す
+
+### アップデート（#43）
+
+```
+UpdateController（アプリ）──┐                    ┌─ GET api.github.com/repos/takushio2525/makurip/releases（版の問い合わせ）
+Makurip --update（CLI）────┴─ Updater（Core）──┼─ GET github.com/…/releases/download/vX.Y.Z/Makurip-X.Y.Z.zip（と .sha256）
+                                  │              └─（検証だけ）--data-dir と --update-feed で file:// の一覧に差し替え
+                                  └─ update-state.json（最後に確かめた時刻・見つけた最新・「この版は知らせない」）
+```
+
+1. 確かめる: 起動の 5 秒後と 24 時間ごと（設定の `autoUpdateCheck`。`SettingsApplying.applyAutoUpdateCheck` で時計を掛ける・止める）と、
+   メニューの「アップデートを確認…」・設定画面の「今すぐ確認」・`--update check`。`ReleaseFeed` が draft・prerelease を除いた最新を選び、
+   `UpdateAvailability`（今の版・「この版は知らせない」と比べる）にして `update-state.json` に書く。通信に失敗したら前の結果は残して理由だけ書く
+2. 知らせる: `UpdateStatus` を `StatusMenuModel`（メニューの先頭）と設定画面の「アップデート」の行が読む。勝手には入れ替えない
+3. 入れ替える（「アップデートして再起動」・`--update apply`）: `Updater.install` が、置き場所の確かめ（`.app` の中・隔離されていない・書ける・
+   ディスクの版が動いている版と同じ）→ 今の版の署名を読む → 同じボリュームの作業場所に sha256 のファイルと zip を落とす → sha256（と Release の digest）を照らす →
+   `ditto -x -k` で展開 → ちょうど 1 つの .app → `UpdateVerification.check`（署名・バンドル ID・チーム ID・designated requirement・公証・版）→ `renamex_np` の swap で置き換え。
+   どこかで外れたら `UpdateFailure` を返し、置き場所には触らない（作業場所ごと消す）
+4. 起動し直す: アプリは `LSRegisterURL` のあと、自分の終了を待って `open -n -g` する小さな sh を残して終了する（隔離中は同じ起動引数で）。
+   `--update apply` は、同じデータフォルダで Makurip が動いていれば `UpdateInstalledSignal` を送り、受けたアプリがディスクの版を見て自分で起動し直す
 
 ### 一覧（フェーズ2・`Sources/MakuripUI/`）
 
@@ -279,6 +299,20 @@ Claude Code ──stdio（1 行 1 件の JSON-RPC）──> Makurip --mcp ─┐
 | `{{クリップボード}}` の元 | 履歴のいちばん新しい文字（秘密っぽい項目は飛ばす。試作と同じ） | いまのペーストボードを読む（記録しなかったコピー＝パスワード管理アプリ・記録しないアプリ・一時停止中のものを定型文に混ぜて貼ってしまう） |
 | `{{カーソル}}` | 貼った後に AX で文字カーソルを戻す（確かめられるときだけ） | ← を文字数ぶん送る（改行・絵文字・自動整形で数がずれる。前面のアプリにキーを送る）、消すだけ（試作の見本の動き。名前の意味がなくなる） |
 
+## 技術選定（#43 アップデート・#41 配布・比べた代替）
+
+| 何を | 採用 | 比べた代替と、採らなかった理由 |
+|---|---|---|
+| アップデートの仕組み | 自前（GitHub Releases の API を URLSession で見る。`Sources/MakuripCore/Update/`） | Sparkle（macOS アプリの更新で広く使われる。EdDSA の署名つきの appcast・差分更新・決まった更新の窓がある。しかし外部ライブラリが 0 → 1 になり、XPC のサービスと Sparkle 自身の署名鍵の管理が増える。ユーザーが「tako と同じ」を指定した）。自前でも、確かめるもの（sha256・Developer ID の署名・同じ要件・公証）は Sparkle が macOS に任せている部分と同じ |
+| 署名の確かめ | Security.framework（`SecStaticCodeCheckValidity` と要件の文字列。`notarized` の要件で公証） | `codesign` / `spctl` を実行して出力を読む（出力の形に頼る・言語の設定で文が変わる・遅い）。API なら判断を純粋関数（`UpdateVerification`）に分けて単体テストで固定できる。`spctl` は Gatekeeper の方針（利用者が変えられる）にも左右される |
+| 公証の確かめ方 | staple した票（`notarized` の要件。Apple に問い合わせない） | Apple への問い合わせ（staple していない版も通るが、外への通信が増える。配る zip は必ず staple するので要らない） |
+| 置き換え方 | 同じボリュームの作業場所に展開し、`renamex_np` の `RENAME_SWAP` で一度に入れ替え | 今の .app を消してからコピー（途中で落ちると .app が無くなる）、`NSWorkspace` の `recycle` と `moveItem`（2 回の移動の間に .app が無い瞬間がある）、インストーラーの pkg（管理者の権限が要る）。swap なら、どの瞬間にも置き場所に動く .app がある（tako の `bundle_install` と同じ） |
+| 起動し直し方 | 自分の終了を待つ sh を残して終了し、sh が `open -n -g` | 自分で `open` してから終了（新しいほうが `instance.lock` を取れずに終わる）、ヘルパーの実行ファイルを .app に入れる（署名・組み立てが増える） |
+| 試験の配信元 | `--data-dir` のときだけ効く `--update-feed`（file:// の Release の一覧）と、3 つがそろったときだけ公証を外す `--update-allow-unnotarized` | 本物の GitHub に試験用の Release を出す（公開のリポジトリに残る・本物の利用者のアプリが見る）、環境変数で差し替え（本番の起動でも効いてしまいうる） |
+| 状態の置き場所 | データフォルダの `update-state.json` | 設定ファイル（人と AI が書く場所。内部の状態は置かない）、UserDefaults（`--data-dir` で隔離できない） |
+| 配る形 | Developer ID で署名・公証・staple した .app を `ditto -c -k --keepParent` で固めた zip と、`shasum -a 256` の sha256 のファイル | dmg（`hdiutil` の手順と、dmg 自体の署名・公証が増える。アプリ内アップデートは zip を展開するので形がそろう）、pkg（管理者の権限が要る）、Homebrew の cask（範囲外。#41・#43） |
+| 配る手順 | `scripts/release.sh` の 1 本（組み立て → 署名 → 公証 → staple → zip → sha256 → quarantine 付きの Gatekeeper の確かめ → tag → `gh release create --generate-notes`） | GitHub Actions で配る（Developer ID の証明書と公証の認証情報を CI の秘密に置くことになる。公開のリポジトリで扱いを増やしたくない）、fastlane（Ruby と依存が増える） |
+
 ## 変更時の波及
 
 - DB スキーマを変える: `ClipStore.migrate()` に版を足し、`.agent/api.md` の「DB スキーマ」と `MetadataDump` を同時に直す
@@ -304,4 +338,6 @@ Claude Code ──stdio（1 行 1 件の JSON-RPC）──> Makurip --mcp ─┐
   履歴を触るなら `needsAccess: true`。CLI の命令は `AICLI.commands`。返す JSON に中身・URL・ファイル名・ハッシュを入れない（`AIListTests`・`MCPServerTests` の漏れの検査に通す）。
   **AI の口をオンにする道具・命令は足さない**（`AIAccessTests`）。`docs/ai-mcp.md` の一覧と対応表、`.agent/api.md` の「AI の口」を直す。隔離 E2E は `make e2e-ai`
 - 一覧で返す形式の情報を変える: `AIGateway.describe`。足す情報が中身を推せないか（長さ・ハッシュ・名前）を考え、`docs/ai-mcp.md` の「守っていること」を直す
-- 表示名・バンドル ID・版を変える: `Sources/Makurip/Info.plist` の 1 か所だけ
+- 表示名・バンドル ID・版を変える: `Sources/Makurip/Info.plist` の 1 か所だけ（版は `scripts/bump-version.sh X.Y.Z`。バンドル ID を変えるとアプリ内アップデートで入れ替えられなくなる）
+- 配布物の名前・形を変える: `ReleaseFeed`（`archiveName`・`checksumName`）・`UpdateChecksum.parse` と `scripts/release.sh` を同時に直す（出ている版のアプリが読む形なので、古い版が読めなくなる変更は避ける）
+- アップデートの確かめを変える: `UpdateVerification.check`（純粋関数）と `UpdateVerificationTests`・`UpdatePolicyTests`。署名の確かめを外す口を本番の経路に作らない（`.agent/conventions.md` の「アップデート」）。`make e2e-update` で、Developer ID・公証済みの 2 つの版で通す

@@ -24,6 +24,8 @@ public struct AppSettings: Hashable, Sendable {
     public var idleTimeout: Double
     /// 定型文の {{日付}} の書き方
     public var snippetDateFormat: SnippetDateFormat
+    /// 起動したときと 1 日 1 回、GitHub の Release に新しい版があるかを確かめる（#43）
+    public var autoUpdateCheck: Bool
     public var keymap: Keymap
 
     public init() {
@@ -39,6 +41,7 @@ public struct AppSettings: Hashable, Sendable {
         replaceMethod = candidate.replaceMethod
         idleTimeout = candidate.idleTimeout
         snippetDateFormat = .default
+        autoUpdateCheck = true
         keymap = .default
     }
 

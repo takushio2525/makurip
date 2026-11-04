@@ -25,6 +25,12 @@ final class DebugControl {
         /// 記録の一時停止・再開（メニューの「記録を一時停止」と同じ）
         case pause
         case resume
+        /// アップデートを確かめる（メニューの「アップデートを確認…」と同じ。結果の窓は出さず、状態に書く。#43）
+        case checkForUpdates
+        /// 見つけた新しい版に入れ替えて起動し直す（メニューの「アップデートして再起動」と同じ。失敗の窓は出さない）
+        case installUpdate
+        /// 見つけた新しい版を知らせないようにする（メニューの「この版は知らせない」と同じ）
+        case skipUpdate
         /// 定型文を貼る（userInfo["index"] は 1 からの番号、["mode"] は normal・plainText・copyOnly。一覧の Enter と同じ）
         case pasteSnippet
         /// 履歴を消去する（メニューの「履歴を消去…」の確かめの後と同じ。ピン留めと定型文は残る）
@@ -108,6 +114,12 @@ final class DebugControl {
             controller.setPaused(true)
         case .resume:
             controller.setPaused(false)
+        case .checkForUpdates:
+            controller.updates?.check(presentResult: false)
+        case .installUpdate:
+            controller.updates?.install(presentFailure: false)
+        case .skipUpdate:
+            controller.updates?.skip()
         case .pasteSnippet:
             let list = controller.snippets()
             if let index, list.indices.contains(index - 1) {
@@ -231,6 +243,7 @@ final class DebugControl {
             "snippets": Self.snippetSummary(controller),
             "secrets": controller.secretStatus,
             "ai": Self.aiSummary(controller),
+            "update": controller.updates?.debugState ?? [:],
         ]
         status["writtenAt"] = ISO8601DateFormatter().string(from: Date())
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
