@@ -35,4 +35,4 @@ newer "$NEW" "$CURRENT" || {
 }
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $NEW" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $((BUILD + 1))" "$PLIST"
-echo "$CURRENT（$BUILD）→ $NEW（$((BUILD + 1))）"
+echo "${CURRENT}（${BUILD}）→ ${NEW}（$((BUILD + 1))）"

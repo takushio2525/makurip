@@ -59,7 +59,7 @@ fi
 TAG="v$VERSION"
 NAME="Makurip-$VERSION.zip"
 OUT="${MAKURIP_RELEASE_OUT:-$ROOT/.release/$VERSION}"
-say "版 $VERSION（$MODE）→ $OUT"
+say "版 ${VERSION}（${MODE}）→ $OUT"
 
 # --- 証明書 ---
 if [ "$MODE" = "skip-notarize" ]; then
@@ -123,7 +123,7 @@ if [ "$MODE" != "skip-notarize" ]; then
             xcrun notarytool log "$SUBMISSION" --keychain-profile "$NOTARY_PROFILE" "$OUT/notarize-log.json" > /dev/null 2>&1 \
                 && plutil -extract issues json -o - "$OUT/notarize-log.json" >&2 || true
         fi
-        fail "公証が通らなかった（status=$STATUS）"
+        fail "公証が通らなかった（status=${STATUS}）"
     fi
     rm -f "$UPLOAD"
     say "staple する"
@@ -138,7 +138,7 @@ fi
 say "zip と sha256 を作る"
 ditto -c -k --keepParent "$APP" "$OUT/$NAME"
 (cd "$OUT" && shasum -a 256 "$NAME" > "$NAME.sha256")
-echo "  $(cat "$OUT/$NAME.sha256" | cut -c1-16)…  $NAME（$(stat -f %z "$OUT/$NAME") バイト）" >&2
+echo "  $(cat "$OUT/$NAME.sha256" | cut -c1-16)…  ${NAME}（$(stat -f %z "$OUT/$NAME") バイト）" >&2
 
 # --- quarantine を付けた zip を別の場所で展開して、Gatekeeper の判定を見る（ブラウザで落としたときと同じ）---
 if [ "$MODE" != "skip-notarize" ]; then

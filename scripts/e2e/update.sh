@@ -48,7 +48,7 @@ build_version() { # 版 出力先
     fi
 }
 
-echo "== 2 つの版を作る（$OLD と $NEW。$([ "$UNNOTARIZED" = "1" ] && echo "公証の確かめを外す試し" || echo "Developer ID・公証済み")）"
+echo "== 2 つの版を作る（${OLD} と ${NEW}。$([ "$UNNOTARIZED" = "1" ] && echo "公証の確かめを外す試し" || echo "Developer ID・公証済み")）"
 build_version "$OLD" "$RUN/old"
 build_version "$NEW" "$RUN/new"
 
