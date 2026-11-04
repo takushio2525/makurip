@@ -1,5 +1,5 @@
 # Makurip のよく使うコマンド。詳細は AGENTS.md の「コマンド」節
-.PHONY: build test lint format check app install e2e e2e-settings e2e-secrets e2e-snippets e2e-ai ui-compare clean
+.PHONY: build test lint format check app install e2e e2e-settings e2e-secrets e2e-snippets e2e-ai e2e-click ui-compare clean
 
 build:
 	swift build
@@ -41,6 +41,11 @@ e2e-snippets:
 # AI の口の隔離 E2E（目印入りの履歴に MCP の全道具を JSON-RPC で呼び、応答に目印が 0 件か。動いているアプリへの反映・オフ・巨大な要求も）
 e2e-ai:
 	scripts/e2e/ai.sh
+
+# 一覧のカードのクリックと右クリックのメニューの隔離 E2E（#38。一覧を仮想ディスプレイ tako-vd に出し、窓の中で作った出来事で押す。
+# 一般ペーストボードに触らず、本物のマウス・キーも使わない。tako-vd が無い・画面ロック中なら何もせずに終わる）
+e2e-click:
+	scripts/e2e/click.sh
 
 # 試作（案 B）と SwiftUI のパネルを同じ状態で描いて並べる（画面ロック中でも動く。出力は .ui-compare/）
 ui-compare:

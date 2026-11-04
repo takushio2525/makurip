@@ -90,6 +90,9 @@ final class HistoryPanelModel {
     }
     private(set) var pickerSelection = 0
 
+    /// マウスのボタンを押したカード（履歴か定型文の ID）。同じカードの上で離したときだけ貼る（#38）
+    @ObservationIgnored private(set) var pressedRowID: UUID?
+
     @ObservationIgnored private var haystacks: [UUID: (hash: String, text: String)] = [:]
     @ObservationIgnored private var snippetHaystacks: [UUID: (snippet: Snippet, text: String)] = [:]
     @ObservationIgnored private var snippetMasks: [UUID: (snippet: Snippet, masked: Snippet?)] = [:]
@@ -151,6 +154,7 @@ final class HistoryPanelModel {
         app = nil
         pinnedOnly = false
         showsSnippets = snippets
+        pressedRowID = nil
         isPreviewOpen = false
         isPickerOpen = false
         pickerQuery = ""
@@ -432,12 +436,7 @@ final class HistoryPanelModel {
             if showsSnippets { shakeCount += 1 }
             return
         }
-        // 秘密の URL（`?token=…` のリンク）の一覧用の平文は伏せ字なので使わない（コピー元のページだけを開く）
-        let text =
-            item.kind == .url && !item.isSecretLikely
-            ? item.previewText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-        guard let url = (item.sourceURL ?? text).flatMap(URL.init(string:)), url.scheme?.hasPrefix("http") == true
-        else {
+        guard let url = item.openablePageURL else {
             shakeCount += 1
             return
         }
@@ -446,6 +445,50 @@ final class HistoryPanelModel {
 
     func setPreviewOpen(_ open: Bool) {
         isPreviewOpen = open
+    }
+
+    // MARK: マウス（#38。カードの上の `CardMouseView` から呼ぶ）
+
+    /// いま出している行（履歴か定型文）のうち、その ID の行の番号
+    func rowIndex(of id: UUID) -> Int? {
+        showsSnippets ? snippetItems.firstIndex { $0.id == id } : items.firstIndex { $0.id == id }
+    }
+
+    /// カードを左のボタンで押した。そのカードを選ぶだけで、離すまで貼らない
+    func pressRow(_ id: UUID) {
+        guard let index = rowIndex(of: id) else { return }
+        pressedRowID = id
+        select(index)
+    }
+
+    /// 押したボタンを離した。押したカードの上で離したときだけ、選んで ↩ を押したのと同じく貼る。
+    /// カードの外へ出て離したとき・別のカードで押していたときは何もしない
+    func releaseRow(_ id: UUID, inside: Bool) {
+        defer { pressedRowID = nil }
+        guard inside, pressedRowID == id, let index = rowIndex(of: id) else { return }
+        select(index)
+        pasteSelected(.normal)
+    }
+
+    /// 右クリックのメニューの並び。右クリックしたカードを選び（どのカードのメニューかが見えるように）、その項目の状態で出し分ける
+    func menuEntries(forRow id: UUID) -> [CardMenuModel.Entry]? {
+        guard let index = rowIndex(of: id) else { return nil }
+        pressedRowID = nil
+        select(index)
+        if showsSnippets { return CardMenuModel.snippetEntries(previewOpen: isPreviewOpen) }
+        guard let item = selected else { return nil }
+        return CardMenuModel.entries(for: item, previewOpen: isPreviewOpen)
+    }
+
+    /// メニューの項目を選んだ。そのカードを選び直してから、キーを押したのと同じ処理を通す
+    /// （メニューを開いている間に履歴が増えて並びがずれても、右クリックしたカードに効くように）。カードが消えていたら揺らす
+    func performMenuAction(_ action: KeyAction, onRow id: UUID) {
+        guard let index = rowIndex(of: id) else {
+            shakeCount += 1
+            return
+        }
+        select(index)
+        perform(action)
     }
 
     // MARK: ⌘E のアプリ選択

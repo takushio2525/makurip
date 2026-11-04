@@ -22,6 +22,8 @@ public protocol HistoryPresenting: AnyObject {
     func keymapDidChange(_ keymap: Keymap)
     /// 定型文が変わった（定型文の窓・ファイルの書き換え）。開いていれば読み直す
     func snippetsDidChange()
+    /// 検証用の操作（`--debug-control` の E2E から。隔離したときだけ届く）。実装しなければ何もしない
+    func debugPerform(_ request: HistoryDebugRequest)
 }
 
 extension HistoryPresenting {
@@ -30,6 +32,22 @@ extension HistoryPresenting {
     public func showSnippets() { show() }
     public func keymapDidChange(_ keymap: Keymap) {}
     public func snippetsDidChange() {}
+    public func debugPerform(_ request: HistoryDebugRequest) {}
+}
+
+/// 検証用の操作（#38）。UI は窓の中で作った出来事（NSEvent）を自分の窓へ送る（本物のマウスとほかのアプリには触れない）。
+/// 行の番号は、いま出している一覧（履歴か定型文）の上から 1 始まり
+public enum HistoryDebugRequest: Equatable, Sendable {
+    /// カードを左クリックする。`releaseInside` が false なら、押したままカードの外へ出て離す
+    case click(row: Int, releaseInside: Bool)
+    /// カードを右クリックしてメニューを出し、`hold` 秒後に `choose` の項目を選ぶ（nil なら何も選ばずに閉じる）。
+    /// メニューを開いている間は遠隔操作の通知が届かないので、選ぶのはメニューの中でも回るタイマーで行う
+    case rightClick(row: Int, choose: KeyAction?, hold: Double)
+    /// カードの上で下へスクロールする（トラックパッドの 2 本指と同じ出来事）
+    case scroll(row: Int)
+    /// 一覧がキーの焦点を取るか（既定 true）。false にすると、出してもキーの焦点を取らない
+    /// （E2E が使っている人の打鍵を横取りしない・外の操作で閉じないように。隔離した E2E だけが使う）
+    case takesKeyFocus(Bool)
 }
 
 /// 貼り付けのしかた

@@ -84,6 +84,16 @@ public struct ClipItem: Identifiable, Sendable, Hashable {
 
     /// 秘密っぽい（一覧・候補窓ではマスクし、`previewText` も伏せ字で入っている）
     public var isSecretLikely: Bool { flags.contains(.secretLikely) }
+
+    /// 一覧の「コピー元のページを開く」（⌘O・右クリックのメニュー）で開くページ。コピー元のページ、なければ URL の項目そのもの。
+    /// http・https だけ。秘密の URL（`?token=…` のリンク）の一覧用の平文は伏せ字なので使わない（コピー元のページだけを開く）
+    public var openablePageURL: URL? {
+        let text =
+            kind == .url && !isSecretLikely ? previewText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        guard let url = (sourceURL ?? text).flatMap(URL.init(string:)), url.scheme?.hasPrefix("http") == true
+        else { return nil }
+        return url
+    }
 }
 
 /// 保存済みの型 1 つの情報（中身なし）。メタデータの書き出しと、後のプレビューの出し分けに使う

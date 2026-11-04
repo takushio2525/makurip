@@ -5,6 +5,8 @@ import SwiftUI
 struct HistoryPanelView: View {
     @Bindable var model: HistoryPanelModel
     let loader: ClipContentLoader
+    /// カードの右クリックのメニュー（#38）
+    var menus = CardMenus()
     @Environment(\.colorScheme) private var scheme
 
     static let size = CGSize(width: 372, height: 528)
@@ -14,7 +16,7 @@ struct HistoryPanelView: View {
     static var cardWidth: CGFloat { size.width - listInset * 2 }
 
     var body: some View {
-        PanelContent(model: model, loader: loader)
+        PanelContent(model: model, loader: loader, menus: menus)
             .environment(\.palette, .of(scheme))
     }
 }
@@ -22,6 +24,7 @@ struct HistoryPanelView: View {
 private struct PanelContent: View {
     @Bindable var model: HistoryPanelModel
     let loader: ClipContentLoader
+    let menus: CardMenus
     @Environment(\.palette) private var palette
     @FocusState private var focus: Field?
     @State private var shake: CGFloat = 0
@@ -37,7 +40,7 @@ private struct PanelContent: View {
             CaptionRow(model: model)
             SearchRow(model: model, focus: $focus)
             FilterRow(model: model)
-            CardList(model: model, loader: loader)
+            CardList(model: model, loader: loader, menus: menus)
             FooterHints(model: model)
         }
         .frame(width: HistoryPanelView.size.width, height: HistoryPanelView.size.height)
@@ -280,17 +283,19 @@ private struct FilterButton<Label: View>: View {
     }
 }
 
-/// カードの一覧。見えている分だけ作る（LazyVStack）。選択が動いたら見える位置まで送る
+/// カードの一覧。見えている分だけ作る（LazyVStack）。選択が動いたら見える位置まで送る。
+/// カードは押した上で離すと貼り、右クリックでメニューを出す（`CardMouseArea`。#38）
 private struct CardList: View {
     let model: HistoryPanelModel
     let loader: ClipContentLoader
+    let menus: CardMenus
     @Environment(\.palette) private var palette
 
     var body: some View {
         if model.rowCount == 0 {
             EmptyStateView(model: model)
         } else if model.showsSnippets {
-            SnippetCardList(model: model)
+            SnippetCardList(model: model, menus: menus)
         } else {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -310,12 +315,8 @@ private struct CardList: View {
                                     quickCombo: model.keymap.primary(.quickPaste), loader: loader,
                                     revealing: model.isRevealing, keymap: model.keymap
                                 )
+                                .overlay { CardMouseArea(rowID: item.id, model: model, menus: menus) }
                                 .id(row.id)
-                                .onTapGesture(count: 2) {
-                                    model.select(index)
-                                    model.pasteSelected(.normal)
-                                }
-                                .onTapGesture { model.select(index) }
                             }
                         }
                     }
@@ -345,9 +346,10 @@ private struct CardList: View {
     }
 }
 
-/// 定型文のカードの一覧（日付の見出しはない。試作と同じ）
+/// 定型文のカードの一覧（日付の見出しはない。試作と同じ）。押した上で離すと貼り、右クリックでメニュー（#38）
 private struct SnippetCardList: View {
     let model: HistoryPanelModel
+    let menus: CardMenus
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -361,12 +363,8 @@ private struct SnippetCardList: View {
                             quickHeld: model.quickModifierHeld, quickCombo: model.keymap.primary(.quickPaste),
                             secret: model.maskedSnippet(snippet) != nil, revealing: model.isRevealing
                         )
+                        .overlay { CardMouseArea(rowID: snippet.id, model: model, menus: menus) }
                         .id(snippet.id)
-                        .onTapGesture(count: 2) {
-                            model.select(index)
-                            model.pasteSelected(.normal)
-                        }
-                        .onTapGesture { model.select(index) }
                     }
                 }
                 .padding(

@@ -74,6 +74,17 @@ public struct KeyCombo: Codable, Hashable, Sendable {
         }
     }
 
+    /// メニューの右に出すキー（`NSMenuItem.keyEquivalent` に入れる文字。修飾キーは `modifiers` を別に渡す）。
+    /// 英字は小文字（⇧ は修飾キーで出す）、↩・⌫・矢印・F キーなどは AppKit の決まりの文字。
+    /// 数字の範囲・修飾キーだけのキーはメニューに書けないので nil
+    public var menuKeyEquivalent: String? {
+        guard case .code(let raw) = key else { return nil }
+        let code = KeyCodes.canonical(raw)
+        if let scalar = KeyCodes.menuCharacters[code].flatMap(Unicode.Scalar.init) { return String(scalar) }
+        guard let name = KeyCodes.names[code], name.count == 1 else { return nil }
+        return name.lowercased()
+    }
+
     public var isReturn: Bool { key == .code(KeyCodes.returnKey) }
 
     /// 全体のキー（Carbon のホットキー）として登録するときの形。数字の範囲は登録できないので nil
@@ -140,6 +151,26 @@ public enum KeyCodes {
 
     public static func digit(of code: UInt16) -> Int? {
         digitCodes.firstIndex(of: code).map { $0 + 1 }
+    }
+
+    /// 文字を打たないキーの、メニューのキー表示に使う文字（`KeyCombo.menuKeyEquivalent`）。
+    /// ↩ は CR、⌫ は BS、矢印・F キー・home などは AppKit の関数キーの文字（NSUpArrowFunctionKey = U+F700 など）
+    static let menuCharacters: [UInt16: UInt32] = {
+        var table: [UInt16: UInt32] = [
+            returnKey: 0x0D, tab: 0x09, space: 0x20, delete: 0x08, escape: 0x1B,
+            upArrow: 0xF700, downArrow: 0xF701, leftArrow: 0xF702, rightArrow: 0xF703,
+            117: 0xF728, 115: 0xF729, 119: 0xF72B, 116: 0xF72C, 121: 0xF72D,  // ⌦・home・end・pgup・pgdn
+        ]
+        for (index, code) in functionKeyCodes.enumerated() { table[code] = 0xF704 + UInt32(index) }  // F1〜F20
+        return table
+    }()
+
+    /// `KeyCombo.menuKeyEquivalent` の逆（メニューに入っているキーの文字 → 仮想キーコード）。検証の状態出力で表記に戻すのに使う
+    public static func code(forMenuKeyEquivalent key: String) -> UInt16? {
+        guard key.unicodeScalars.count == 1, let scalar = key.unicodeScalars.first else { return nil }
+        if let found = menuCharacters.first(where: { $0.value == scalar.value }) { return found.key }
+        let upper = key.uppercased()
+        return names.filter { $0.value == upper && !nonCharacterCodes.contains($0.key) }.map(\.key).min()
     }
 
     /// 表示名。英字は大文字、特殊キーは試作の表記（esc・⇥・⌫ など）
@@ -260,9 +291,10 @@ public enum KeyAction: String, CaseIterable, Sendable, Hashable, Codable {
         case .close: "検索語があれば消し、なければ一覧を閉じる。"
         case .previous: "一覧で 1 つ前の項目を選ぶ。"
         case .next: "一覧で 1 つ次の項目を選ぶ。"
-        case .paste: "選んだ項目を、一覧を開く前に使っていたアプリに貼る。"
-        case .pastePlain: "太字やリンクなどの書式を外し、文字だけを貼る。コマンドの先頭のプロンプト（「$ 」など）は外さず、そのまま貼る。"
-        case .copyOnly: "クリップボードに入れるだけで、貼り付けはしない。"
+        case .paste: "選んだ項目を、一覧を開く前に使っていたアプリに貼る。カードをクリックしても同じ（右クリックのメニューの「貼り付け」）。"
+        case .pastePlain:
+            "太字やリンクなどの書式を外し、文字だけを貼る。コマンドの先頭のプロンプト（「$ 」など）は外さず、そのまま貼る。右クリックのメニューの「文字だけで貼り付け」。"
+        case .copyOnly: "クリップボードに入れるだけで、貼り付けはしない。右クリックのメニューの「クリップボードにコピー」。"
         case .quickPaste: "一覧の上から 1〜9 番目を、選ばずにそのまま貼る。"
         case .kindNext: "種類の絞り込み（テキスト・画像・コードなど）を次に進める。"
         case .kindPrevious: "種類の絞り込みを 1 つ前に戻す。"
