@@ -8,8 +8,8 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 ## 概要
 
 - 目的: Windows のクリップボード履歴に相当するものを Mac で。種類・コピー方法・コピー元で絞り込めることが売り
-- 対象: 作者本人（開発・AI チャットでコピーを多用する人）
-- 状況: フェーズ1〜7（AI の口 #6・定型文 #7 を含む）まで。残りは実機確認（#9）（`.agent/roadmap.md`）
+- 対象: 作者本人（開発・AI チャットでコピーを多用する人）。リポジトリは公開（MIT）で、Developer ID の署名と公証を通した zip を GitHub Release で配る（#41）
+- 状況: フェーズ1〜7（AI の口 #6・定型文 #7 を含む）・カードのクリック（#38）・アプリ内アップデート（#43）・公証つきの配布（#41）まで。残りは実機確認（#9）（`.agent/roadmap.md`）
 
 ## 技術スタック
 
@@ -28,6 +28,8 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 | キーの記録 | 自前（窓の `NSEvent` ローカル監視 → `SettingsModel.record`） | KeyboardShortcuts（sindresorhus）は記録欄の見た目が試作の「新しいキーを押す…」と違い、依存も増えるので採らなかった |
 | 秘密の判定 | 自前（既知の接頭辞・文脈・ランダムさ。`Sources/MakuripCore/Secret/`） | gitleaks・trufflehog の規則と比べて採らなかった（`.agent/architecture.md` の「技術選定（フェーズ5）」）。判定の一覧と限界は `.agent/conventions.md` |
 | AI の口（MCP） | 自前の JSON-RPC 2.0（stdio・1 行 1 件。`Sources/MakuripCore/AI/`）。同じ実行ファイルの `--mcp` と、同じ道具の CLI `--ai` | 公式の Swift SDK（modelcontextprotocol/swift-sdk）は依存が 0 → 1 以上になり、使うのは道具（tools）だけなので採らなかった（`.agent/architecture.md` の「技術選定（フェーズ6）」）。オン・オフは DB の `meta`（設定画面からだけオン） |
+| アップデート | 自前（GitHub Releases の API を URLSession で見る・Security.framework で署名と公証を確かめる・`renamex_np` で入れ替え。`Sources/MakuripCore/Update/`）。CLI `--update` | Sparkle（macOS の更新で広く使われる）は外部ライブラリが 0 → 1 になり、ユーザーが「tako と同じ」を指定したので採らなかった（`.agent/architecture.md` の「技術選定（#43・#41）」）。署名の確かめを外す口は本番の経路に作らない |
+| 配布 | Developer ID Application の署名・`notarytool` の公証・`stapler`・`ditto` の zip・`gh release`（`scripts/release.sh`。1 つのコマンド） | dmg（作る手順と道具が増え、zip でアプリ内アップデートと同じ形にそろう）・Homebrew（範囲外） |
 
 **外部ライブラリは 0**。入れる場合は採用理由と比べた代替を PR とこの表に書く。
 技術選定で比べた代替（XcodeGen・GRDB・SwiftData・KeyboardShortcuts など）は `.agent/architecture.md` の「技術選定」節。
@@ -38,14 +40,14 @@ Mac 用のクリップボード履歴アプリ（メニューバー常駐）。�
 makurip/
 ├── Package.swift
 ├── Sources/
-│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置（パネル・メニューバーの項目）・メニューバーのメニューとカードの右クリックのメニューの並び・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文・AI の口（MCP・--ai の CLI））。AppKit は NSPasteboard だけ使う
+│   ├── MakuripCore/   ← UI に依存しない本体（モデル・判定・取り込み・書き戻し・ストア・検索・絞り込み・キーマップ・位置（パネル・メニューバーの項目）・メニューバーのメニューとカードの右クリックのメニューの並び・候補窓の流れ・コードの言語と色付けの区間・プロンプト・設定のスキーマ・ファイル・CLI・秘密の判定と伏せ字と自動消去・定型文・AI の口（MCP・--ai の CLI）・アップデート（版・Release の読み取り・sha256・署名の確かめ・置き換え・--update の CLI））。AppKit は NSPasteboard だけ使う
 │   ├── MakuripUI/     ← 一覧（案 B のパネル・⌘Y のプレビュー・定型文の一覧）と候補窓と設定画面（「AI の口」の行を含む）と定型文の窓。Core にだけ依存する
-│   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・起動引数・--settings・--mcp・--ai の入口）。Info.plist もここ
+│   ├── Makurip/       ← 実行ファイル（AppDelegate・メニューバー・ホットキー・監視・貼り付け・候補窓の横取り・設定の反映・アップデートの司令塔（自動の確認・入れ替えと起動し直し）・起動引数・--settings・--mcp・--ai・--update の入口）。Info.plist（版の正本）もここ
 │   └── MakuripDevTool/← 検証用 CLI（テストデータを書く・型の一覧を出す・一般ペーストボードの退避と復元）。.app に入れない
 ├── Tests/MakuripCoreTests/ ← 単体テスト。一般ペーストボードは使わず NSPasteboard(name:) を使う
 ├── Tests/MakuripUITests/   ← パネルのキー操作（ビューモデル）・表示の文言・オフスクリーン描画（環境変数を付けたときだけ）
 ├── Tests/MakuripDevToolTests/ ← 検証用 CLI のテストデータ（E2E の偽の秘密が判定の条件を必ず満たすこと）
-├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / secret-bench.sh（秘密の判定の見逃しと誤判定の計測）/ e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口、click.sh はカードのクリックと右クリックのメニュー）
+├── scripts/           ← build-app.sh（組み立て・署名）/ install.sh / release.sh（配布: 署名・公証・zip・Release）/ bump-version.sh（版を上げる）/ secret-bench.sh（秘密の判定の見逃しと誤判定の計測）/ e2e/（隔離 E2E。settings.sh は設定、secrets.sh は秘密、snippets.sh は定型文、ai.sh は AI の口、click.sh はカードのクリックと右クリックのメニュー、update.sh はアップデート）
 ├── docs/              ← ai-settings.md（AI エージェントに設定を頼むときの手順と、頼みと項目の対応表）・ai-mcp.md（Claude Code への登録・道具・頼みと道具の対応・限界）
 ├── Resources/         ← build-app.sh が actool でコンパイルするアイコン（AppIcon.icon・Assets.xcassets の MenuBarIcon）。design/icon/ から生成
 ├── design/icon/       ← アイコンの原稿（SVG・icon.json）と、Resources/ の再生成・検証スクリプト（README.md に手順）
@@ -75,6 +77,10 @@ makurip/
 | 隔離 E2E（AI の口） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-ai`（目印入りの履歴に MCP の全道具を JSON-RPC で呼び、応答に目印も偽の秘密のハッシュ・長さも 0 件か。一覧の窓を一瞬開く。巨大な要求の分で 1 分ほど） |
 | 設定の CLI | `Makurip [--data-dir DIR] --settings list\|get\|set\|add\|remove\|reset\|schema [--json]`（`docs/ai-settings.md`） |
 | AI の口 | `Makurip [--data-dir DIR] --mcp`（MCP サーバー）・`Makurip [--data-dir DIR] --ai status\|add\|list\|delete-secrets\|delete\|snippet-add\|snippets\|snippet-delete\|log\|disable [--json]`（`docs/ai-mcp.md`） |
+| アップデートの CLI | `Makurip [--data-dir DIR] --update status\|check\|apply [--json]`（`.agent/api.md` の「アップデート」。AI の口からは呼べない） |
+| 版を上げる | `scripts/bump-version.sh X.Y.Z`（Info.plist の版とビルド番号。PR で main へ） |
+| 配る | `make release`（main で。組み立て → Developer ID の署名 → 公証 → staple → zip → sha256 → quarantine 付きの Gatekeeper の確かめ → tag `vX.Y.Z` → GitHub Release）。公証の手前まで試すなら `scripts/release.sh --skip-notarize`、tag・Release なしなら `--no-publish` |
+| 隔離 E2E（アップデート） | `make e2e-update`（作業場所に写した古い版を、偽の配信元（file://）から Developer ID・公証済みの新しい版へ入れ替えて起動し直す。入れ替えてはいけない場合も。公証に数分ずつ。Developer ID がない間は `UPDATE_E2E_UNNOTARIZED=1`） |
 | 試作と並べた比較画像 | `make ui-compare`（画面ロック中でも動く。出力は `.ui-compare/`） |
 | 隔離 E2E（カードのクリック・右クリックのメニュー） | `MAKURIP_APP=$PWD/.app-build/Makurip.app make e2e-click`（一覧を tako-vd に出し、窓の中で作った出来事で押す。キーの焦点を取らない開き方で、使っている人の打鍵を横取りしない。画面ロック中・tako-vd が無ければ何もせず終了コード 3。`SHOTS=dir` でメニューを撮る） |
 | 隔離 E2E（一覧・貼り付け） | `scripts/e2e/paste.sh`（画面ロック解除と Makurip のアクセシビリティ許可が要る。満たさなければ何も触らず終了コード 3/4） |
@@ -95,6 +101,10 @@ makurip/
   ファイル名・ハッシュ・秘密の項目の長さを足さない。推した値が履歴にあるかも応答で分からないようにする
   （`AIAccessTests`・`AIListTests`・`MCPServerTests`・`OutletLeakTests` と `make e2e-ai` の漏れの検査が守る。`.agent/conventions.md` の「AI の口」）。
   AI の口の検証も `--data-dir` で隔離し、本物の履歴でオンにしない。本物の Claude Code への登録（`claude mcp add`）は利用者が行う
+- アップデートの署名の確かめ（同じバンドル ID・同じチーム ID・同じ designated requirement・公証）を外す口を本番の経路に作らない。外せるのは公証だけで、
+  `--data-dir`・`--update-feed`・`--update-allow-unnotarized` がそろったときだけ（`UpdatePolicyTests`）。配信元の差し替えも `--data-dir` のときだけ効く。
+  AI の口（MCP・`--ai`）に更新の道具を足さない（`UpdateAIExclusionTests`）。検証では本番の .app を置き換えず（作業場所に写した .app を使う）、本物の GitHub に試験用の Release を出さない
+- 公開のリポジトリなので、チーム ID・証明書の名前・Apple ID・メールアドレス・実名・ホームパスをコード・文書・コミット・PR・Release のノートに書かない（`Config/signing.local.env` と鍵束にだけ置く）
 - 自動テストで前面のアプリにキーを送らない（`CGEvent.post(tap:)` 禁止）。送るときは `postToPid` で宛先を固定する
 - 候補窓のキーの横取り（CGEventTap）を残さない。閉じる経路を足すときは `CandidateInterceptLifetimeTests` に足す（`.agent/conventions.md` の「候補窓」）
 - 一般ペーストボードを E2E で使うときは `MakuripDevTool pb-stash` で退避し、終わったら `pb-unstash` で戻す

@@ -1,5 +1,5 @@
 # Makurip のよく使うコマンド。詳細は AGENTS.md の「コマンド」節
-.PHONY: build test lint format check app install e2e e2e-settings e2e-secrets e2e-snippets e2e-ai e2e-click ui-compare clean
+.PHONY: build test lint format check app install release e2e e2e-settings e2e-secrets e2e-snippets e2e-ai e2e-click e2e-update ui-compare clean
 
 build:
 	swift build
@@ -21,6 +21,10 @@ app:
 
 install:
 	scripts/install.sh
+
+# 配布（#41）: 組み立て → Developer ID の署名 → 公証 → staple → zip → sha256 → tag → GitHub Release。main で実行する
+release:
+	scripts/release.sh
 
 # 隔離した取り込み・永続化の E2E（一般ペーストボードに触らない）
 e2e:
@@ -46,6 +50,11 @@ e2e-ai:
 # 一般ペーストボードに触らず、本物のマウス・キーも使わない。tako-vd が無い・画面ロック中なら何もせずに終わる）
 e2e-click:
 	scripts/e2e/click.sh
+
+# アップデートの隔離 E2E（#43）: 作業場所の古い版を、偽の配信元（file:// の Release の一覧）から新しい版へ入れ替えて起動し直す。
+# 入れ替えてはいけない場合（sha256・改ざん・別の署名・通信の失敗など）も確かめる。Developer ID がない間は UPDATE_E2E_UNNOTARIZED=1
+e2e-update:
+	scripts/e2e/update.sh
 
 # 試作（案 B）と SwiftUI のパネルを同じ状態で描いて並べる（画面ロック中でも動く。出力は .ui-compare/）
 ui-compare:

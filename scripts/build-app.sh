@@ -6,6 +6,10 @@
 #   CONFIGURATION=debug scripts/build-app.sh   # デバッグビルドで組み立てる（既定は release）
 #
 # 署名の証明書は Config/signing.local.env の MAKURIP_SIGN_IDENTITY（雛形は signing.local.env.example）。
+# 配布（scripts/release.sh）は次の環境変数で呼ぶ:
+#   MAKURIP_BUILD_IDENTITY=…        署名の証明書をこれにする（Developer ID Application。signing.local.env より優先）
+#   MAKURIP_SIGN_TIMESTAMP=1        Apple の時刻印を付ける（公証に要る。ネットにつながっている必要がある）
+#   MAKURIP_VERSION_OVERRIDE=X.Y.Z  .app の版だけを変える（アップデートの試験で 2 つの版を作るとき。リポジトリの版は変えない）
 # アイコンは Resources/（AppIcon.icon と Assets.xcassets）を actool でコンパイルして入れる（Xcode が要る）。
 # Resources/ は design/icon/ の原稿から design/icon/scripts/sync-resources.sh で作る。
 set -euo pipefail
@@ -26,7 +30,8 @@ if [ -f "$ROOT/Config/signing.local.env" ]; then
     # shellcheck disable=SC1091
     . "$ROOT/Config/signing.local.env"
 fi
-if [ -z "${MAKURIP_SIGN_IDENTITY:-}" ] || [[ "$MAKURIP_SIGN_IDENTITY" == "<"* ]]; then
+IDENTITY="${MAKURIP_BUILD_IDENTITY:-${MAKURIP_SIGN_IDENTITY:-}}"
+if [ -z "$IDENTITY" ] || [[ "$IDENTITY" == "<"* ]]; then
     echo "署名の設定がない: Config/signing.local.env.example を Config/signing.local.env に写して MAKURIP_SIGN_IDENTITY を入れる" >&2
     exit 2
 fi
@@ -40,6 +45,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
 cp "$PLIST" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+if [ -n "${MAKURIP_VERSION_OVERRIDE:-}" ]; then
+    if ! [[ "$MAKURIP_VERSION_OVERRIDE" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+        echo "MAKURIP_VERSION_OVERRIDE は X.Y.Z の形で書く" >&2
+        exit 2
+    fi
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MAKURIP_VERSION_OVERRIDE" "$APP/Contents/Info.plist"
+fi
 
 # アイコン: Dock・Finder 用の Icon Composer 形式（.icon）とメニューバー用のアセットカタログを actool でまとめて
 # コンパイルし、Contents/Resources に Assets.car（と旧 OS 用の .icns）を作る（Xcode のビルドと同じ処理）。
@@ -63,7 +75,10 @@ if [ ! -f "$APP/Contents/Resources/Assets.car" ]; then
 fi
 rm -f "$OUT/actool-partial.plist"
 
-# Hardened Runtime で署名する（アクセシビリティ・キー送信に追加の entitlement は要らない）
-codesign --force --options runtime --timestamp=none --sign "$MAKURIP_SIGN_IDENTITY" "$APP" >&2
+# Hardened Runtime で署名する（アクセシビリティ・キー送信に追加の entitlement は要らない）。
+# 公証に出すものは Apple の時刻印が要る（MAKURIP_SIGN_TIMESTAMP=1）。ふだんの組み立ては付けない（ネットが要らないように）
+TIMESTAMP="--timestamp=none"
+[ "${MAKURIP_SIGN_TIMESTAMP:-0}" = "1" ] && TIMESTAMP="--timestamp"
+codesign --force --options runtime "$TIMESTAMP" --sign "$IDENTITY" "$APP" >&2
 codesign --verify --strict "$APP" >&2
 echo "$APP"

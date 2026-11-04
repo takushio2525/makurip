@@ -86,3 +86,13 @@
 - [x] 定型文の窓（登録・編集・削除・並べ替え）。入口は一覧の ⇧⌘S（履歴の項目からも登録）とメニュー
 - [x] キーマップに `snippets`・`editSnippet`、書き戻しは `PasteboardWriter`、貼り付けは `Paster`
 - [ ] 実機確認（#9 に追記）: 本物のアプリに貼る・`{{カーソル}}` の位置・定型文の窓（日本語入力・⌘S・削除の確かめ・閉じたときの保存）
+
+## 公開・配布とアップデート（#41・#43）
+
+2026-11-04 追加。リポジトリは public（MIT・#40）。v0.1.0 は #9 を待たずに出す（ユーザーの指示）。
+
+- [x] アプリ内アップデート（#43）: 自動の確認（起動と 1 日 1 回・`autoUpdateCheck`）・手での確認・メニューの先頭と設定画面の知らせ・「この版は知らせない」・
+  sha256・署名（同じチーム・同じ要件）・公証を確かめてから swap で置き換え・起動し直し・`--update status|check|apply`。AI の口には足さない
+- [x] 配布の 1 本のコマンド（#41）: `scripts/release.sh`（Developer ID の署名 → 公証 → staple → zip → sha256 → quarantine 付きの確かめ → tag → Release）・`scripts/bump-version.sh`・公開向けの README
+- [ ] 隔離 E2E `make e2e-update`（偽の配信元で古い版 → 新しい版・入れ替えてはいけない場合）を、公証を外した試し（`UPDATE_E2E_UNNOTARIZED=1`）で通す
+- [ ] Developer ID の証明書と notarytool のプロファイル（ユーザーの作業 u-92）のあと、Developer ID・公証済みの 2 つの版で `make e2e-update` → v0.1.0 の Release → 本番の入れ替え

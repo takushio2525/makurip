@@ -1,10 +1,43 @@
 # Makurip（マクリップ）
 
 Mac 用のクリップボード履歴アプリ。コピーしたものを種類を問わず保存しておき、⌃⌘V で呼び出して、元いたアプリにそのまま貼り付けられる。
+メニューバーに常駐し、Dock には出ない。
 
 名前は「MaClip」を日本語で読んだ音「マクリップ」に、「履歴を**まくる**」をかけている。
 
-> 状況: フェーズ1〜7（AI の口・定型文を含む）まで。残りは実機での確認（`.agent/roadmap.md`）。
+- 動く環境: macOS 14 以降・Apple シリコン（M1 以降）の Mac
+- 配布: [GitHub の Release](https://github.com/takushio2525/makurip/releases/latest)（Developer ID で署名し、Apple の公証を通した zip）
+- ライセンス: MIT（[LICENSE](LICENSE)）
+
+## 入れ方
+
+1. [Release のページ](https://github.com/takushio2525/makurip/releases/latest) から `Makurip-X.Y.Z.zip` を落とす
+   （確かめたいときは、同じページの `Makurip-X.Y.Z.zip.sha256` も落として `shasum -a 256 -c Makurip-X.Y.Z.zip.sha256` が `OK` と言うか見る）
+2. zip をダブルクリックして展開し、出てきた `Makurip.app` を「アプリケーション」フォルダ（`/Applications` か `~/Applications`）へ移す。
+   **移してから開く**（「ダウンロード」フォルダのまま開くと、macOS が隔離した場所で動かすので、アプリ内のアップデートで置き換えられない）
+3. `Makurip.app` を開く。Apple の公証を通してあるので Gatekeeper には止められない
+   （初めてのときに「インターネットからダウンロードされたアプリです」と確かめられたら「開く」）。メニューバーにアイコンが出る
+4. アクセシビリティを許可する（下の「アクセシビリティの許可」）
+
+アイコンが見えないとき（ノッチのある Mac でメニューバーが混んでいるときなど）は、Spotlight で Makurip をもう一度開くと設定の窓が開く。
+
+### アクセシビリティの許可（初回だけ）
+
+貼り付け（元のアプリへ ⌘V を送る）と、コピー方法の記録（⌘C を見る）と、候補窓（↑↓・⇥・↩・esc を候補窓が出ている間だけ受け取る）に必要。
+システム設定 > プライバシーとセキュリティ > アクセシビリティ で **Makurip** をオンにする（メニューの「アクセシビリティを許可…」からも開ける）。
+アプリ内のアップデートで新しい版に入れ替えても、許可はそのまま残る（同じ署名の要件の版にだけ入れ替えるため）。
+
+許可がないあいだも履歴の記録はできる（コピー方法は「不明」になる）。貼り付けは、選んだものをペーストボードへ戻すところまでで止まる（自分で ⌘V を押せば貼れる）。候補窓は出さず、⌃⌘V でも一覧を開く。
+
+### アップデート
+
+- 起動したときと 1 日 1 回、GitHub の Release に新しい版があるかを確かめる。あれば、メニューバーのメニューの先頭と設定画面で知らせる（勝手には入れ替えない）
+- メニューの「アップデートを確認…」で、いつでも確かめられる。「アップデートして再起動」で入れ替えて起動し直す。「この版は知らせない」も選べる
+- 入れ替える前に、落とした zip の sha256・署名（同じ開発者・同じバンドル ID・同じ署名の要件）・Apple の公証（staple した票）を確かめる。
+  どれかが合わなければ入れ替えず、今の版のまま理由を出す
+- 外へ送るのは、GitHub への版の問い合わせとダウンロードだけ。履歴・設定・使い方の情報は送らない
+- 自動の確認は、設定画面の「アップデートを自動で確認」か `Makurip --settings set autoUpdateCheck false` でオフにできる
+- CLI: `~/Applications/Makurip.app/Contents/MacOS/Makurip --update status|check|apply`（`apply` は Makurip が動いていれば起動し直す）
 
 ## できること
 
@@ -32,7 +65,7 @@ Mac 用のクリップボード履歴アプリ。コピーしたものを種類�
   条件での削除・定型文の登録ができる。**AI に履歴の中身は見せない**（返すのは種類・時刻・アプリ・大きさ・秘密の印などの形式の情報だけ）。
   履歴には秘密も入りうるので、既定はオフで、オンにできるのは設定画面の「AI の口」だけ（AI からはオンにできない）。
   登録は `claude mcp add --scope user makurip -- ~/Applications/Makurip.app/Contents/MacOS/Makurip --mcp`（設定画面からコピーできる）。同じ機能の CLI は `Makurip --ai`（`docs/ai-mcp.md`）
-- メニューバーのアイコンから: 履歴の一覧を開く（⌃⌥⌘V）・定型文の一覧を開く・定型文を編集・設定・記録を一時停止・履歴を消去・終了。Dock には出ない。
+- メニューバーのアイコンから: 履歴の一覧を開く（⌃⌥⌘V）・定型文の一覧を開く・定型文を編集・設定・アップデートを確認・記録を一時停止・履歴を消去・終了。Dock には出ない。
   アイコンは初めて起動したとき、ほかのアプリのアイコンの右端（時計などシステムのアイコンの左）に置く（ノッチのある Mac でメニューバーが混んでいても隠れないように）。
   置き場所は ⌘ を押しながらドラッグして変えられ、変えた位置を覚える。アイコンが見えないときは、Spotlight などで Makurip をもう一度開くと設定が開く
 
@@ -96,9 +129,9 @@ AI エージェントに頼むときの手順と、頼みと項目の対応表�
 
 判定の仕方と、見分けられないもの（限界）は `.agent/conventions.md` の「判定の限界」にまとめてある。
 
-## ビルドと導入
+## ソースからビルド
 
-必要なもの: Xcode 26.2 以降（コマンドラインツール込み）・キーチェーンにある Apple Development の証明書。
+必要なもの: Xcode 26.2 以降（コマンドラインツール込み）・キーチェーンにあるコード署名の証明書（Apple Development で足りる）。
 
 ```bash
 # 1. 署名の設定（初回だけ）。証明書の一覧は security find-identity -v -p codesigning
@@ -115,15 +148,22 @@ make install
 open ~/Applications/Makurip.app
 ```
 
-### アクセシビリティの許可（初回だけ）
-
-貼り付け（元のアプリへ ⌘V を送る）と、コピー方法の記録（⌘C を見る）と、候補窓（↑↓・⇥・↩・esc を候補窓が出ている間だけ受け取る）に必要。
-システム設定 > プライバシーとセキュリティ > アクセシビリティ で **Makurip** をオンにする（メニューの「アクセシビリティを許可…」からも開ける）。
-
-許可はコード署名と置き場所に紐づくので、Apple Development の証明書で署名し、いつも `~/Applications/Makurip.app` に入れる。
+アクセシビリティの許可はコード署名と置き場所に紐づくので、自分の証明書で署名し、いつも `~/Applications/Makurip.app` に入れる。
 `make install` で入れ直しても許可は残る。アドホック署名だとビルドし直すたびに許可が消える。
 
-許可がないあいだも履歴の記録はできる（コピー方法は「不明」になる）。貼り付けは、選んだものをペーストボードへ戻すところまでで止まる（自分で ⌘V を押せば貼れる）。候補窓は出さず、⌃⌘V でも一覧を開く。
+自分でビルドした Makurip は、Release の版と署名が違うので、アプリ内のアップデートでは入れ替えない（「署名の要件が今の Makurip と違う」と出る）。
+Release の版に移るときは、Release の zip から入れ直し、アクセシビリティを許可し直す。
+
+### 配る（メンテナー向け）
+
+```bash
+scripts/bump-version.sh 0.2.0     # Info.plist の版を上げる（ビルド番号も 1 つ上げる）→ PR で main へ
+make release                      # main で: 組み立て → Developer ID の署名 → 公証 → staple → zip → sha256 → tag v0.2.0 → GitHub Release
+```
+
+前提は `Config/signing.local.env` の `MAKURIP_RELEASE_IDENTITY`（Developer ID Application の証明書）と、鍵束の notarytool のプロファイル
+`makurip-notary`（`xcrun notarytool store-credentials makurip-notary …`）。公証の手前まで試すなら `scripts/release.sh --skip-notarize`、
+tag と Release を作らずに公証済みの zip だけ作るなら `scripts/release.sh --no-publish`。版の付け方は `.agent/conventions.md` の「版と配布」。
 
 ## 開発
 
@@ -134,7 +174,12 @@ open ~/Applications/Makurip.app
 | lint / 整形 | `make lint` / `make format` |
 | 取り込み・永続化の E2E（一般ペーストボードに触らない） | `make e2e` |
 | 設定の E2E（CLI で変えて、動いているインスタンスにすぐ効くか） | `MAKURIP_APP=.app-build/Makurip.app make e2e-settings` |
+| アップデートの E2E（作業場所の .app を偽の配信元から入れ替える。本番の .app には触らない） | `make e2e-update`（Developer ID がないときは `UPDATE_E2E_UNNOTARIZED=1`） |
 | 一覧・貼り付けの E2E（画面ロック解除と許可が要る） | `scripts/e2e/paste.sh` |
 | メタデータだけを書き出す | `~/Applications/Makurip.app/Contents/MacOS/Makurip --dump-metadata`（中身・内容のハッシュは出さず、秘密の項目は大きさも伏せる） |
 
 検証では `--data-dir` で隔離したデータフォルダを使う（起動引数は `.agent/api.md`）。AI 向けの規約は `AGENTS.md`。
+
+## ライセンス
+
+MIT（[LICENSE](LICENSE)）。外部ライブラリは使っていない。
